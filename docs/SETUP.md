@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- Node.js 20, 22, or 24
-- npm
+- Node.js 22.22.2 or newer in the Node 22/24 release lines
+- npm 10.8.2 (declared in `package.json`)
 - Windows PowerShell, macOS Terminal, or a POSIX shell
 
 ## Install and run

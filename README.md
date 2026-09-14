@@ -6,7 +6,7 @@ This repository is the source-of-truth handover package for the application. Pro
 
 ## Quick start
 
-Requirements: Node.js 20–24 and npm.
+Requirements: Node.js 22.22.2 or newer in the Node 22/24 release lines, plus npm 10.8.2.
 
 ```powershell
 Copy-Item .env.example .env.local
