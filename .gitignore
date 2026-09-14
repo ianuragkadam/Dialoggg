@@ -1,0 +1,18 @@
+node_modules/
+.next/
+.tools/
+.env
+.env.*
+!.env.example
+coverage/
+backups/
+*.log
+
+# Local application data; production uses the Railway persistent volume.
+data/*.db
+data/*.db-*
+
+# Local review and documentation artifacts.
+guide-shots/
+planning/
+*.pdf

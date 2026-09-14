@@ -1,0 +1,50 @@
+{
+  "name": "dialoggg",
+  "version": "0.1.0",
+  "description": "Dialoggg project scheduling and resource coordination application",
+  "private": true,
+  "scripts": {
+    "test": "npm run test:unit && npm run build && npm run test:scenarios",
+    "test:unit": "node --test tests/foundation.test.mjs",
+    "verify": "npm test",
+    "dev": "next dev -p 3030",
+    "build": "next build",
+    "postbuild": "node scripts/prepare-standalone.mjs",
+    "start": "node scripts/start-production.mjs",
+    "test:scenarios": "node scripts/test-scenarios.mjs",
+    "db:backup": "node scripts/backup-database.mjs",
+    "db:restore": "node scripts/restore-database.mjs",
+    "seed": "node --experimental-strip-types src/db/seed.ts"
+  },
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "type": "module",
+  "dependencies": {
+    "@fullcalendar/core": "^6.1.20",
+    "@fullcalendar/daygrid": "^6.1.20",
+    "@fullcalendar/interaction": "^6.1.20",
+    "@fullcalendar/react": "^6.1.20",
+    "@fullcalendar/resource": "^6.1.20",
+    "@fullcalendar/resource-timeline": "^6.1.20",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.10.0",
+    "dhtmlx-gantt": "^9.1.4",
+    "next": "^15.5.18",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "^6.0.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.0",
+    "tsx": "^4.22.3"
+  }
+}

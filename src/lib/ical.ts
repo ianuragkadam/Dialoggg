@@ -1,0 +1,139 @@
+import db from "@/db";
+import { randomBytes } from "node:crypto";
+
+// Return (creating if needed) the iCal token for a company's master feed.
+export function getCompanyToken(companyId: number): string {
+  const row = db.prepare("SELECT ical_token FROM company WHERE id = ?").get(companyId) as { ical_token: string | null } | undefined;
+  if (row?.ical_token) return row.ical_token;
+  const token = "cmp_" + randomBytes(18).toString("hex");
+  db.prepare("UPDATE company SET ical_token = ? WHERE id = ?").run(token, companyId);
+  return token;
+}
+
+// Return (creating if needed) the iCal token for one project's feed.
+export function getProjectToken(projectId: number): string {
+  const row = db.prepare("SELECT ical_token FROM project WHERE id = ?").get(projectId) as { ical_token: string | null } | undefined;
+  if (row?.ical_token) return row.ical_token;
+  const token = "prj_" + randomBytes(18).toString("hex");
+  db.prepare("UPDATE project SET ical_token = ? WHERE id = ?").run(token, projectId);
+  return token;
+}
+
+// Return (creating if needed) the iCal token for one resource's personal feed.
+export function getResourceToken(resourceId: number): string {
+  const row = db.prepare("SELECT ical_token FROM resource WHERE id = ?").get(resourceId) as { ical_token: string | null } | undefined;
+  if (row?.ical_token) return row.ical_token;
+  const token = "res_" + randomBytes(18).toString("hex");
+  db.prepare("UPDATE resource SET ical_token = ? WHERE id = ?").run(token, resourceId);
+  return token;
+}
+
+type FeedItem = {
+  uid: string; title: string; start: string; end: string; // end is exclusive (DTEND)
+  description?: string;
+};
+
+function addDays(iso: string, days: number) {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function fold(line: string): string {
+  // iCal lines should be <=75 octets; fold long ones.
+  if (line.length <= 73) return line;
+  const parts: string[] = [];
+  let s = line;
+  parts.push(s.slice(0, 73));
+  s = s.slice(73);
+  while (s.length > 72) { parts.push(" " + s.slice(0, 72)); s = s.slice(72); }
+  if (s.length) parts.push(" " + s);
+  return parts.join("\r\n");
+}
+
+function esc(t: string): string {
+  return (t || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+}
+
+function ymd(iso: string): string {
+  return iso.replace(/-/g, "");
+}
+
+export function buildICS(calName: string, items: FeedItem[]): string {
+  const now = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const lines: string[] = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Dialoggg//Schedule//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    fold("X-WR-CALNAME:" + esc(calName)),
+  ];
+  for (const it of items) {
+    lines.push("BEGIN:VEVENT");
+    lines.push("UID:" + it.uid + "@dialoggg");
+    lines.push("DTSTAMP:" + now);
+    lines.push("DTSTART;VALUE=DATE:" + ymd(it.start));
+    lines.push("DTEND;VALUE=DATE:" + ymd(it.end));
+    lines.push(fold("SUMMARY:" + esc(it.title)));
+    if (it.description) lines.push(fold("DESCRIPTION:" + esc(it.description)));
+    lines.push("END:VEVENT");
+  }
+  lines.push("END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
+// Build feed items for a single project (its tasks + events).
+export function projectFeedItems(projectId: number): FeedItem[] {
+  const tasks = db.prepare(
+    "SELECT * FROM task WHERE project_id = ? AND is_header = 0",
+  ).all(projectId) as any[];
+  const events = db.prepare("SELECT * FROM event WHERE project_id = ?").all(projectId) as any[];
+  return [
+    ...tasks.map(t => ({
+      uid: `task-${t.id}`, title: t.name,
+      start: t.start_date, end: addDays(t.start_date, t.duration),
+      description: "Dialoggg task",
+    })),
+    ...events.map(e => ({
+      uid: `event-${e.id}`, title: e.title,
+      start: e.start_date, end: addDays(e.end_date || e.start_date, 1),
+      description: e.description || "Dialoggg event",
+    })),
+  ];
+}
+
+// Build feed items for ONE resource: only the tasks they're assigned to, across all projects.
+export function resourceFeedItems(resourceId: number): FeedItem[] {
+  const tasks = db.prepare(`
+    SELECT t.*, p.name AS project_name FROM task t
+    JOIN task_resource tr ON tr.task_id = t.id
+    JOIN project p ON p.id = t.project_id
+    WHERE tr.resource_id = ? AND t.is_header = 0
+  `).all(resourceId) as any[];
+  return tasks.map(t => ({
+    uid: `task-${t.id}-r${resourceId}`,
+    title: `${t.name} (${t.project_name})`,
+    start: t.start_date, end: addDays(t.start_date, t.duration),
+    description: t.project_name,
+  }));
+}
+
+// Build feed items for every project in a company (the master feed).
+export function companyFeedItems(companyId: number): FeedItem[] {
+  const projects = db.prepare("SELECT id, name FROM project WHERE company_id = ?").all(companyId) as any[];
+  const items: FeedItem[] = [];
+  for (const p of projects) {
+    const tasks = db.prepare("SELECT * FROM task WHERE project_id = ? AND is_header = 0").all(p.id) as any[];
+    const events = db.prepare("SELECT * FROM event WHERE project_id = ?").all(p.id) as any[];
+    for (const t of tasks) items.push({
+      uid: `task-${t.id}`, title: `${t.name} (${p.name})`,
+      start: t.start_date, end: addDays(t.start_date, t.duration), description: p.name,
+    });
+    for (const e of events) items.push({
+      uid: `event-${e.id}`, title: `${e.title} (${p.name})`,
+      start: e.start_date, end: addDays(e.end_date || e.start_date, 1), description: p.name,
+    });
+  }
+  return items;
+}

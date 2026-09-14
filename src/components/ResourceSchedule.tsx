@@ -1,0 +1,40 @@
+"use client";
+
+import FullCalendar from "@fullcalendar/react";
+import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
+import interactionPlugin from "@fullcalendar/interaction";
+import { useEffect, useState } from "react";
+
+type Resource = { id: string; title: string };
+type Evt = { id: string; resourceId: string; title: string; start: string; end: string; color: string };
+
+export default function ResourceSchedule({ projectId }: { projectId: number }) {
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [events, setEvents] = useState<Evt[]>([]);
+
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/resource-schedule`)
+      .then(r => r.json())
+      .then(j => { setResources(j.resources || []); setEvents(j.events || []); });
+  }, [projectId]);
+
+  return (
+    <div className="bg-white border rounded shadow-sm p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-semibold">Project Resources</h2>
+        <div className="text-xs text-gray-500">Each row represents a Resource; bars show its assigned Tasks.</div>
+      </div>
+      <FullCalendar
+        plugins={[resourceTimelinePlugin, interactionPlugin]}
+        initialView="resourceTimelineMonth"
+        headerToolbar={{ left: "prev,next today", center: "title", right: "resourceTimelineMonth,resourceTimelineWeek" }}
+        resources={resources as any}
+        events={events as any}
+        resourceAreaHeaderContent="Resources"
+        resourceAreaWidth="20%"
+        height={650}
+        schedulerLicenseKey="GPL-My-Project-Is-Open-Source"
+      />
+    </div>
+  );
+}

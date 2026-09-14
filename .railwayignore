@@ -1,0 +1,11 @@
+.next
+.tools
+data
+guide-shots
+node_modules
+planning
+*.db
+*.db-shm
+*.db-wal
+.test-*
+
