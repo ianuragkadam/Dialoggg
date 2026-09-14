@@ -13,7 +13,7 @@ Last verified: September 14, 2026
 
 ## Requirements validation
 
-Scott's workshop remained in progress at the latest release verification. Final requirements must be converted into acceptance criteria before implementing the remaining modules.
+Scott completed all 55 workshop questions at the latest release verification, with five question comments saved. The answers and comments must now be reviewed and converted into acceptance criteria before implementing the remaining modules.
 
 ## Not complete Reboot v1 scope
 
