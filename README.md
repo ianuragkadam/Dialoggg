@@ -34,4 +34,4 @@ The default test command runs the unit/foundation checks, a production build, an
 - [Maintenance](docs/MAINTENANCE.md)
 - [Contributing](CONTRIBUTING.md)
 
-The current delivery status and remaining Reboot scope are tracked in [Dialoggg Project Progress](../Dialoggg_Project_Progress.md).
+The repository-level delivery boundary is recorded in [Product Status](docs/PRODUCT_STATUS.md). The detailed working log remains in the separate project progress file maintained with the client documents.

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Dialoggg project scheduling and resource coordination application",
   "private": true,
+  "packageManager": "npm@10.8.2",
   "scripts": {
     "test": "npm run test:unit && npm run build && npm run test:scenarios",
     "test:unit": "node --test tests/foundation.test.mjs",
