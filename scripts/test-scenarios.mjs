@@ -429,6 +429,28 @@ try {
     assert.equal(response.status, 404);
   });
 
+  await check("signed-out Resource UI routes redirect to Login", async () => {
+    for (const route of ["/resources", "/resources/new", "/resources/jamie-morgan"]) {
+      const response = await anonymous.request(route);
+      assert.equal(response.status, 307, route);
+      assert.ok(response.headers.get("location")?.endsWith("/login"), route);
+    }
+  });
+
+  await check("Admin opens every Resource UI route", async () => {
+    for (const [route, pattern] of [["/resources", /Company Resource directory/], ["/resources/new", /Optional User link/], ["/resources/jamie-morgan", /Task and Event schedule/]]) {
+      const response = await adminA.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, pattern);
+      assert.match(response.text, /UI preview/);
+    }
+  });
+
+  await check("unknown Resource detail returns not found for Admin", async () => {
+    const response = await adminA.request("/resources/not-a-resource");
+    assert.equal(response.status, 404);
+  });
+
   await check("signed-in root redirects to projects", async () => {
     const response = await adminA.request("/");
     assert.equal(response.status, 307);
@@ -610,6 +632,19 @@ try {
       assert.match(response.text, /restricted/i, route);
       assert.doesNotMatch(response.text, /Scott Grote|Alex Rivera/, route);
     }
+  });
+
+  await check("Employee receives read-only Resources and cannot add one", async () => {
+    for (const route of ["/resources", "/resources/jamie-morgan"]) {
+      const response = await viewerA.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, /Employee read-only/);
+      assert.doesNotMatch(response.text, /Edit Resource|Deactivate Resource|\+ Add Resource/);
+    }
+    const create = await viewerA.request("/resources/new");
+    assert.equal(create.status, 200);
+    assert.match(create.text, /Resource management is restricted/);
+    assert.doesNotMatch(create.text, /Optional User link/);
   });
 
   await check("viewer cannot create projects", async () => {

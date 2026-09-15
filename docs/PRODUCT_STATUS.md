@@ -26,6 +26,9 @@ Last verified: September 15, 2026
 - Users, Roles, Invitations, and Project Access UI at `/users`, `/users/new`, `/users/[id]`, and `/users/[id]/projects`
 - Approved fixed Roles, search/filtering, invitation review, optional linked Resource, lifecycle confirmations, exact Project-access changes, External/Client minimum access, and Owner/Admin locks
 - Focused automated and human-click QA completed; the incorrect Owner-screen Employee explanation found manually was fixed and regression-tested
+- Resources and fixed Resource Categories UI at `/resources`, `/resources/new`, and `/resources/[id]`
+- Five fixed Categories, searchable directory, create/edit review, one-to-one User linkage, Task/Event schedule, explicit conflict acknowledgement, independent lifecycle confirmation, and Employee read-only states
+- Focused automated and human-click QA completed; ambiguous lifecycle-control names and stakeholder-specific conflict copy found manually were fixed and regression-tested
 
 ## Requirements validation
 
@@ -35,6 +38,7 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 
 - Company Administration persistence, first-Owner invitation delivery, audit records, suspension enforcement, and synchronization control; the complete UI review module is implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
+- Resource persistence, fixed-Category enforcement, User linkage, Event assignment, and lifecycle enforcement; the complete UI review module is implemented
 - Project Types persistence/API/Project integration and complete project-access behavior; the UI review module is complete
 - Project Templates persistence, APIs, live source-Project loading, and Template instantiation; the complete UI review module is implemented
 - Complete weekend-aware Gantt cascade rules

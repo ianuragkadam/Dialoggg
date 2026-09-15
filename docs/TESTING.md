@@ -71,3 +71,15 @@ node scripts/test-users-access-ui.mjs
 ```
 
 The script creates only isolated local Admin and Employee test identities in a temporary database and removes the database after completion. It never mutates production Users, Project access, invitations, sessions, Resources, or company records.
+
+## Resources UI Playwright check
+
+The Resources UI has a focused browser script at `scripts/test-resources-ui.mjs`. It verifies the five fixed Categories, search/filter recovery, distinct lifecycle-control names, deactivation/restoration history language, required and duplicate validation, exact Add Resource review, keyboard Escape, one-to-one User linkage, Task/Event schedule details, explicit conflict acknowledgement, Employee read-only access, signed-out redirects, and phone-width overflow.
+
+With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
+
+```powershell
+node scripts/test-resources-ui.mjs
+```
+
+The script creates only isolated local Admin and Employee test identities in a temporary database and removes the database after completion. It never mutates production Resources, Users, assignments, calendars, feeds, or company records.

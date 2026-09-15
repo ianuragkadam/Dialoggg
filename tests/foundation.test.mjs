@@ -157,6 +157,23 @@ test("Users, Roles, Invitations, and Project Access UI covers the approved fixed
   assert.match(`${list}\n${invite}\n${detail}\n${access}`, /UI preview/);
 });
 
+test("Resources UI covers fixed Categories, one-to-one links, lifecycle, and conflict warning", async () => {
+  const data = await read("src/lib/resources-ui.ts");
+  const list = await read("src/components/ResourcesPrototype.tsx");
+  const create = await read("src/components/ResourceFormPrototype.tsx");
+  const detail = await read("src/components/ResourceDetailPrototype.tsx");
+  for (const category of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) assert.match(data, new RegExp(`"${category}"`));
+  assert.match(list, /no category builder/);
+  assert.match(list, /Deactivate Resource\?/);
+  assert.match(create, /Optional User link/);
+  assert.match(create, /already linked one-to-one/);
+  assert.match(create, /Confirm Resource/);
+  assert.match(detail, /Change linked User/);
+  assert.match(detail, /Schedule conflict warning/);
+  assert.match(detail, /Historical assignments and names remain visible/);
+  assert.match(`${list}\n${create}\n${detail}`, /UI preview/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",
