@@ -19,6 +19,7 @@
     "test:ui:users-access": "node scripts/test-users-access-ui.mjs",
     "test:ui:resources": "node scripts/test-resources-ui.mjs",
     "test:ui:projects": "node scripts/test-projects-ui.mjs",
+    "test:ui:project-plan": "node scripts/test-project-plan-ui.mjs",
     "db:backup": "node scripts/backup-database.mjs",
     "db:restore": "node scripts/restore-database.mjs",
     "seed": "node --experimental-strip-types src/db/seed.ts"

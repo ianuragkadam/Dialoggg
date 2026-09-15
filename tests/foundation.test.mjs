@@ -191,6 +191,20 @@ test("Projects UI covers complete fields, lifecycle, rebase, and External bounda
   assert.match(`${list}\n${form}\n${detail}`, /UI preview/);
 });
 
+test("Project Plan workflow UI covers approved scheduling rules without replacing the original Gantt", async () => {
+  const review = await read("src/components/ProjectPlanWorkflowReview.tsx");
+  const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
+  const gantt = await read("src/components/GanttChart.tsx");
+  for (const value of ["Leaf Task", "Header Task", "Time Period", "Finish-to-Start", "Start-to-Start", "Finish-to-Finish", "Start-to-Finish", "Allow work on Saturday", "Allow work on Sunday", "Multiple predecessors", "Bidirectional cascade", "Root Header Task is protected", "Header Task cannot be deleted", "Delete Task?"]) assert.match(review, new RegExp(value.replace(/[+?()]/g, "\\$&")));
+  assert.match(review, /latest valid result wins/i);
+  assert.match(review, /zero or a positive whole number/i);
+  assert.match(review, /Original Gantt retained/);
+  assert.match(tabs, /ProjectPlanWorkflowReview/);
+  assert.match(tabs, /<GanttChart projectId=/);
+  assert.match(gantt, /dhtmlx-gantt/);
+  assert.doesNotMatch(review, /import\(.+GanttChart|from ["']@\/components\/GanttChart/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",

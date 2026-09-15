@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 
 const GanttChart = dynamic(() => import("@/components/GanttChart"), { ssr: false });
+const ProjectPlanWorkflowReview = dynamic(() => import("@/components/ProjectPlanWorkflowReview"), { ssr: false });
 const ProjectCalendar = dynamic(() => import("@/components/ProjectCalendar"), { ssr: false });
 const ResourceSchedule = dynamic(() => import("@/components/ResourceSchedule"), { ssr: false });
 
@@ -54,7 +55,12 @@ export default function ProjectTabs({
 
       <div>
         {tab === "details" && <Details project={project} internalUsers={internalUsers} />}
-        {tab === "plan"      && <GanttChart projectId={project.id} canEdit={canEdit} />}
+        {tab === "plan"      && (
+          <div className="space-y-3">
+            <ProjectPlanWorkflowReview projectName={project.name} canEdit={canEdit} />
+            <GanttChart projectId={project.id} canEdit={canEdit} />
+          </div>
+        )}
         {tab === "calendar"  && <ProjectCalendar projectId={project.id} />}
         {tab === "resources" && <ResourceSchedule projectId={project.id} />}
       </div>
