@@ -379,6 +379,34 @@ try {
     assert.match(response.text, /UI preview/);
   });
 
+  await check("signed-out Project Templates routes redirect to login", async () => {
+    for (const route of ["/templates", "/templates/new", "/templates/backyard-court", "/templates/backyard-court/use"]) {
+      const response = await anonymous.request(route);
+      assert.equal(response.status, 307, route);
+      assert.ok(response.headers.get("location")?.endsWith("/login"), route);
+    }
+  });
+
+  await check("admin can open every Project Templates UI route", async () => {
+    const expectations = [
+      ["/templates", /Template Library/],
+      ["/templates/new", /Save Project as Template/],
+      ["/templates/backyard-court", /Project Plan preview/],
+      ["/templates/backyard-court/use", /Start Project from Template/],
+    ];
+    for (const [route, pattern] of expectations) {
+      const response = await adminA.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, pattern);
+      assert.match(response.text, /UI preview/);
+    }
+  });
+
+  await check("unknown Project Template returns not found for an admin", async () => {
+    const response = await adminA.request("/templates/not-a-template");
+    assert.equal(response.status, 404);
+  });
+
   await check("help content no longer advertises in-app storage", async () => {
     const response = await adminA.request("/help");
     assert.equal(response.status, 200);
@@ -470,6 +498,15 @@ try {
     assert.equal(response.status, 200);
     assert.match(response.text, /Project Types are restricted/);
     assert.doesNotMatch(response.text, /Acrylic|Hardwood|Modular/);
+  });
+
+  await check("Employee cannot view Project Template management data", async () => {
+    for (const route of ["/templates", "/templates/new", "/templates/backyard-court", "/templates/backyard-court/use"]) {
+      const response = await viewerA.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, /Project Templates are restricted/);
+      assert.doesNotMatch(response.text, /Miller Residence|Westfield Recreation Center|Hillside Tennis Club/);
+    }
   });
 
   await check("viewer cannot create projects", async () => {

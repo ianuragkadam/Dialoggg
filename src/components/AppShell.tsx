@@ -15,6 +15,7 @@ const MENU = [
   { label: "Resources",          href: "/resources",           icon: "👤", adminOnly: false },
   { label: "Users",              href: "/users",               icon: "🧑‍💼", adminOnly: true },
   { label: "Project Types",      href: "/settings/project-types", icon: "🏷️", adminOnly: true },
+  { label: "Project Templates",  href: "/templates",           icon: "📋", adminOnly: true },
   { label: "Account",            href: "/account",             icon: "⚙️", adminOnly: false },
   { label: "Help",               href: "/help",                icon: "❓", adminOnly: false },
 ];

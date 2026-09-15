@@ -68,6 +68,43 @@ test("registration performs a reliable full navigation into Projects", async () 
   assert.doesNotMatch(registration, /router\.push\("\/projects"\)/);
 });
 
+test("Login labels are programmatically associated with their fields", async () => {
+  const login = await read("src/components/LoginForm.tsx");
+  assert.match(login, /htmlFor="login-email"/);
+  assert.match(login, /id="login-email"/);
+  assert.match(login, /htmlFor="login-password"/);
+  assert.match(login, /id="login-password"/);
+  assert.match(login, /role="alert"/);
+});
+
+test("Project Templates UI covers library, source Plan, detail, and use workflows", async () => {
+  const data = await read("src/lib/project-templates-ui.ts");
+  const library = await read("src/components/ProjectTemplatesPrototype.tsx");
+  const create = await read("src/components/TemplateCreatePrototype.tsx");
+  const detail = await read("src/components/TemplateDetailPrototype.tsx");
+  const use = await read("src/components/TemplateUsePrototype.tsx");
+  const shell = await read("src/components/AppShell.tsx");
+
+  assert.match(shell, /Project Templates/);
+  assert.match(shell, /\/templates/);
+  assert.match(data, /Backyard Court/);
+  assert.match(data, /Commercial Athletic Surface/);
+  assert.match(data, /Court Resurfacing/);
+  assert.match(library, /Template Library/);
+  assert.match(library, /Rename Template/);
+  assert.match(library, /Delete Template\?/);
+  assert.match(library, /Discard unsaved changes\?/);
+  assert.match(create, /Save Project as Template/);
+  assert.match(create, /Also save current Resource assignments/);
+  assert.match(detail, /Project Plan preview/);
+  assert.match(detail, /no separate Template schedule editor/);
+  assert.match(use, /Start Project from Template/);
+  assert.match(use, /Confirm Project setup/);
+  assert.match(use, /existing original Project Plan\/Gantt chart/);
+  assert.match(`${library}\n${create}\n${detail}\n${use}`, /UI preview/);
+  assert.doesNotMatch(`${library}\n${create}\n${detail}\n${use}`, /import\(.+GanttChart|from ["']@\/components\/GanttChart/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",

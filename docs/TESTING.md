@@ -35,3 +35,15 @@ node scripts/test-project-types-ui.mjs
 ```
 
 The check never points at the production database and removes its temporary database after completion.
+
+## Project Templates UI Playwright check
+
+The Project Templates UI has a focused browser script at `scripts/test-project-templates-ui.mjs`. It verifies the Template Library, search, rename validation, unsaved-change protection, delete confirmation, Template details, save-from-Project workflow, start-from-Template confirmation, keyboard Escape, responsive overflow, role restriction, and signed-out routing.
+
+With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
+
+```powershell
+node scripts/test-project-templates-ui.mjs
+```
+
+The script creates only temporary local Users and data and removes its database after completion. It does not call production APIs or modify the existing Gantt.

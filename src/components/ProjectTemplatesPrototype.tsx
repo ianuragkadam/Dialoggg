@@ -1,0 +1,236 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { PROJECT_TEMPLATE_UI_DATA, type ProjectTemplateUiItem } from "@/lib/project-templates-ui";
+
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current" strokeWidth="2">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m16.5 16.5 4 4" />
+    </svg>
+  );
+}
+
+export default function ProjectTemplatesPrototype() {
+  const [items, setItems] = useState(PROJECT_TEMPLATE_UI_DATA);
+  const [query, setQuery] = useState("");
+  const [renameTarget, setRenameTarget] = useState<ProjectTemplateUiItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProjectTemplateUiItem | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [error, setError] = useState("");
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [toast, setToast] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visibleItems = useMemo(
+    () => items.filter(item => `${item.name} ${item.sourceProject}`.toLocaleLowerCase().includes(normalizedQuery)),
+    [items, normalizedQuery],
+  );
+  const totalTasks = items.reduce((sum, item) => sum + item.taskCount, 0);
+  const modalOpen = !!renameTarget || !!deleteTarget || discardOpen;
+
+  useEffect(() => {
+    if (renameTarget && !discardOpen) window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, [renameTarget, discardOpen]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(""), 4500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (discardOpen) setDiscardOpen(false);
+      else if (renameTarget) requestRenameClose();
+      else closeDelete();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  });
+
+  function rememberTrigger(target: EventTarget | null) {
+    triggerRef.current = target instanceof HTMLElement ? target : null;
+  }
+
+  function restoreFocus() {
+    const trigger = triggerRef.current;
+    window.setTimeout(() => trigger?.focus(), 0);
+  }
+
+  function openRename(item: ProjectTemplateUiItem, event: React.MouseEvent<HTMLButtonElement>) {
+    rememberTrigger(event.currentTarget);
+    setRenameTarget(item);
+    setDraftName(item.name);
+    setError("");
+  }
+
+  function closeRename() {
+    setRenameTarget(null);
+    setDraftName("");
+    setError("");
+    setDiscardOpen(false);
+    restoreFocus();
+  }
+
+  function requestRenameClose() {
+    if (renameTarget && draftName.trim() !== renameTarget.name) setDiscardOpen(true);
+    else closeRename();
+  }
+
+  function saveRename(event: React.FormEvent) {
+    event.preventDefault();
+    if (!renameTarget) return;
+    const name = draftName.trim();
+    if (!name) return setError("Enter a Template name.");
+    if (name.length > 80) return setError("Use 80 characters or fewer.");
+    if (items.some(item => item.id !== renameTarget.id && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+      return setError(`A Template named “${name}” already exists.`);
+    }
+    const previousName = renameTarget.name;
+    setItems(current => current.map(item => item.id === renameTarget.id ? { ...item, name, updatedLabel: "Just now" } : item));
+    setToast(`${previousName} was renamed to ${name}. Existing Projects were not changed.`);
+    closeRename();
+  }
+
+  function openDelete(item: ProjectTemplateUiItem, event: React.MouseEvent<HTMLButtonElement>) {
+    rememberTrigger(event.currentTarget);
+    setDeleteTarget(item);
+  }
+
+  function closeDelete() {
+    setDeleteTarget(null);
+    restoreFocus();
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    const name = deleteTarget.name;
+    setItems(current => current.filter(item => item.id !== deleteTarget.id));
+    setDeleteTarget(null);
+    setToast(`${name} was deleted from this UI preview. Existing Projects were not changed.`);
+    restoreFocus();
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6 pb-10">
+      <nav aria-label="Breadcrumb" className="text-sm text-slate-500">
+        <span>Projects</span><span aria-hidden="true" className="px-2">/</span><span className="font-medium text-slate-800">Project Templates</span>
+      </nav>
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Project Templates</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            Reuse a proven Project Plan without carrying across fixed dates or completed progress.
+          </p>
+        </div>
+        <Link href="/templates/new" className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2">
+          <span aria-hidden="true" className="mr-2 text-lg">+</span>Save Project as Template
+        </Link>
+      </div>
+
+      <section aria-label="Prototype notice" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
+        <p className="font-semibold">UI preview</p>
+        <p>These screens demonstrate the complete Template workflow. Changes last until refresh and never alter production Projects, Tasks, Resources, or Templates.</p>
+      </section>
+
+      <section aria-label="Template summary" className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-sm font-medium text-slate-500">Company Templates</p><p className="mt-1 text-2xl font-bold text-slate-950">{items.length}</p></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-sm font-medium text-slate-500">Reusable Tasks</p><p className="mt-1 text-2xl font-bold text-slate-950">{totalTasks}</p></div>
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm"><p className="text-sm font-medium text-emerald-800">Progress copied</p><p className="mt-1 text-2xl font-bold text-emerald-950">0%</p></div>
+      </section>
+
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="template-library-title">
+        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><h2 id="template-library-title" className="font-bold text-slate-950">Template Library</h2><p className="mt-1 text-sm text-slate-500">Only your company&apos;s Templates appear here.</p></div>
+          <div className="relative w-full sm:w-80">
+            <label htmlFor="template-search" className="sr-only">Search Project Templates</label>
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400"><SearchIcon /></span>
+            <input id="template-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search Templates or source Projects" className="min-h-11 w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200" />
+          </div>
+        </div>
+
+        {visibleItems.length === 0 ? (
+          <div className="px-6 py-14 text-center">
+            <div aria-hidden="true" className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-2xl">📋</div>
+            <h3 className="mt-4 font-bold text-slate-950">No matching Templates</h3>
+            <p className="mt-1 text-sm text-slate-500">No Template or source Project matches “{query.trim()}”.</p>
+            <button type="button" onClick={() => setQuery("")} className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2">Clear search</button>
+          </div>
+        ) : (
+          <div className="grid gap-4 p-4 lg:grid-cols-2 xl:grid-cols-3">
+            {visibleItems.map(item => (
+              <article key={item.id} className="flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow-md">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0"><h3 className="truncate text-lg font-bold text-slate-950">{item.name}</h3><p className="mt-1 truncate text-xs text-slate-500">Saved from {item.sourceProject}</p></div>
+                  <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Template</span>
+                </div>
+                <dl className="mt-5 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-slate-50 p-2"><dt className="text-xs text-slate-500">Tasks</dt><dd className="mt-1 font-bold text-slate-900">{item.taskCount}</dd></div>
+                  <div className="rounded-lg bg-slate-50 p-2"><dt className="text-xs text-slate-500">Days</dt><dd className="mt-1 font-bold text-slate-900">{item.workingDays}</dd></div>
+                  <div className="rounded-lg bg-slate-50 p-2"><dt className="text-xs text-slate-500">Categories</dt><dd className="mt-1 font-bold text-slate-900">{item.categoryCount}</dd></div>
+                </dl>
+                <p className="mt-4 text-xs text-slate-500">Updated {item.updatedLabel}</p>
+                <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                  <Link href={`/templates/${item.id}`} className="min-h-10 rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600">View</Link>
+                  <Link href={`/templates/${item.id}/use`} className="min-h-10 rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600">Use Template</Link>
+                  <button type="button" onClick={event => openRename(item, event)} aria-label={`Rename ${item.name}`} className="min-h-10 rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600">Rename</button>
+                  <button type="button" onClick={event => openDelete(item, event)} aria-label={`Delete ${item.name}`} className="min-h-10 rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-600">Delete</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="template-rules" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 id="template-rules" className="font-bold text-slate-950">What every Template remembers</h2>
+        <ul className="mt-3 grid gap-3 text-sm leading-6 text-slate-600 md:grid-cols-2 xl:grid-cols-4">
+          <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Plan structure</strong>Task names, Headers, durations, links, lag, colors, and relative offsets.</li>
+          <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Working rules</strong>Saturday and Sunday settings travel with the saved Tasks.</li>
+          <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Clean start</strong>Fixed dates are recalculated and every Task begins at 0% progress.</li>
+          <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Independent Projects</strong>Renaming or deleting a Template never changes Projects already made from it.</li>
+        </ul>
+      </section>
+
+      {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-md rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl"><span aria-hidden="true" className="mr-2 text-emerald-400">✓</span>{toast}</div>}
+
+      {renameTarget && !discardOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={event => { if (event.target === event.currentTarget) requestRenameClose(); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="rename-template-title" aria-describedby="rename-template-description" className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-5 py-4"><h2 id="rename-template-title" className="text-xl font-bold text-slate-950">Rename Template</h2><p id="rename-template-description" className="mt-1 text-sm text-slate-500">Change the library name for “{renameTarget.name}”.</p></div>
+            <form onSubmit={saveRename} noValidate>
+              <div className="space-y-4 px-5 py-5">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-950">Projects previously created from this Template will keep their existing Plans and names.</div>
+                <div><label htmlFor="template-name" className="block text-sm font-bold text-slate-800">Template name <span aria-hidden="true" className="text-red-600">*</span></label><input ref={inputRef} id="template-name" value={draftName} onChange={event => { setDraftName(event.target.value); setError(""); }} aria-required="true" aria-invalid={!!error} aria-describedby={error ? "template-name-help template-name-error" : "template-name-help"} maxLength={81} className={`mt-1 min-h-11 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${error ? "border-red-500 focus:ring-red-100" : "border-slate-300 focus:border-blue-600 focus:ring-blue-200"}`} /><div className="mt-1 flex justify-between gap-3"><p id="template-name-help" className="text-xs text-slate-500">1–80 characters; unique within this company.</p><span className="text-xs text-slate-400">{draftName.length}/80</span></div>{error && <p id="template-name-error" role="alert" className="mt-2 text-sm font-semibold text-red-700">{error}</p>}</div>
+              </div>
+              <div className="flex flex-col-reverse gap-2 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end"><button type="button" onClick={requestRenameClose} className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">Cancel</button><button type="submit" className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-blue-600">Save new name</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {discardOpen && renameTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4"><div role="alertdialog" aria-modal="true" aria-labelledby="discard-template-title" aria-describedby="discard-template-description" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-100 text-xl">!</div><h2 id="discard-template-title" className="mt-4 text-xl font-bold text-slate-950">Discard unsaved changes?</h2><p id="discard-template-description" className="mt-2 text-sm leading-6 text-slate-600">The new Template name has not been saved.</p><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" autoFocus onClick={() => setDiscardOpen(false)} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">Keep editing</button><button type="button" onClick={closeRename} className="min-h-11 rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-red-600">Discard changes</button></div></div></div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={event => { if (event.target === event.currentTarget) closeDelete(); }}><div role="alertdialog" aria-modal="true" aria-labelledby="delete-template-title" aria-describedby="delete-template-description" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-xl text-red-700">!</div><h2 id="delete-template-title" className="mt-4 text-xl font-bold text-slate-950">Delete Template?</h2><p id="delete-template-description" className="mt-2 text-sm leading-6 text-slate-600"><strong className="text-slate-900">{deleteTarget.name}</strong> will be removed from the Template Library. Existing Projects created from it will not change. This cannot be undone.</p><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" autoFocus onClick={closeDelete} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">Cancel</button><button type="button" onClick={confirmDelete} className="min-h-11 rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-red-600">Delete Template</button></div></div></div>
+      )}
+    </div>
+  );
+}

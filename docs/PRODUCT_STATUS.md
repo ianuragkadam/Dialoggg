@@ -17,6 +17,9 @@ Last verified: September 15, 2026
 - Admin navigation and Employee restricted-access state
 - Create, rename, duplicate validation, search, empty results, safe delete, blocked delete, unsaved-change protection, responsive cards, and accessible dialogs
 - UI-only demonstration state is clearly labelled and does not change production Project records
+- Project Templates UI at `/templates`, `/templates/new`, `/templates/[id]`, and `/templates/[id]/use`
+- Template Library, source-Project save workflow, read-only Plan detail, start-from-Template setup, exact confirmations, role restriction, and responsive states
+- The existing original Gantt remains unchanged and is the planned destination for instantiated Project Tasks
 
 ## Requirements validation
 
@@ -27,7 +30,7 @@ Scott completed all 55 workshop questions at the latest release verification, wi
 - Platform Administrator and company provisioning
 - Final Owner, Admin, Employee (Internal), and External/Client permissions
 - Project Types persistence/API/Project integration and complete project-access behavior; the UI review module is complete
-- Project Templates and Template Library
+- Project Templates persistence, APIs, live source-Project loading, and Template instantiation; the complete UI review module is implemented
 - Complete weekend-aware Gantt cascade rules
 - Full Event management and approved calendar behavior
 - Google Calendar API synchronization

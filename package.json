@@ -14,6 +14,7 @@
     "start": "node scripts/start-production.mjs",
     "test:scenarios": "node scripts/test-scenarios.mjs",
     "test:ui:project-types": "node scripts/test-project-types-ui.mjs",
+    "test:ui:project-templates": "node scripts/test-project-templates-ui.mjs",
     "db:backup": "node scripts/backup-database.mjs",
     "db:restore": "node scripts/restore-database.mjs",
     "seed": "node --experimental-strip-types src/db/seed.ts"
