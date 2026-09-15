@@ -174,6 +174,23 @@ test("Resources UI covers fixed Categories, one-to-one links, lifecycle, and con
   assert.match(`${list}\n${create}\n${detail}`, /UI preview/);
 });
 
+test("Projects UI covers complete fields, lifecycle, rebase, and External boundaries", async () => {
+  const data = await read("src/lib/projects-ui.ts");
+  const list = await read("src/components/ProjectsPrototype.tsx");
+  const form = await read("src/components/ProjectFormPrototype.tsx");
+  const detail = await read("src/components/ProjectWorkspacePrototype.tsx");
+  assert.match(data, /Residential Court/);
+  assert.match(list, /External\/Client assigned Projects only/);
+  for (const field of ["Project Name", "Client Name", "Client Email", "Address", "City", "State", "Zip", "Phone Number", "Project Type", "Project Start Date"]) assert.match(form, new RegExp(field));
+  assert.match(form, /Completed Tasks never move/);
+  assert.match(form, /Shift unfinished Tasks/);
+  assert.match(detail, /Complete Project\?/);
+  assert.match(detail, /Archive Project\?/);
+  assert.match(detail, /Permanently delete Project\?/);
+  assert.match(detail, /Simple read-only Gantt/);
+  assert.match(`${list}\n${form}\n${detail}`, /UI preview/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",

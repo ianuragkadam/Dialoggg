@@ -60,7 +60,8 @@ export default function AppShell({ user, children }: { user: User; children: Rea
             {MENU.filter(m => {
               if (m.platformOnly) return platformAdmin;
               if (platformAdmin && m.tenantOnly) return false;
-              return !m.adminOnly || user.user_type === "admin";
+              if (user.user_type === "external" && ["My Projects", "Master Calendar", "Resource Calendar", "Resources"].includes(m.label)) return false;
+              return !m.adminOnly || user.user_type === "admin" || user.user_type === "owner";
             }).map(m => {
               const active = pathname === m.href || (m.href !== "/" && pathname.startsWith(m.href));
               return (

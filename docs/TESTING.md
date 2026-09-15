@@ -83,3 +83,15 @@ node scripts/test-resources-ui.mjs
 ```
 
 The script creates only isolated local Admin and Employee test identities in a temporary database and removes the database after completion. It never mutates production Resources, Users, assignments, calendars, feeds, or company records.
+
+## Projects UI Playwright check
+
+The Projects UI has a focused browser script at `scripts/test-projects-ui.mjs`. It verifies directory filters, all required setup fields, Template/blank Plan choice, exact User/detail review, keyboard Escape, non-persistent completion, original Project Plan presence, every lifecycle confirmation, Start Date date-only/shift choice, completed-history protection, Owner-only permanent-delete friction, Completed/Archived direct-edit guards, Employee company visibility, External assigned-only/safe-view boundaries, signed-out routing, and phone-width overflow.
+
+With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
+
+```powershell
+node scripts/test-projects-ui.mjs
+```
+
+The script creates isolated local Admin, Owner, Employee, and External/Client identities plus temporary Projects/Tasks, then removes its database. It never mutates production Projects, Tasks, calendars, Google items, Microsoft links, Users, or assignments.

@@ -10,7 +10,7 @@ export type Role = "admin" | "viewer";
 
 export type User = {
   id: number; email: string; full_name: string | null;
-  user_type: "super_admin" | "admin" | "viewer" | "internal" | "external";
+  user_type: "super_admin" | "owner" | "admin" | "viewer" | "internal" | "external";
   company_id: number | null;
 };
 

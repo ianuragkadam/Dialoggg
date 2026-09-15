@@ -1,58 +1,19 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import db from "@/db";
+import ProjectWorkspacePrototype from "@/components/ProjectWorkspacePrototype";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
-import ProjectTabs from "./tabs-client";
-import { statusLabel } from "@/lib/product-language";
-
-type Project = {
-  id: number; name: string; status: string;
-  client_name: string | null; client_email: string | null;
-  address: string | null; city: string | null; state: string | null; zip: string | null;
-  phone: string | null; start_date: string; end_date: string | null; note: string | null;
-};
+import type { ProjectUiRecord } from "@/lib/projects-ui";
 
 export default async function ProjectViewPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const user = await getCurrentUser();
+  const { id } = await params; const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const project = db.prepare(
-    "SELECT * FROM project WHERE id = ? AND company_id = ?",
-  ).get(Number(id), user.company_id) as Project | undefined;
+  const external = user.user_type === "external";
+  const project = db.prepare(`SELECT p.*, COUNT(t.id) AS task_count, SUM(CASE WHEN t.progress >= 1 THEN 1 ELSE 0 END) AS completed_task_count, MAX(CASE WHEN t.is_header = 0 THEN date(t.start_date, '+' || MAX(t.duration - 1, 0) || ' day') END) AS derived_end_date FROM project p LEFT JOIN task t ON t.project_id = p.id WHERE p.id = ? AND p.company_id = ? GROUP BY p.id`).get(Number(id), user.company_id) as ProjectUiRecord | undefined;
   if (!project) notFound();
-
-  const internalUsers = db.prepare(`
-    SELECT u.full_name, u.email FROM user u
-    JOIN project_user pu ON pu.user_id = u.id
-    WHERE pu.project_id = ?
-  `).all(project.id) as any[];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/projects" className="hover:text-blue-700">Projects</Link>
-        <span>›</span>
-        <span className="text-gray-800">{project.name}</span>
-      </div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{project.name}</h1>
-          <div className="text-sm text-gray-600">
-            {project.client_name && <>Client: <strong>{project.client_name}</strong> · </>}
-            Start: <strong>{project.start_date}</strong>
-            {project.end_date && <> · End: <strong>{project.end_date}</strong></>}
-          </div>
-        </div>
-        <span className={`text-xs px-3 py-1 rounded ${
-          project.status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"
-        }`}>{statusLabel(project.status)}</span>
-      </div>
-
-      <ProjectTabs
-        project={project as any}
-        internalUsers={internalUsers}
-        canEdit={isAdmin(user)}
-      />
-    </div>
-  );
+  if (external) {
+    const assigned = db.prepare("SELECT 1 FROM project_user WHERE project_id = ? AND user_id = ?").get(project.id, user.id);
+    if (!assigned) notFound();
+  }
+  const internalUsers = external ? [] : db.prepare(`SELECT u.full_name, u.email FROM user u JOIN project_user pu ON pu.user_id = u.id WHERE pu.project_id = ? AND u.company_id = ?`).all(project.id, user.company_id) as Array<{ full_name: string | null; email: string }>;
+  return <ProjectWorkspacePrototype project={project} internalUsers={internalUsers} canManage={user.user_type === "owner" || isAdmin(user)} isOwner={user.user_type === "owner"} external={external} />;
 }

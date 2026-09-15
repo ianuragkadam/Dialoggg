@@ -18,6 +18,7 @@
     "test:ui:company-admin": "node scripts/test-company-admin-ui.mjs",
     "test:ui:users-access": "node scripts/test-users-access-ui.mjs",
     "test:ui:resources": "node scripts/test-resources-ui.mjs",
+    "test:ui:projects": "node scripts/test-projects-ui.mjs",
     "db:backup": "node scripts/backup-database.mjs",
     "db:restore": "node scripts/restore-database.mjs",
     "seed": "node --experimental-strip-types src/db/seed.ts"

@@ -29,6 +29,9 @@ Last verified: September 15, 2026
 - Resources and fixed Resource Categories UI at `/resources`, `/resources/new`, and `/resources/[id]`
 - Five fixed Categories, searchable directory, create/edit review, one-to-one User linkage, Task/Event schedule, explicit conflict acknowledgement, independent lifecycle confirmation, and Employee read-only states
 - Focused automated and human-click QA completed; ambiguous lifecycle-control names and stakeholder-specific conflict copy found manually were fixed and regression-tested
+- Projects, role-based Project views, and lifecycle UI at `/projects`, `/projects/new`, `/projects/[id]`, and `/projects/[id]/edit`
+- Complete required-field review, derived End Date rule, Template/blank Plan choice, User assignments, Start Date rebase, Complete/Reopen, Archive/Restore, Owner-only permanent deletion, Employee visibility, and External/Client safe view
+- The existing original Gantt remains the internal Project Plan; automated and human-click QA fixed External navigation leakage and direct Completed/Archived edit access
 
 ## Requirements validation
 
@@ -39,6 +42,7 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 - Company Administration persistence, first-Owner invitation delivery, audit records, suspension enforcement, and synchronization control; the complete UI review module is implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
 - Resource persistence, fixed-Category enforcement, User linkage, Event assignment, and lifecycle enforcement; the complete UI review module is implemented
+- Project field/lifecycle persistence, Project Type/assignment wiring, External access enforcement across APIs, Template instantiation, derived End Date, and working-day rebase; the complete UI review module is implemented
 - Project Types persistence/API/Project integration and complete project-access behavior; the UI review module is complete
 - Project Templates persistence, APIs, live source-Project loading, and Template instantiation; the complete UI review module is implemented
 - Complete weekend-aware Gantt cascade rules

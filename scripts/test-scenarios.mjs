@@ -588,6 +588,20 @@ try {
     assert.doesNotMatch(response.text, /gallery|common files|private files|announcement/i);
   });
 
+  await check("Admin opens every Project UI route", async () => {
+    for (const [route, pattern] of [["/projects", /Project directory/], ["/projects/new", /Project Plan starting point/], [`/projects/${projectAId}`, /Owner\/Admin UI preview/], [`/projects/${projectAId}/edit`, /How should the schedule respond|Edit Scenario Project A/]]) {
+      const response = await adminA.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, pattern, route);
+    }
+  });
+
+  await check("signed-out Project edit route redirects to Login", async () => {
+    const response = await anonymous.request(`/projects/${projectAId}/edit`);
+    assert.equal(response.status, 307);
+    assert.ok(response.headers.get("location")?.endsWith("/login"));
+  });
+
   await check("admin creates a viewer", async () => {
     const response = await adminA.request("/api/users", {
       method: "POST",
@@ -645,6 +659,17 @@ try {
     assert.equal(create.status, 200);
     assert.match(create.text, /Resource management is restricted/);
     assert.doesNotMatch(create.text, /Optional User link/);
+  });
+
+  await check("Employee sees all company Projects but cannot manage them", async () => {
+    const list = await viewerA.request("/projects");
+    assert.equal(list.status, 200);
+    assert.match(list.text, /Employee \(Internal\) company visibility/);
+    assert.match(list.text, /Scenario Project A/);
+    assert.doesNotMatch(list.text, /\+ Add Project|Edit Project/);
+    const edit = await viewerA.request(`/projects/${projectAId}/edit`);
+    assert.equal(edit.status, 200);
+    assert.match(edit.text, /Project management is restricted/);
   });
 
   await check("viewer cannot create projects", async () => {
