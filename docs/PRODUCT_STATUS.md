@@ -1,6 +1,6 @@
 # Product Status
 
-Last verified: September 15, 2026
+Last verified: September 16, 2026
 
 ## Complete foundations
 
@@ -32,10 +32,15 @@ Last verified: September 15, 2026
 - Projects, role-based Project views, and lifecycle UI at `/projects`, `/projects/new`, `/projects/[id]`, and `/projects/[id]/edit`
 - Complete required-field review, derived End Date rule, Template/blank Plan choice, User assignments, Start Date rebase, Complete/Reopen, Archive/Restore, Owner-only permanent deletion, Employee visibility, and External/Client safe view
 - The existing original Gantt remains the internal Project Plan; automated and human-click QA fixed External navigation leakage and direct Completed/Archived edit access
+- Project Plan/Gantt workflow UI above the unchanged original Gantt, including complete Task fields, Header/root rules, all dependency types, multiple predecessors, lag, working-day examples, cascade/drag behavior, and safe deletion
+- Project, Master, and Resource Calendar UI with Day/Week/Month states, Task/Event distinction, full Event editor, recurrence/end/scope choices, Event drag confirmation, conflicts, history, and Project Plan routing
+- Personal Google Calendar UI at `/account/google-calendar` with one-way delivery, a dedicated **Dialoggg** calendar, safe item previews, health/retry/failure states, disconnect choices, and explicit post-restoration resume
+- Company Microsoft Storage UI at `/settings/microsoft-storage` plus each Project's **Common and Private** tab, approved role boundaries, create/link choices, company root, new-tab behavior, and graceful folder failure/recovery states
+- All ten requirements-led UI modules have focused Playwright coverage, production builds, and visible human click QA; the original `GanttChart.tsx` remains unchanged
 
 ## Requirements validation
 
-Scott completed all 55 original workshop questions and all 19 follow-up questions. The follow-up workshop is marked Completed at 100%; every follow-up selected the recommended choice and no follow-up comments were added. These decisions are now being converted into acceptance criteria and applied to each remaining UI module.
+Scott completed all 55 original workshop questions and all 19 follow-up questions. The follow-up workshop is marked Completed at 100%; every follow-up selected the recommended choice and no follow-up comments were added. These decisions have been converted into acceptance criteria and applied across all ten UI review modules.
 
 ## Not complete Reboot v1 scope
 
@@ -45,10 +50,10 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 - Project field/lifecycle persistence, Project Type/assignment wiring, External access enforcement across APIs, Template instantiation, derived End Date, and working-day rebase; the complete UI review module is implemented
 - Project Types persistence/API/Project integration and complete project-access behavior; the UI review module is complete
 - Project Templates persistence, APIs, live source-Project loading, and Template instantiation; the complete UI review module is implemented
-- Complete weekend-aware Gantt cascade rules
-- Full Event management and approved calendar behavior
-- Google Calendar API synchronization
-- Microsoft OneDrive Common and Private folders
+- Complete weekend-aware Gantt persistence/cascade enforcement; the detailed UI review is complete and retains the original Gantt
+- Event persistence, recurrence calculations, assignments, authorization, and downstream calendar writes; the detailed Event/Calendar UI review is complete
+- Google OAuth, token protection, background synchronization, mapping/retry/reconciliation, and monitoring; the detailed Google Calendar UI review is complete
+- Microsoft OAuth/Graph, protected company/folder identifiers, real folder create/link/open/recovery, and authorization enforcement; the detailed Common/Private UI review is complete
 - Final mobile/touch pass and release browser matrix
 
 The current application is a tested prototype and requirements platform, not the completed Reboot v1 release.
