@@ -1,0 +1,58 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+
+import type { CompanyAdminUiItem } from "@/lib/company-admin-ui";
+
+function healthClass(status: string) {
+  if (status === "Connected") return "bg-emerald-100 text-emerald-800";
+  if (status === "Attention needed") return "bg-amber-100 text-amber-900";
+  return "bg-slate-100 text-slate-700";
+}
+
+export default function CompanyDetailPrototype({ company }: { company: CompanyAdminUiItem }) {
+  const [status, setStatus] = useState(company.status);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    if (!dialogOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDialogOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [dialogOpen]);
+
+  function confirmChange() {
+    const next = status === "active" ? "suspended" : "active";
+    setStatus(next);
+    setDialogOpen(false);
+    setToast(`${company.name} was ${next === "active" ? "restored" : "suspended"} in this UI preview.`);
+  }
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6 pb-10">
+      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm text-slate-500"><Link href="/platform/companies" className="hover:text-blue-700">Companies</Link><span aria-hidden="true">/</span><span className="font-medium text-slate-800">{company.name}</span></nav>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="text-3xl font-bold tracking-tight text-slate-950">{company.name}</h1><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{status === "active" ? "Active" : "Suspended"}</span></div><p className="mt-2 text-sm text-slate-600">Company operational metadata · Created {company.createdLabel}</p></div><button type="button" onClick={() => setDialogOpen(true)} className={`min-h-11 rounded-lg border px-4 py-2 text-sm font-bold focus:outline-none focus:ring-2 ${status === "active" ? "border-amber-300 bg-white text-amber-800 focus:ring-amber-600" : "border-emerald-300 bg-white text-emerald-800 focus:ring-emerald-600"}`}>{status === "active" ? "Suspend company" : "Restore company"}</button></div>
+      <section aria-label="Prototype notice" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><p className="font-semibold">UI preview</p><p>This Platform Administrator detail screen shows operational metadata only. Status changes reset on refresh and do not affect production access, synchronization, data, or folders.</p></section>
+
+      <section aria-label="Company totals" className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-sm text-slate-500">Company Users</p><p className="mt-1 text-2xl font-bold text-slate-950">{company.users}</p></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-sm text-slate-500">Resources</p><p className="mt-1 text-2xl font-bold text-slate-950">{company.resources}</p></div><div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-sm text-slate-500">Active Projects</p><p className="mt-1 text-2xl font-bold text-slate-950">{company.activeProjects}</p></div></section>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="company-profile-title"><h2 id="company-profile-title" className="font-bold text-slate-950">Company profile</h2><dl className="mt-4 divide-y divide-slate-200 text-sm"><div className="grid grid-cols-[140px_1fr] gap-4 py-3"><dt className="text-slate-500">Company Name</dt><dd className="font-semibold text-slate-900">{company.name}</dd></div><div className="grid grid-cols-[140px_1fr] gap-4 py-3"><dt className="text-slate-500">Time Zone</dt><dd className="font-semibold text-slate-900">{company.timeZone}</dd></div><div className="grid grid-cols-[140px_1fr] gap-4 py-3"><dt className="text-slate-500">First Owner</dt><dd><p className="font-semibold text-slate-900">{company.ownerName}</p><p className="text-xs text-slate-500">{company.ownerEmail}</p></dd></div><div className="grid grid-cols-[140px_1fr] gap-4 py-3"><dt className="text-slate-500">Company ID</dt><dd className="font-mono text-xs text-slate-700">company:{company.id}</dd></div></dl></section>
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="integration-health-title"><h2 id="integration-health-title" className="font-bold text-slate-950">Integration health</h2><div className="mt-4 space-y-3"><div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4"><div><p className="font-semibold text-slate-900">Google Calendar</p><p className="mt-1 text-xs text-slate-500">Connection summary only; no OAuth tokens are exposed.</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${healthClass(company.googleStatus)}`}>{company.googleStatus}</span></div><div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4"><div><p className="font-semibold text-slate-900">Microsoft OneDrive</p><p className="mt-1 text-xs text-slate-500">Stable site/library identifiers remain private.</p></div><span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${healthClass(company.oneDriveStatus)}`}>{company.oneDriveStatus}</span></div></div></section>
+      </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="tenant-privacy-title"><h2 id="tenant-privacy-title" className="font-bold text-slate-950">Tenant privacy boundary</h2><p className="mt-2 text-sm leading-6 text-slate-600">This screen intentionally omits Project names, Task schedules, Event details, User activity, Resource names, client information, and file contents. Scott approved company-management-only access in `FUP-001`; a Platform Administrator cannot open tenant business content unless that company separately adds the person as a User.</p></section>
+      {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-md rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl"><span aria-hidden="true" className="mr-2 text-emerald-400">✓</span>{toast}</div>}
+      {dialogOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" onMouseDown={event => { if (event.target === event.currentTarget) setDialogOpen(false); }}><div role="alertdialog" aria-modal="true" aria-labelledby="company-detail-status-title" aria-describedby="company-detail-status-description" className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"><div aria-hidden="true" className={`flex h-11 w-11 items-center justify-center rounded-full text-xl ${status === "active" ? "bg-amber-100" : "bg-emerald-100"}`}>!</div><h2 id="company-detail-status-title" className="mt-4 text-xl font-bold text-slate-950">{status === "active" ? "Suspend company?" : "Restore company?"}</h2>{status === "active" ? <div id="company-detail-status-description" className="mt-2 space-y-3 text-sm leading-6 text-slate-600"><p>Company Users will be locked out of <strong className="text-slate-900">{company.name}</strong>.</p><ul className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-950"><li>• All Dialoggg records remain stored.</li><li>• Google synchronization pauses.</li><li>• Microsoft folders stay exactly where they are.</li><li>• Restoration remains available.</li></ul><p className="text-xs font-semibold text-emerald-800">Approved in follow-up requirement `FUP-012`.</p></div> : <p id="company-detail-status-description" className="mt-2 text-sm leading-6 text-slate-600">Company access will be restored. Integration health should be reviewed before paused synchronization resumes.</p>}<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" autoFocus onClick={() => setDialogOpen(false)} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">Cancel</button><button type="button" onClick={confirmChange} className={`min-h-11 rounded-lg px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 ${status === "active" ? "bg-amber-700 focus:ring-amber-600" : "bg-emerald-700 focus:ring-emerald-600"}`}>{status === "active" ? "Suspend company" : "Restore company"}</button></div></div></div>}
+    </div>
+  );
+}

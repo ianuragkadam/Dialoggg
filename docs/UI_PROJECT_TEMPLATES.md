@@ -17,7 +17,7 @@ The existing original `GanttChart` remains Dialoggg's Project Plan engine. None 
 | `DG-TPL-003` | Detail view exposes saved colors and Saturday/Sunday work rules. |
 | `DG-TPL-004` | Plan preview uses working-day offsets instead of fixed source dates. |
 | `DG-TPL-005` | Library, detail, use, and confirmation states state that progress starts at 0%. |
-| `DG-TPL-006` / `FUP-004` | Provisional recommended choice is explicit: categories always copy; exact Resources copy only when a save-time switch is enabled, off by default. |
+| `DG-TPL-006` / `FUP-004` | Scott approved the implemented choice: categories always copy; exact Resources copy only when a save-time switch is enabled, off by default. |
 | `DG-TPL-007` | Save UI explains that inactive/missing Resources cannot block Project creation. |
 | `DG-TPL-008` | Library states company isolation; names validate as unique without case sensitivity. |
 | `DG-TPL-009` | Library provides view, rename, and confirmation-protected delete actions. |

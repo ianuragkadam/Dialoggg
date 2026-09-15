@@ -20,14 +20,17 @@ Last verified: September 15, 2026
 - Project Templates UI at `/templates`, `/templates/new`, `/templates/[id]`, and `/templates/[id]/use`
 - Template Library, source-Project save workflow, read-only Plan detail, start-from-Template setup, exact confirmations, role restriction, and responsive states
 - The existing original Gantt remains unchanged and is the planned destination for instantiated Project Tasks
+- Company Administration UI at `/platform/companies`, `/platform/companies/new`, and `/platform/companies/[id]`
+- Platform-only navigation, tenant-safe restricted states, company search/filtering, operational metadata, first-Owner provisioning review, and approved suspension/restore confirmations
+- Scott's approved `FUP-001`, `FUP-002`, `FUP-012`, and `FUP-015` choices are reflected in the platform boundary, lifecycle behavior, per-company role direction, and 72-hour invitation language
 
 ## Requirements validation
 
-Scott completed all 55 workshop questions at the latest release verification, with five question comments saved. The answers and comments must now be reviewed and converted into acceptance criteria before implementing the remaining modules.
+Scott completed all 55 original workshop questions and all 19 follow-up questions. The follow-up workshop is marked Completed at 100%; every follow-up selected the recommended choice and no follow-up comments were added. These decisions are now being converted into acceptance criteria and applied to each remaining UI module.
 
 ## Not complete Reboot v1 scope
 
-- Platform Administrator and company provisioning
+- Company Administration persistence, first-Owner invitation delivery, audit records, suspension enforcement, and synchronization control; the complete UI review module is implemented
 - Final Owner, Admin, Employee (Internal), and External/Client permissions
 - Project Types persistence/API/Project integration and complete project-access behavior; the UI review module is complete
 - Project Templates persistence, APIs, live source-Project loading, and Template instantiation; the complete UI review module is implemented

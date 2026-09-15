@@ -13,7 +13,7 @@ This is a UI-only implementation for client review. It intentionally uses domain
 | `DG-TYP-003` | Summary and guidance state that every Project must always have exactly one Project Type. |
 | `DG-TYP-004` | Dedicated authenticated settings route, Admin navigation entry, restricted-access state, create dialog, and rename dialog. |
 | `DG-TYP-005` | Rename impact text identifies All Projects and Master Calendar filters as downstream consumers. Actual filtering belongs to the Projects and Calendar modules. |
-| `DG-TYP-006` / `FUP-013` | The preview implements the recommended provisional rule: deletion is blocked while Projects use the type. The dialog explains the reason and confirms that nothing changed. |
+| `DG-TYP-006` / `FUP-013` | Scott approved the implemented rule: deletion is blocked while Projects use the type. The dialog explains the reason and confirms that nothing changed. |
 
 ## Routes
 

@@ -105,6 +105,31 @@ test("Project Templates UI covers library, source Plan, detail, and use workflow
   assert.doesNotMatch(`${library}\n${create}\n${detail}\n${use}`, /import\(.+GanttChart|from ["']@\/components\/GanttChart/);
 });
 
+test("Company Administration UI is isolated from tenant navigation and content", async () => {
+  const data = await read("src/lib/company-admin-ui.ts");
+  const list = await read("src/components/CompaniesPrototype.tsx");
+  const create = await read("src/components/CompanyCreatePrototype.tsx");
+  const detail = await read("src/components/CompanyDetailPrototype.tsx");
+  const shell = await read("src/components/AppShell.tsx");
+  const auth = await read("src/lib/auth.ts");
+  const login = await read("src/components/LoginForm.tsx");
+
+  assert.match(auth, /isPlatformAdmin/);
+  assert.match(shell, /platformOnly/);
+  assert.match(shell, /tenantOnly/);
+  assert.match(shell, /Companies/);
+  assert.match(data, /America\/New_York/);
+  assert.match(list, /Platform access boundary/);
+  assert.match(list, /Suspend company\?/);
+  assert.match(list, /Restore company\?/);
+  assert.match(create, /Confirm company setup/);
+  assert.match(create, /single-use Owner invitation/);
+  assert.match(detail, /Tenant privacy boundary/);
+  assert.match(detail, /Microsoft folders stay exactly where they are/);
+  assert.match(login, /super_admin.+platform\/companies/);
+  assert.match(`${list}\n${create}\n${detail}`, /UI preview/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",

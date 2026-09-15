@@ -20,6 +20,10 @@ export function isAdmin(user: User | null | undefined): boolean {
   return !!user && user.user_type === "admin";
 }
 
+export function isPlatformAdmin(user: User | null | undefined): boolean {
+  return !!user && user.user_type === "super_admin";
+}
+
 export async function hashPassword(pw: string) {
   return bcrypt.hash(pw, 10);
 }

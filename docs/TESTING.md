@@ -47,3 +47,15 @@ node scripts/test-project-templates-ui.mjs
 ```
 
 The script creates only temporary local Users and data and removes its database after completion. It does not call production APIs or modify the existing Gantt.
+
+## Company Administration UI Playwright check
+
+The Company Administration UI has a focused browser script at `scripts/test-company-admin-ui.mjs`. It verifies platform-only navigation, tenant denial, search/filter/no-results recovery, both lifecycle dialogs, metadata privacy, every provisioning validation, exact review values, keyboard Escape, non-persistent success, mobile overflow, signed-out routing, and unknown-role boundaries.
+
+With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
+
+```powershell
+node scripts/test-company-admin-ui.mjs
+```
+
+The script creates a temporary local Platform Administrator and company Admin, promotes only the isolated test identity to the platform role, and deletes its temporary database afterward. It never reads or mutates production company records.

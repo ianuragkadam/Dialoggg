@@ -117,22 +117,26 @@ try {
   const anonymous = new Client(baseUrl);
   const adminA = new Client(baseUrl);
   const adminB = new Client(baseUrl);
+  const platform = new Client(baseUrl);
   const viewerA = new Client(baseUrl);
   const oldPasswordClient = new Client(baseUrl);
 
   const suffix = Date.now().toString(36);
   const adminAEmail = `admin-a-${suffix}@example.test`;
   const adminBEmail = `admin-b-${suffix}@example.test`;
+  const platformEmail = `platform-${suffix}@example.test`;
   const viewerAEmail = `viewer-a-${suffix}@example.test`;
   const passwordA = "Scenario-A-Password-1!";
   const changedPasswordA = "Scenario-A-Password-2!";
   const passwordB = "Scenario-B-Password-1!";
+  const platformPassword = "Scenario-Platform-Password-1!";
   const viewerPassword = "Scenario-Viewer-Password-1!";
 
   let companyAId;
   let companyBId;
   let adminAId;
   let adminBId;
+  let platformUserId;
   let viewerAId;
   let projectAId;
   let projectBId;
@@ -333,6 +337,68 @@ try {
     adminBId = response.data.userId;
     assert.notEqual(companyAId, companyBId);
     assert.ok(adminBId);
+  });
+
+  await check("test Platform Administrator identity is distinct from company roles", async () => {
+    const response = await platform.request("/api/auth/register", {
+      method: "POST",
+      body: { company_name: "Scenario Platform Bootstrap", full_name: "Platform Administrator", email: platformEmail, password: platformPassword },
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    platformUserId = response.data.userId;
+    const testDb = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try {
+      testDb.prepare("UPDATE user SET user_type = 'super_admin', company_id = NULL WHERE id = ?").run(platformUserId);
+    } finally {
+      testDb.close();
+    }
+    const me = await platform.request("/api/me");
+    assert.equal(me.status, 200);
+    assert.equal(me.data.user.user_type, "super_admin");
+    assert.equal(me.data.user.company_id, null);
+  });
+
+  await check("Platform Administrator entry routes to Companies", async () => {
+    const root = await platform.request("/");
+    assert.equal(root.status, 307);
+    assert.ok(root.headers.get("location")?.endsWith("/platform/companies"));
+    const login = await platform.request("/login");
+    assert.equal(login.status, 307);
+    assert.ok(login.headers.get("location")?.endsWith("/platform/companies"));
+  });
+
+  await check("signed-out Company Administration routes redirect to Login", async () => {
+    for (const route of ["/platform/companies", "/platform/companies/new", "/platform/companies/sport-court-east-pa"]) {
+      const response = await anonymous.request(route);
+      assert.equal(response.status, 307, route);
+      assert.ok(response.headers.get("location")?.endsWith("/login"), route);
+    }
+  });
+
+  await check("tenant Admin cannot access Platform Administration data", async () => {
+    const response = await adminA.request("/platform/companies");
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Platform Administration is restricted/);
+    assert.doesNotMatch(response.text, /Sport Court of East PA|Northline Courts/);
+  });
+
+  await check("Platform Administrator opens all Company Administration routes", async () => {
+    const expectations = [
+      ["/platform/companies", /Platform companies/],
+      ["/platform/companies/new", /Review company setup/],
+      ["/platform/companies/sport-court-east-pa", /Tenant privacy boundary/],
+    ];
+    for (const [route, pattern] of expectations) {
+      const response = await platform.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, pattern);
+      assert.match(response.text, /UI preview/);
+    }
+  });
+
+  await check("unknown company detail returns not found for Platform Administrator", async () => {
+    const response = await platform.request("/platform/companies/not-a-company");
+    assert.equal(response.status, 404);
   });
 
   await check("signed-in root redirects to projects", async () => {

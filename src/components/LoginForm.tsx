@@ -1,11 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export default function LoginForm() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,14 +20,12 @@ export default function LoginForm() {
       body: JSON.stringify({ email, password }),
     });
 
+    const result = await response.json().catch(() => ({}));
     setLoading(false);
     if (response.ok) {
-      router.replace("/projects");
-      router.refresh();
+      window.location.assign(result.user?.user_type === "super_admin" ? "/platform/companies" : "/projects");
       return;
     }
-
-    const result = await response.json().catch(() => ({}));
     setError(result.error || "Login failed");
   }
 

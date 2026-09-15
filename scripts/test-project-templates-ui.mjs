@@ -162,7 +162,7 @@ try {
     assert.match(body, /no separate Template schedule editor/);
   });
 
-  await check("save-from-Project validates, reviews, and preserves provisional Resource choice", async () => {
+  await check("save-from-Project validates, reviews, and preserves the approved Resource choice", async () => {
     await page.goto(`${baseUrl}/templates/new`);
     await page.getByRole("button", { name: "Review Template" }).click();
     await page.getByText("Choose the Project Plan to save.", { exact: true }).waitFor();
