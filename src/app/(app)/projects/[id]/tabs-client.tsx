@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import ProjectFoldersPrototype from "@/components/ProjectFoldersPrototype";
 
 const GanttChart = dynamic(() => import("@/components/GanttChart"), { ssr: false });
 const ProjectPlanWorkflowReview = dynamic(() => import("@/components/ProjectPlanWorkflowReview"), { ssr: false });
@@ -20,11 +21,12 @@ const TABS = [
   { id: "plan",          label: "Project Plan" },
   { id: "calendar",      label: "Project Calendar" },
   { id: "resources",     label: "Project Resources" },
+  { id: "folders",       label: "Common and Private" },
 ];
 
 export default function ProjectTabs({
-  project, internalUsers, canEdit = true,
-}: { project: Project; internalUsers: any[]; canEdit?: boolean; }) {
+  project, internalUsers, canEdit = true, canManage = canEdit, assigned = false,
+}: { project: Project; internalUsers: any[]; canEdit?: boolean; canManage?: boolean; assigned?: boolean; }) {
   // Read initial tab from URL hash (e.g. #calendar) so deep-links and refresh preserve state
   const [tab, setTab] = useState("plan");
   useEffect(() => {
@@ -63,6 +65,7 @@ export default function ProjectTabs({
         )}
         {tab === "calendar"  && <ProjectCalendar projectId={project.id} canManage={canEdit} projectName={project.name} />}
         {tab === "resources" && <ResourceSchedule projectId={project.id} />}
+        {tab === "folders" && <ProjectFoldersPrototype projectName={project.name} canManage={canManage} assigned={assigned} />}
       </div>
     </div>
   );

@@ -17,6 +17,7 @@ const MENU = [
   { label: "Users",              href: "/users",               icon: "🧑‍💼", adminOnly: true, platformOnly: false, tenantOnly: true },
   { label: "Project Types",      href: "/settings/project-types", icon: "🏷️", adminOnly: true, platformOnly: false, tenantOnly: true },
   { label: "Project Templates",  href: "/templates",           icon: "📋", adminOnly: true, platformOnly: false, tenantOnly: true },
+  { label: "Microsoft Storage",  href: "/settings/microsoft-storage", icon: "☁️", adminOnly: true, platformOnly: false, tenantOnly: true },
   { label: "Account",            href: "/account",             icon: "⚙️", adminOnly: false, platformOnly: false, tenantOnly: false },
   { label: "Help",               href: "/help",                icon: "❓", adminOnly: false, platformOnly: false, tenantOnly: false },
 ];

@@ -15,5 +15,6 @@ export default async function ProjectViewPage({ params }: { params: Promise<{ id
     if (!assigned) notFound();
   }
   const internalUsers = external ? [] : db.prepare(`SELECT u.full_name, u.email FROM user u JOIN project_user pu ON pu.user_id = u.id WHERE pu.project_id = ? AND u.company_id = ?`).all(project.id, user.company_id) as Array<{ full_name: string | null; email: string }>;
-  return <ProjectWorkspacePrototype project={project} internalUsers={internalUsers} canManage={user.user_type === "owner" || isAdmin(user)} isOwner={user.user_type === "owner"} external={external} />;
+  const assigned = !!db.prepare("SELECT 1 FROM project_user WHERE project_id = ? AND user_id = ?").get(project.id, user.id);
+  return <ProjectWorkspacePrototype project={project} internalUsers={internalUsers} canManage={user.user_type === "owner" || isAdmin(user)} isOwner={user.user_type === "owner"} external={external} assigned={assigned} />;
 }

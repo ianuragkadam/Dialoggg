@@ -233,6 +233,19 @@ test("Google Calendar UI covers one-way personal connection and synchronization 
   assert.match(page, /GoogleCalendarPrototype/);
 });
 
+test("Microsoft Storage UI covers company setup and Project Common/Private boundaries", async () => {
+  const company = await read("src/components/MicrosoftStoragePrototype.tsx");
+  const folders = await read("src/components/ProjectFoldersPrototype.tsx");
+  const page = await read("src/app/(app)/settings/microsoft-storage/page.tsx");
+  const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
+  for (const value of ["OneDrive for Business", "SharePoint document library", "Dialoggg does not store Project files", "Microsoft 365 administrators", "No anonymous links", "Change company folder root?", "Existing Project folders do not move", "Disconnect Microsoft Storage?"]) assert.match(company, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
+  for (const value of ["Common", "Private", "Create automatically", "Link existing folder", "Stable Microsoft IDs", "Missing or moved", "Permission denied", "Company disconnected"]) assert.match(folders, new RegExp(value, "i"));
+  assert.match(folders, /never renames, moves, or deletes Microsoft folders/);
+  assert.match(page, /Owner or Admin/);
+  assert.match(tabs, /ProjectFoldersPrototype/);
+  assert.match(tabs, /Common and Private/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",

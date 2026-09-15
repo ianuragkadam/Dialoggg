@@ -22,6 +22,7 @@
     "test:ui:project-plan": "node scripts/test-project-plan-ui.mjs",
     "test:ui:calendars-events": "node scripts/test-calendars-events-ui.mjs",
     "test:ui:google-calendar": "node scripts/test-google-calendar-ui.mjs",
+    "test:ui:microsoft-storage": "node scripts/test-microsoft-storage-ui.mjs",
     "db:backup": "node scripts/backup-database.mjs",
     "db:restore": "node scripts/restore-database.mjs",
     "seed": "node --experimental-strip-types src/db/seed.ts"
