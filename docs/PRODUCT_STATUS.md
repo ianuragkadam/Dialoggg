@@ -23,6 +23,9 @@ Last verified: September 15, 2026
 - Company Administration UI at `/platform/companies`, `/platform/companies/new`, and `/platform/companies/[id]`
 - Platform-only navigation, tenant-safe restricted states, company search/filtering, operational metadata, first-Owner provisioning review, and approved suspension/restore confirmations
 - Scott's approved `FUP-001`, `FUP-002`, `FUP-012`, and `FUP-015` choices are reflected in the platform boundary, lifecycle behavior, per-company role direction, and 72-hour invitation language
+- Users, Roles, Invitations, and Project Access UI at `/users`, `/users/new`, `/users/[id]`, and `/users/[id]/projects`
+- Approved fixed Roles, search/filtering, invitation review, optional linked Resource, lifecycle confirmations, exact Project-access changes, External/Client minimum access, and Owner/Admin locks
+- Focused automated and human-click QA completed; the incorrect Owner-screen Employee explanation found manually was fixed and regression-tested
 
 ## Requirements validation
 
@@ -31,7 +34,7 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 ## Not complete Reboot v1 scope
 
 - Company Administration persistence, first-Owner invitation delivery, audit records, suspension enforcement, and synchronization control; the complete UI review module is implemented
-- Final Owner, Admin, Employee (Internal), and External/Client permissions
+- Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
 - Project Types persistence/API/Project integration and complete project-access behavior; the UI review module is complete
 - Project Templates persistence, APIs, live source-Project loading, and Template instantiation; the complete UI review module is implemented
 - Complete weekend-aware Gantt cascade rules

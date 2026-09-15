@@ -12,16 +12,19 @@ const read = relativePath => readFile(path.join(root, relativePath), "utf8");
 test("approved product language is centralized and used by the interface", async () => {
   const language = await read("src/lib/product-language.ts");
   const shell = await read("src/components/AppShell.tsx");
-  const users = await read("src/app/(app)/users/page.tsx");
+  const users = await read("src/components/UsersAccessPrototype.tsx");
+  const usersLanguage = await read("src/lib/users-access-ui.ts");
   const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
 
   assert.match(language, /Employee \(Internal\)/);
   assert.match(language, /External\/Client/);
   assert.match(shell, /roleLabel\(user\.user_type\)/);
-  assert.match(users, /roleLabel\("viewer"\)/);
+  assert.match(usersLanguage, /Employee \(Internal\)/);
+  assert.match(usersLanguage, /External\/Client/);
+  assert.match(users, /companyRoleLabel\(user\.role\)/);
   assert.match(tabs, /Project Calendar/);
   assert.match(tabs, /Project Resources/);
-  assert.doesNotMatch(`${shell}\n${users}\n${tabs}`, />\s*Viewer\s*</);
+  assert.doesNotMatch(`${shell}\n${users}\n${usersLanguage}\n${tabs}`, />\s*Viewer\s*</);
   assert.doesNotMatch(tabs, /Announcement/);
 });
 
@@ -128,6 +131,30 @@ test("Company Administration UI is isolated from tenant navigation and content",
   assert.match(detail, /Microsoft folders stay exactly where they are/);
   assert.match(login, /super_admin.+platform\/companies/);
   assert.match(`${list}\n${create}\n${detail}`, /UI preview/);
+});
+
+test("Users, Roles, Invitations, and Project Access UI covers the approved fixed-role workflow", async () => {
+  const data = await read("src/lib/users-access-ui.ts");
+  const list = await read("src/components/UsersAccessPrototype.tsx");
+  const invite = await read("src/components/UserInvitePrototype.tsx");
+  const detail = await read("src/components/UserDetailPrototype.tsx");
+  const access = await read("src/components/UserProjectAccessPrototype.tsx");
+
+  for (const role of ["Owner", "Admin", "Employee (Internal)", "External/Client"]) {
+    assert.match(`${data}\n${list}`, new RegExp(role.replace(/[()]/g, "\\$&")));
+  }
+  assert.match(list, /Owner required/);
+  assert.match(list, /Existing sessions are revoked/);
+  assert.match(invite, /72-hour/);
+  assert.match(invite, /Also add as a Resource/);
+  assert.match(invite, /Assign an External\/Client to at least one Project/);
+  assert.match(invite, /Confirm User invitation/);
+  assert.match(detail, /Change company Role\?/);
+  assert.match(detail, /Cancel invitation\?/);
+  assert.match(access, /External\/Client boundary/);
+  assert.match(access, /Employee \(Internal\) behavior/);
+  assert.match(access, /Confirm Project access changes/);
+  assert.match(`${list}\n${invite}\n${detail}\n${access}`, /UI preview/);
 });
 
 test("retired modules are absent from routes and fresh database schema", async () => {

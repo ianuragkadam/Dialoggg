@@ -401,6 +401,34 @@ try {
     assert.equal(response.status, 404);
   });
 
+  await check("signed-out User management routes redirect to Login", async () => {
+    for (const route of ["/users", "/users/new", "/users/jamie-morgan", "/users/jamie-morgan/projects"]) {
+      const response = await anonymous.request(route);
+      assert.equal(response.status, 307, route);
+      assert.ok(response.headers.get("location")?.endsWith("/login"), route);
+    }
+  });
+
+  await check("Admin opens every User management UI route", async () => {
+    const expectations = [
+      ["/users", /Company User directory/],
+      ["/users/new", /Review invitation/],
+      ["/users/jamie-morgan", /Company membership/],
+      ["/users/jamie-morgan/projects", /Assignment impact/],
+    ];
+    for (const [route, pattern] of expectations) {
+      const response = await adminA.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, pattern);
+      assert.match(response.text, /UI preview/);
+    }
+  });
+
+  await check("unknown User detail returns not found for Admin", async () => {
+    const response = await adminA.request("/users/not-a-user");
+    assert.equal(response.status, 404);
+  });
+
   await check("signed-in root redirects to projects", async () => {
     const response = await adminA.request("/");
     assert.equal(response.status, 307);
@@ -572,6 +600,15 @@ try {
       assert.equal(response.status, 200, route);
       assert.match(response.text, /Project Templates are restricted/);
       assert.doesNotMatch(response.text, /Miller Residence|Westfield Recreation Center|Hillside Tennis Club/);
+    }
+  });
+
+  await check("Employee receives User management restriction without directory data", async () => {
+    for (const route of ["/users", "/users/new", "/users/jamie-morgan", "/users/jamie-morgan/projects"]) {
+      const response = await viewerA.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, /restricted/i, route);
+      assert.doesNotMatch(response.text, /Scott Grote|Alex Rivera/, route);
     }
   });
 

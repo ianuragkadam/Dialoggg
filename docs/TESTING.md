@@ -59,3 +59,15 @@ node scripts/test-company-admin-ui.mjs
 ```
 
 The script creates a temporary local Platform Administrator and company Admin, promotes only the isolated test identity to the platform role, and deletes its temporary database afterward. It never reads or mutates production company records.
+
+## Users, Roles, Invitations, and Project Access UI Playwright check
+
+The User-management UI has a focused browser script at `scripts/test-users-access-ui.mjs`. It verifies the approved four Role labels, directory search/filter/no-results recovery, lifecycle impact and cancel paths, fixed Role boundaries, invitation validation and exact review, 72-hour security language, optional one-to-one Resource linkage, External/Client minimum Project access, exact assignment additions/removals, Owner/Admin locks, Employee restriction, signed-out redirects, keyboard Escape, non-persistent success states, and phone-width overflow.
+
+With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
+
+```powershell
+node scripts/test-users-access-ui.mjs
+```
+
+The script creates only isolated local Admin and Employee test identities in a temporary database and removes the database after completion. It never mutates production Users, Project access, invitations, sessions, Resources, or company records.
