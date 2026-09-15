@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { REQUIREMENTS_DISPLAY_NUMBER_BY_ID, REQUIREMENTS_SECTIONS } from "@/lib/requirements-questionnaire";
+import {
+  getRequirementsWorkshop,
+  type RequirementsWorkshopKind,
+} from "@/lib/requirements-workshops";
 
 type StoredResponse = {
   question_id: string;
@@ -24,7 +27,14 @@ type Snapshot = {
 
 type Filter = "all" | "answered" | "unanswered" | "comments";
 
-export default function RequirementsResults({ token }: { token: string }) {
+export default function RequirementsResults({
+  token,
+  kind = "initial",
+}: {
+  token: string;
+  kind?: RequirementsWorkshopKind;
+}) {
+  const workshop = getRequirementsWorkshop(kind);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [loading, setLoading] = useState(true);
@@ -75,8 +85,8 @@ export default function RequirementsResults({ token }: { token: string }) {
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
               <div className="text-sm font-semibold uppercase tracking-[0.18em] text-cyan-300">Private review</div>
-              <h1 className="mt-2 text-3xl font-black tracking-tight">Dialoggg Requirements Responses</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Read-only results. This page refreshes automatically every 15 seconds while Scott works through the questionnaire.</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight">{workshop.reviewTitle}</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{workshop.reviewSubtitle}</p>
             </div>
             <div className={`rounded-full px-3 py-1.5 text-sm font-bold ${snapshot.state.status === "completed" ? "bg-emerald-400 text-emerald-950" : "bg-amber-300 text-amber-950"}`}>
               {snapshot.state.status === "completed" ? "Completed" : "In progress"}
@@ -113,7 +123,7 @@ export default function RequirementsResults({ token }: { token: string }) {
 
       <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6">
         <div className="space-y-8">
-          {REQUIREMENTS_SECTIONS.map(section => {
+          {workshop.sections.map(section => {
             const questions = section.questions.filter(question => visible(question.id));
             if (!questions.length) return null;
             return (
@@ -131,9 +141,15 @@ export default function RequirementsResults({ token }: { token: string }) {
                     return (
                       <article key={question.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                         <div className="flex items-start gap-3">
-                          <div className="flex h-8 min-w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{REQUIREMENTS_DISPLAY_NUMBER_BY_ID.get(question.id)}</div>
+                          <div className="flex h-8 min-w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{workshop.displayNumberById.get(question.id)}</div>
                           <div className="min-w-0 flex-1">
                             <h3 className="font-bold leading-6 text-slate-950">{question.prompt}</h3>
+                            <p className="mt-1 text-sm leading-6 text-slate-500"><span className="font-semibold text-slate-600">Why we asked: </span>{question.context}</p>
+                            {question.example && (
+                              <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2.5 text-sm leading-6 text-cyan-950">
+                                <span className="font-bold">Simple example: </span>{question.example}
+                              </div>
+                            )}
                             <div className="mt-3 rounded-xl bg-slate-50 p-3">
                               {selected ? (
                                 <>

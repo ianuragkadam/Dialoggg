@@ -8,7 +8,7 @@ Last verified: September 14, 2026
 - Project, Gantt, Resource, Project Calendar, Master Calendar, and Resource Calendar prototype foundations
 - Retirement of Discussion, Gallery, in-app storage, Billing, Google Drive, and other confirmed exclusions
 - Approved interface language for the currently implemented roles and screens
-- Private requirements questionnaire and response review portal
+- Original and follow-up private requirements workshops with autosave, examples, comments, completion state, response review, and Markdown export
 - Local Git repository, setup/deployment runbooks, tested backup/restore commands, automated test pipeline, and security/maintenance guidance
 
 ## Requirements validation

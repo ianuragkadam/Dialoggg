@@ -26,6 +26,8 @@ Visit <http://localhost:3030>. A fresh database is initialized automatically. Re
 | `RAILWAY_VOLUME_MOUNT_PATH` | Production | Directory containing `dialoggg.db`; `/data` on Railway |
 | `REQUIREMENTS_FORM_TOKEN` | Production workshop | Private client questionnaire bearer token |
 | `REQUIREMENTS_REVIEW_TOKEN` | Production workshop | Separate internal review bearer token |
+| `FOLLOW_UP_REQUIREMENTS_FORM_TOKEN` | Follow-up workshop | Private client bearer token for the 19 detailed follow-up questions |
+| `FOLLOW_UP_REQUIREMENTS_REVIEW_TOKEN` | Follow-up workshop | Separate internal review bearer token for follow-up responses |
 
 Generate different high-entropy values for the two tokens and store them only in the deployment secret manager. Restart the app after changing environment variables.
 

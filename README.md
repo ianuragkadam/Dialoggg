@@ -1,6 +1,6 @@
 # Dialoggg
 
-Dialoggg is a multi-company project scheduling and resource-coordination application. The current product opens at authentication, then takes signed-in users to Projects. Its working foundation includes Projects, Gantt tasks and links, Project and Master Calendars, Resources, user administration, and a private requirements workshop.
+Dialoggg is a multi-company project scheduling and resource-coordination application. The current product opens at authentication, then takes signed-in users to Projects. Its working foundation includes Projects, Gantt tasks and links, Project and Master Calendars, Resources, user administration, and private requirements workshops with separate client and review links.
 
 This repository is the source-of-truth handover package for the application. Product behavior still awaiting client decisions is identified in the project progress and security documentation; it is not presented here as complete.
 

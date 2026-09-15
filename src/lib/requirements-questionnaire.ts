@@ -12,6 +12,7 @@ export type RequirementQuestion = {
   number: number;
   prompt: string;
   context: string;
+  example?: string;
   options: RequirementOption[];
 };
 

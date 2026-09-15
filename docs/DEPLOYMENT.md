@@ -17,7 +17,7 @@
 - Start command: `npm start`
 - Set `RAILWAY_VOLUME_MOUNT_PATH=/data`.
 - Attach the persistent `dialoggg-data` volume at `/data` before serving traffic.
-- Store both requirements tokens as Railway variables; never put their real values in source control.
+- Store all four workshop tokens (`REQUIREMENTS_FORM_TOKEN`, `REQUIREMENTS_REVIEW_TOKEN`, `FOLLOW_UP_REQUIREMENTS_FORM_TOKEN`, and `FOLLOW_UP_REQUIREMENTS_REVIEW_TOKEN`) as Railway variables; never put their real values in source control.
 - Keep one writable replica while SQLite is the application database.
 
 ## Release procedure

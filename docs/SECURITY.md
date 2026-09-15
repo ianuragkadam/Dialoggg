@@ -9,7 +9,7 @@
 - Data routes are expected to enforce company ownership.
 - Security response headers disable framing, MIME sniffing, camera, microphone, and geolocation access, and restrict referrer disclosure.
 - Production secrets and database files are excluded from source control.
-- Private questionnaire and review URLs use different bearer tokens.
+- Each private workshop uses different client and review bearer tokens. The original and follow-up workshops also use separate form keys, so their responses cannot overwrite one another.
 
 ## Known gaps before final release
 

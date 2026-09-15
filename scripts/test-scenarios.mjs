@@ -80,6 +80,10 @@ class Client {
 const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-scenarios-"));
 const port = await freePort();
 const baseUrl = `http://127.0.0.1:${port}`;
+const initialFormToken = "scenario-initial-form-token-please-keep-private";
+const initialReviewToken = "scenario-initial-review-token-please-keep-private";
+const followUpFormToken = "scenario-follow-up-form-token-please-keep-private";
+const followUpReviewToken = "scenario-follow-up-review-token-please-keep-private";
 
 try {
   server = spawn(process.execPath, ["scripts/start-production.mjs"], {
@@ -89,6 +93,10 @@ try {
       NODE_ENV: "production",
       PORT: String(port),
       RAILWAY_VOLUME_MOUNT_PATH: dataDirectory,
+      REQUIREMENTS_FORM_TOKEN: initialFormToken,
+      REQUIREMENTS_REVIEW_TOKEN: initialReviewToken,
+      FOLLOW_UP_REQUIREMENTS_FORM_TOKEN: followUpFormToken,
+      FOLLOW_UP_REQUIREMENTS_REVIEW_TOKEN: followUpReviewToken,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -153,6 +161,93 @@ try {
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
     assert.equal(response.headers.get("x-frame-options"), "DENY");
     assert.equal(response.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+  });
+
+  await check("initial and follow-up workshops use separate response sets", async () => {
+    const [initial, followUp] = await Promise.all([
+      anonymous.request(`/api/requirements/${initialFormToken}`),
+      anonymous.request(`/api/requirements/${followUpFormToken}`),
+    ]);
+    assert.equal(initial.status, 200);
+    assert.equal(followUp.status, 200);
+    assert.equal(initial.data.progress.total, 55);
+    assert.equal(followUp.data.progress.total, 19);
+    assert.equal(initial.data.progress.answered, 0);
+    assert.equal(followUp.data.progress.answered, 0);
+    assert.equal(initial.data.state.form_key, "dialoggg-reboot-v1");
+    assert.equal(followUp.data.state.form_key, "dialoggg-reboot-follow-up-v1");
+  });
+
+  await check("follow-up workshop page uses the detailed plain-language version", async () => {
+    const response = await anonymous.request(`/requirements/${followUpFormToken}`);
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Dialoggg Follow-up Workshop/);
+    assert.match(response.text, /follow-up requirements workshop with simple examples/i);
+    assert.match(response.text, /\\"kind\\":\\"follow_up\\"/);
+  });
+
+  await check("private workshop tokens reject unknown links", async () => {
+    const [form, review] = await Promise.all([
+      anonymous.request("/api/requirements/not-a-real-private-token"),
+      anonymous.request("/api/requirements-review/not-a-real-private-token"),
+    ]);
+    assert.equal(form.status, 404);
+    assert.equal(review.status, 404);
+  });
+
+  await check("follow-up answer and comment autosave without changing the original workshop", async () => {
+    const saved = await anonymous.request(`/api/requirements/${followUpFormToken}`, {
+      method: "PUT",
+      body: {
+        questionId: "fu05",
+        answerId: "next_day",
+        comment: "Thursday is easier for everyone to understand.",
+      },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    assert.equal(saved.data.snapshot.progress.answered, 1);
+    assert.equal(saved.data.snapshot.progress.total, 19);
+
+    const initial = await anonymous.request(`/api/requirements/${initialFormToken}`);
+    assert.equal(initial.data.progress.answered, 0);
+    assert.equal(initial.data.progress.total, 55);
+  });
+
+  await check("follow-up review reports progress and saved comments", async () => {
+    const response = await anonymous.request(`/api/requirements-review/${followUpReviewToken}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.data.progress.answered, 1);
+    assert.equal(response.data.progress.total, 19);
+    const saved = response.data.responses.find(item => item.question_id === "fu05");
+    assert.equal(saved.answer_id, "next_day");
+    assert.match(saved.comment, /Thursday/);
+  });
+
+  await check("follow-up Markdown export includes the question, example, answer, and comment", async () => {
+    const response = await anonymous.request(`/api/requirements-review/${followUpReviewToken}?format=markdown`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") || "", /text\/markdown/);
+    assert.match(response.headers.get("content-disposition") || "", /dialoggg-follow-up-responses\.md/);
+    assert.match(response.text, /When one Task must start after another Task finishes/);
+    assert.match(response.text, /\*\*Example:\*\*/);
+    assert.match(response.text, /Start on Thursday/);
+    assert.match(response.text, /Thursday is easier/);
+  });
+
+  await check("editing a completed follow-up workshop automatically returns it to in progress", async () => {
+    const completed = await anonymous.request(`/api/requirements/${followUpFormToken}`, {
+      method: "PUT",
+      body: { status: "completed" },
+    });
+    assert.equal(completed.status, 200);
+    assert.equal(completed.data.state.status, "completed");
+
+    const edited = await anonymous.request(`/api/requirements/${followUpFormToken}`, {
+      method: "PUT",
+      body: { questionId: "fu05", answerId: "same_day", comment: "Updated choice" },
+    });
+    assert.equal(edited.status, 200);
+    assert.equal(edited.data.snapshot.state.status, "in_progress");
   });
 
   await check("fresh databases exclude retired feature tables", async () => {

@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { RequirementOption } from "@/lib/requirements-questionnaire";
 import {
-  REQUIREMENTS_DISPLAY_NUMBER_BY_ID,
-  REQUIREMENTS_QUESTIONS,
-  REQUIREMENTS_SECTIONS,
-  type RequirementOption,
-} from "@/lib/requirements-questionnaire";
+  getRequirementsWorkshop,
+  type RequirementsWorkshopKind,
+} from "@/lib/requirements-workshops";
 
 type LocalResponse = {
   answerId: string | null;
@@ -18,7 +17,14 @@ type LocalResponse = {
 type FormStatus = "in_progress" | "completed";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-export default function RequirementsQuestionnaire({ token }: { token: string }) {
+export default function RequirementsQuestionnaire({
+  token,
+  kind = "initial",
+}: {
+  token: string;
+  kind?: RequirementsWorkshopKind;
+}) {
+  const workshop = getRequirementsWorkshop(kind);
   const [responses, setResponses] = useState<Record<string, LocalResponse>>({});
   const responsesRef = useRef<Record<string, LocalResponse>>({});
   const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -31,12 +37,12 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const section = REQUIREMENTS_SECTIONS[activeSection];
+  const section = workshop.sections[activeSection];
   const answered = useMemo(
-    () => REQUIREMENTS_QUESTIONS.filter(question => responses[question.id]?.answerId).length,
-    [responses],
+    () => workshop.questions.filter(question => responses[question.id]?.answerId).length,
+    [responses, workshop.questions],
   );
-  const percent = Math.round((answered / REQUIREMENTS_QUESTIONS.length) * 100);
+  const percent = Math.round((answered / workshop.questions.length) * 100);
   const sectionAnswered = section.questions.filter(question => responses[question.id]?.answerId).length;
 
   useEffect(() => {
@@ -62,7 +68,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
         setFormStatus(snapshot.state?.status === "completed" ? "completed" : "in_progress");
         setLastSaved(snapshot.state?.updated_at || null);
 
-        const firstIncomplete = REQUIREMENTS_SECTIONS.findIndex(candidate =>
+        const firstIncomplete = workshop.sections.findIndex(candidate =>
           candidate.questions.some(question => !loaded[question.id]?.answerId),
         );
         if (firstIncomplete >= 0) setActiveSection(firstIncomplete);
@@ -78,7 +84,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
       for (const timer of Object.values(timersRef.current)) clearTimeout(timer);
       if (generalTimerRef.current) clearTimeout(generalTimerRef.current);
     };
-  }, [token]);
+  }, [token, workshop.sections]);
 
   function updateLocal(questionId: string, patch: Partial<LocalResponse>): LocalResponse {
     const current = responsesRef.current[questionId] || { answerId: null, comment: "" };
@@ -184,7 +190,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
   }
 
   async function markComplete() {
-    const missing = REQUIREMENTS_QUESTIONS.length - answered;
+    const missing = workshop.questions.length - answered;
     if (missing > 0 && !window.confirm(`${missing} question${missing === 1 ? " is" : "s are"} still unanswered. Mark the workshop complete anyway?`)) {
       return;
     }
@@ -220,7 +226,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
   }
 
   function goToSection(index: number) {
-    setActiveSection(Math.max(0, Math.min(REQUIREMENTS_SECTIONS.length - 1, index)));
+    setActiveSection(Math.max(0, Math.min(workshop.sections.length - 1, index)));
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -235,8 +241,8 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-700 text-lg font-black text-white">D</div>
               <div>
-                <div className="font-bold leading-tight text-blue-950">Dialoggg Requirements Workshop</div>
-                <div className="text-xs text-slate-500">Choose what feels right. Add a note whenever context will help.</div>
+                <div className="font-bold leading-tight text-blue-950">{workshop.workshopTitle}</div>
+                <div className="text-xs text-slate-500">{workshop.workshopSubtitle}</div>
               </div>
             </div>
             <SaveIndicator state={saveState} lastSaved={lastSaved} />
@@ -245,7 +251,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
               <div className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 transition-all duration-500" style={{ width: `${percent}%` }} />
             </div>
-            <div className="whitespace-nowrap text-sm font-semibold text-slate-700">{answered}/{REQUIREMENTS_QUESTIONS.length} answered</div>
+            <div className="whitespace-nowrap text-sm font-semibold text-slate-700">{answered}/{workshop.questions.length} answered</div>
           </div>
         </div>
       </header>
@@ -253,7 +259,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
       <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="lg:sticky lg:top-28 lg:self-start">
           <nav className="flex gap-2 overflow-x-auto pb-2 lg:block lg:space-y-1 lg:overflow-visible" aria-label="Question sections">
-            {REQUIREMENTS_SECTIONS.map((item, index) => {
+            {workshop.sections.map((item, index) => {
               const complete = item.questions.every(question => responses[question.id]?.answerId);
               return (
                 <button
@@ -286,7 +292,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
 
           <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-blue-700">Section {activeSection + 1} of {REQUIREMENTS_SECTIONS.length}</div>
+              <div className="text-sm font-semibold text-blue-700">Section {activeSection + 1} of {workshop.sections.length}</div>
               <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{section.title}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{section.intro}</p>
             </div>
@@ -308,10 +314,15 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
                 <article key={question.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                   <div className="border-b border-slate-100 px-4 py-4 sm:px-6">
                     <div className="flex gap-3">
-                      <div className="flex h-8 min-w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{REQUIREMENTS_DISPLAY_NUMBER_BY_ID.get(question.id)}</div>
+                      <div className="flex h-8 min-w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">{workshop.displayNumberById.get(question.id)}</div>
                       <div>
                         <h2 className="font-bold leading-6 text-slate-950">{question.prompt}</h2>
-                        <p className="mt-1 text-sm leading-5 text-slate-500">{question.context}</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-600"><span className="font-semibold text-slate-700">Why we are asking: </span>{question.context}</p>
+                        {question.example && (
+                          <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 px-3 py-2.5 text-sm leading-6 text-cyan-950">
+                            <span className="font-bold">Simple example: </span>{question.example}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -345,7 +356,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
             })}
           </div>
 
-          {activeSection === REQUIREMENTS_SECTIONS.length - 1 && (
+          {activeSection === workshop.sections.length - 1 && (
             <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <h2 className="font-bold text-slate-950">Anything else we should know?</h2>
               <p className="mt-1 text-sm text-slate-500">Use this space for an overall note that does not belong to one question.</p>
@@ -377,7 +388,7 @@ export default function RequirementsQuestionnaire({ token }: { token: string }) 
             <div className="text-center text-xs text-slate-300">
               {sectionAnswered === section.questions.length ? "Section complete ✓" : `${section.questions.length - sectionAnswered} left in this section`}
             </div>
-            {activeSection < REQUIREMENTS_SECTIONS.length - 1 ? (
+            {activeSection < workshop.sections.length - 1 ? (
               <button
                 type="button"
                 onClick={() => goToSection(activeSection + 1)}
