@@ -220,6 +220,19 @@ test("Events and Calendar UI covers all three views and approved recurrence deci
   assert.match(resource, /resourceTimelineDay/);
 });
 
+test("Google Calendar UI covers one-way personal connection and synchronization health", async () => {
+  const component = await read("src/components/GoogleCalendarPrototype.tsx");
+  const account = await read("src/app/(app)/account/page.tsx");
+  const page = await read("src/app/(app)/account/google-calendar/page.tsx");
+  for (const value of ["Dialoggg stays the source of truth", "Synchronization is one-way", "dedicated calendar named", "Nothing is written to your primary Google calendar", "Google default reminders", "External/Client", "Remove managed items", "Retain existing items", "Safe Google item preview", "24 hours", "within two minutes", "Resume Google synchronization?"]) assert.match(component, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
+  assert.match(component, /one-to-one/);
+  assert.match(component, /tokens are encrypted\/protected at rest/);
+  assert.match(account, /Manage Google Calendar/);
+  assert.match(account, /\/account\/google-calendar/);
+  assert.match(page, /getCurrentUser/);
+  assert.match(page, /GoogleCalendarPrototype/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",
