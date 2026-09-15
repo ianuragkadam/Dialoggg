@@ -5,10 +5,11 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import { useEffect, useState } from "react";
 import SubscribeButton from "@/components/SubscribeButton";
+import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 
 type Evt = { id: string; title: string; start: string; end: string; color: string };
 
-export default function ProjectCalendar({ projectId }: { projectId: number }) {
+export default function ProjectCalendar({ projectId, canManage = true, projectName }: { projectId: number; canManage?: boolean; projectName?: string }) {
   const [events, setEvents] = useState<Evt[]>([]);
 
   useEffect(() => {
@@ -18,7 +19,9 @@ export default function ProjectCalendar({ projectId }: { projectId: number }) {
   }, [projectId]);
 
   return (
-    <div className="bg-white border rounded shadow-sm p-4">
+    <div className="space-y-3">
+      <CalendarWorkflowReview context="project" canManage={canManage} projectId={projectId} projectName={projectName} />
+      <div className="bg-white border rounded shadow-sm p-4">
       <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
         <h2 className="font-semibold">Project Calendar</h2>
         <div className="flex items-center gap-3">
@@ -29,10 +32,11 @@ export default function ProjectCalendar({ projectId }: { projectId: number }) {
       <FullCalendar
         plugins={[dayGridPlugin, interactionPlugin]}
         initialView="dayGridMonth"
-        headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,dayGridWeek" }}
+        headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,dayGridWeek,dayGridDay" }}
         events={events as any}
         height={650}
       />
+      </div>
     </div>
   );
 }

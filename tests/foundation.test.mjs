@@ -205,6 +205,21 @@ test("Project Plan workflow UI covers approved scheduling rules without replacin
   assert.doesNotMatch(review, /import\(.+GanttChart|from ["']@\/components\/GanttChart/);
 });
 
+test("Events and Calendar UI covers all three views and approved recurrence decisions", async () => {
+  const review = await read("src/components/CalendarWorkflowReview.tsx");
+  const master = await read("src/app/(app)/calendar/page.tsx");
+  const project = await read("src/components/ProjectCalendar.tsx");
+  const resource = await read("src/app/(app)/resources/schedule/page.tsx");
+  for (const value of ["Project Calendar", "Master Calendar", "Resource Calendar", "Day", "Week", "Month", "Task · all-day schedule", "Event · calendar-only", "Push to Project Calendar", "Include Completed Projects", "Daily", "Weekly", "Monthly", "No User-selected end date", "This occurrence", "Entire series", "Resource scheduling conflict", "Edit in Project Plan"]) assert.match(review, new RegExp(value.replace(/[+?()]/g, "\\$&")));
+  assert.match(review, /This and following.+not part of v1/s);
+  assert.match(review, /Task dragging is disabled/);
+  assert.match(review, /Company Time Zone/);
+  assert.match(`${master}\n${project}\n${resource}`, /CalendarWorkflowReview/);
+  assert.match(master, /dayGridDay/);
+  assert.match(project, /dayGridDay/);
+  assert.match(resource, /resourceTimelineDay/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",

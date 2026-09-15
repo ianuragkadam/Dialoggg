@@ -4,6 +4,7 @@ import FullCalendar from "@fullcalendar/react";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
 import interactionPlugin from "@fullcalendar/interaction";
 import { useEffect, useState } from "react";
+import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 
 type Resource = { id: string; title: string };
 type Evt = {
@@ -16,6 +17,7 @@ export default function GlobalResourceSchedulePage() {
   const [resources, setResources] = useState<Resource[]>([]);
   const [events, setEvents] = useState<Evt[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [canManage, setCanManage] = useState(false);
 
   useEffect(() => {
     fetch("/api/resources/schedule").then(r => r.json()).then(j => {
@@ -23,6 +25,10 @@ export default function GlobalResourceSchedulePage() {
       setEvents(j.events || []);
       setLoaded(true);
     });
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/me").then(r => r.json()).then(j => setCanManage(["owner", "admin"].includes(j.user?.user_type)));
   }, []);
 
   const conflictCount = events.filter(e => e.extendedProps.conflict).length / 2;
@@ -41,12 +47,13 @@ export default function GlobalResourceSchedulePage() {
           )}
         </div>
       </div>
+      <CalendarWorkflowReview context="resource" canManage={canManage} projectId={events[0]?.extendedProps.project_id} />
       <div className="bg-white border rounded shadow-sm p-4">
         {!loaded ? <div className="text-gray-500">Loading…</div> : (
           <FullCalendar
             plugins={[resourceTimelinePlugin, interactionPlugin]}
             initialView="resourceTimelineMonth"
-            headerToolbar={{ left: "prev,next today", center: "title", right: "resourceTimelineMonth,resourceTimelineWeek" }}
+            headerToolbar={{ left: "prev,next today", center: "title", right: "resourceTimelineMonth,resourceTimelineWeek,resourceTimelineDay" }}
             resources={resources as any}
             events={events as any}
             resourceAreaHeaderContent="Resources"

@@ -61,7 +61,7 @@ export default function ProjectTabs({
             <GanttChart projectId={project.id} canEdit={canEdit} />
           </div>
         )}
-        {tab === "calendar"  && <ProjectCalendar projectId={project.id} />}
+        {tab === "calendar"  && <ProjectCalendar projectId={project.id} canManage={canEdit} projectName={project.name} />}
         {tab === "resources" && <ResourceSchedule projectId={project.id} />}
       </div>
     </div>

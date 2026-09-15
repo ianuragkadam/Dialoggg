@@ -4,6 +4,7 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import { useEffect, useState } from "react";
 import SubscribeButton from "@/components/SubscribeButton";
+import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 
 type Project = { id: number; name: string };
 
@@ -11,6 +12,11 @@ export default function MasterCalendarPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState<string>("all");
+  const [canManage, setCanManage] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/me").then(r => r.json()).then(j => setCanManage(["owner", "admin"].includes(j.user?.user_type)));
+  }, []);
 
   useEffect(() => {
     fetch("/api/projects").then(r => r.json()).then(j => setProjects(j.projects || []));
@@ -39,11 +45,16 @@ export default function MasterCalendarPage() {
           </label>
         </div>
       </div>
+      <CalendarWorkflowReview
+        context="master"
+        canManage={canManage}
+        projectId={projectId === "all" ? projects[0]?.id : Number(projectId)}
+      />
       <div className="bg-white border rounded shadow-sm p-4">
         <FullCalendar
           plugins={[dayGridPlugin]}
           initialView="dayGridMonth"
-          headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,dayGridWeek" }}
+          headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,dayGridWeek,dayGridDay" }}
           events={events}
           height={650}
         />
