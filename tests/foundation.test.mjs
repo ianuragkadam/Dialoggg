@@ -39,6 +39,35 @@ test("follow-up workshop keeps nineteen plain-language questions with examples",
   assert.match(workshopRegistry, /Dialoggg Follow-up Workshop/);
 });
 
+test("Project Types UI covers the complete safe management workflow", async () => {
+  const component = await read("src/components/ProjectTypesPrototype.tsx");
+  const page = await read("src/app/(app)/settings/project-types/page.tsx");
+  const shell = await read("src/components/AppShell.tsx");
+
+  assert.match(shell, /Project Types/);
+  assert.match(shell, /\/settings\/project-types/);
+  assert.match(page, /ProjectTypesPrototype/);
+  assert.match(page, /Project Types are restricted/);
+  assert.match(component, /Add Project Type/);
+  assert.match(component, /Rename Project Type/);
+  assert.match(component, /Delete Project Type\?/);
+  assert.match(component, /This Project Type can&apos;t be deleted/);
+  assert.match(component, /Discard unsaved changes\?/);
+  assert.match(component, /No matching Project Types/);
+  assert.match(component, /role="alertdialog"/);
+  assert.match(component, /aria-modal="true"/);
+  assert.match(component, /Acrylic/);
+  assert.match(component, /Hardwood/);
+  assert.match(component, /Modular/);
+  assert.match(component, /do not alter production Project records/);
+});
+
+test("registration performs a reliable full navigation into Projects", async () => {
+  const registration = await read("src/app/register/page.tsx");
+  assert.match(registration, /window\.location\.assign\("\/projects"\)/);
+  assert.doesNotMatch(registration, /router\.push\("\/projects"\)/);
+});
+
 test("retired modules are absent from routes and fresh database schema", async () => {
   const retiredRoutes = [
     "src/app/(app)/discussion/page.tsx",

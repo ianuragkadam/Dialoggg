@@ -38,7 +38,8 @@ export default function LoginForm() {
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8">
         <div className="text-center mb-6">
           <div className="w-14 h-14 mx-auto rounded bg-gradient-to-br from-blue-600 to-blue-800 text-white font-bold flex items-center justify-center text-2xl">D</div>
-          <h1 className="text-2xl font-bold mt-3 text-blue-800">Dialoggg</h1>
+          <h1 className="text-2xl font-bold mt-3 text-blue-800">Log in to Dialoggg</h1>
+          <p className="mt-1 text-sm text-gray-500">Open your company Projects and schedules.</p>
         </div>
         <form onSubmit={submit} className="space-y-4">
           <div>

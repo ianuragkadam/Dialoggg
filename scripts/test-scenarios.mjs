@@ -356,6 +356,29 @@ try {
     assert.equal(storage.status, 404);
   });
 
+  await check("signed-out Project Types route redirects to login", async () => {
+    const response = await anonymous.request("/settings/project-types");
+    assert.equal(response.status, 307);
+    assert.ok(response.headers.get("location")?.endsWith("/login"));
+  });
+
+  await check("Settings route redirects admins to Project Types", async () => {
+    const response = await adminA.request("/settings");
+    assert.equal(response.status, 307);
+    assert.ok(response.headers.get("location")?.endsWith("/settings/project-types"));
+  });
+
+  await check("admin can open the Project Types UI prototype", async () => {
+    const response = await adminA.request("/settings/project-types");
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Project Types/);
+    assert.match(response.text, /Add Project Type/);
+    assert.match(response.text, /Acrylic/);
+    assert.match(response.text, /Hardwood/);
+    assert.match(response.text, /Modular/);
+    assert.match(response.text, /UI preview/);
+  });
+
   await check("help content no longer advertises in-app storage", async () => {
     const response = await adminA.request("/help");
     assert.equal(response.status, 200);
@@ -440,6 +463,13 @@ try {
     const projects = await viewerA.request("/api/projects");
     assert.equal(projects.status, 200);
     assert.ok(projects.data.projects.some(project => project.id === projectAId));
+  });
+
+  await check("Employee cannot view Project Type management data", async () => {
+    const response = await viewerA.request("/settings/project-types");
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Project Types are restricted/);
+    assert.doesNotMatch(response.text, /Acrylic|Hardwood|Modular/);
   });
 
   await check("viewer cannot create projects", async () => {

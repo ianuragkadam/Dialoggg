@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [form, setForm] = useState({ company_name: "", full_name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -21,8 +19,10 @@ export default function RegisterPage() {
     });
     setLoading(false);
     if (res.ok) {
-      router.push("/projects");
-      router.refresh();
+      // Registration creates the session and changes the authenticated shell.
+      // A full navigation avoids leaving the unauthenticated form mounted while
+      // the new server-rendered session state is being resolved.
+      window.location.assign("/projects");
     } else {
       const j = await res.json().catch(() => ({}));
       setError(j.error || "Sign up failed");

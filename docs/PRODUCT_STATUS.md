@@ -1,6 +1,6 @@
 # Product Status
 
-Last verified: September 14, 2026
+Last verified: September 15, 2026
 
 ## Complete foundations
 
@@ -11,6 +11,13 @@ Last verified: September 14, 2026
 - Original and follow-up private requirements workshops with autosave, examples, comments, completion state, response review, and Markdown export
 - Local Git repository, setup/deployment runbooks, tested backup/restore commands, automated test pipeline, and security/maintenance guidance
 
+## Complete UI review modules
+
+- Project Types management UI at `/settings/project-types`
+- Admin navigation and Employee restricted-access state
+- Create, rename, duplicate validation, search, empty results, safe delete, blocked delete, unsaved-change protection, responsive cards, and accessible dialogs
+- UI-only demonstration state is clearly labelled and does not change production Project records
+
 ## Requirements validation
 
 Scott completed all 55 workshop questions at the latest release verification, with five question comments saved. The answers and comments must now be reviewed and converted into acceptance criteria before implementing the remaining modules.
@@ -19,7 +26,7 @@ Scott completed all 55 workshop questions at the latest release verification, wi
 
 - Platform Administrator and company provisioning
 - Final Owner, Admin, Employee (Internal), and External/Client permissions
-- Project Types and complete project-access behavior
+- Project Types persistence/API/Project integration and complete project-access behavior; the UI review module is complete
 - Project Templates and Template Library
 - Complete weekend-aware Gantt cascade rules
 - Full Event management and approved calendar behavior
