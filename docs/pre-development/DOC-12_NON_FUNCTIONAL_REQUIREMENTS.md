@@ -5,16 +5,16 @@
 
 ## Measurement assumptions
 
-These targets must be tested with a representative dataset, not an empty demo. Initial benchmark profile:
+These targets must be tested with a representative dataset, not an empty demo. Scott's approved acceptance profile is:
 
-- 50 companies.
-- 100 active Users per larger company.
-- 500 Projects per larger company, 100 active.
-- 500 Tasks and 1,000 dependencies in a large active Project.
-- 500 Resources and 25,000 visible calendar items across a large date range.
-- 20 concurrent interactive Users per company plus background integration work.
+- Several companies on the platform.
+- Up to 25 Users per company.
+- Up to 100 Resources per company.
+- Up to 250 active Projects per company.
+- Up to 500 Tasks per Project with representative dependencies.
+- 10 simultaneously active Users in one company plus background integration work (`IC-003`).
 
-Replace these assumptions if Scott expects higher volume before accepting architecture or estimates.
+A separate engineering stress profile should run at approximately twice these record/concurrency levels to identify the failure slope; it is not a new client acceptance requirement.
 
 ## Proposed service objectives
 
@@ -75,4 +75,3 @@ SQLite WAL still has one writer at a time. If benchmark write latency, lock rate
 - Final RPO if 24 hours is unacceptable.
 - Whether accessibility conformance requires third-party audit.
 - Supported minimum browser versions rather than only current families.
-

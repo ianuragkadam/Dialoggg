@@ -23,6 +23,8 @@ Use separate Local, Test/CI, UAT, and Production data and credentials. Vendor OA
 
 Never record secret values in source, Markdown, tickets, logs, screenshots, or test fixtures.
 
+If PostgreSQL is approved, application services use Railway private networking and `DATABASE_URL`; public database access is disabled unless a time-bounded operational task explicitly requires it. Connection pooling, maximum connections, statement/lock timeouts, SSL behavior, and migration credentials must be documented and load-tested separately from normal application credentials.
+
 ## Pre-deployment checklist
 
 1. Approved scope/change record and reviewed commit.
@@ -89,4 +91,3 @@ Railway rollback restores the previous deployment image and custom variables but
 | Smoke result | |
 | Rollback point | |
 | Known exceptions | |
-

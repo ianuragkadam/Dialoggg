@@ -52,13 +52,17 @@ Operations: structured logs + metrics/alerts + backup destination + deployment h
 | ADR-001 | Keep Next.js App Router monolith for v1 | Proposed accept | Current fit; one team/repo; avoid premature services |
 | ADR-002 | Separate global identity from company membership | Required | Approved multi-company/per-membership role requirements |
 | ADR-003 | Centralize authorization in server policy functions | Required | Current `isAdmin()` is insufficient and misclassifies Owner |
-| ADR-004 | Database: SQLite versus PostgreSQL | Open | Run concurrency/job/migration spike described in DOC-05 |
+| ADR-004 | Migrate target backend to Railway PostgreSQL before new identity/membership implementation | Recommended; approval pending | Multi-company writes/jobs/recovery outweigh early migration cost; SQLite exception requires benchmark and explicit acceptance |
 | ADR-005 | Use transactional outbox for email and external sync | Proposed accept | Prevent source commit without delivery record; idempotent retry |
 | ADR-006 | Dialoggg remains Google source of truth | Approved product decision | One-way sync requirement |
 | ADR-007 | Store stable Microsoft IDs; do not manage permissions | Approved product decision | Links only; Microsoft authorization remains external |
 | ADR-008 | Preserve DHTMLX Gantt component; isolate calculation engine | Proposed accept | Core original UX with testable deterministic rules |
 | ADR-009 | Use date-only domain values for Tasks and zoned instants for timed Events | Proposed accept | Avoid device-zone shifts; preserve local Event time |
-| ADR-010 | Use external email provider | Open vendor | Required for invitations/resets; evaluate delivery, domain, logs, cost |
+| ADR-010 | Use Resend for transactional invitations/resets | Recommended; commercial/ownership approval pending | Signed webhooks and 24-hour idempotency keys fit secure retry; validate domain, data terms, support, pricing, and regional needs |
+
+## Email-provider R&D
+
+Resend exposes per-send idempotency keys retained for 24 hours and signed webhooks that can be verified before processing. This aligns with single-use invitation/reset delivery, outbox retries, and duplicate prevention. Postmark is a credible alternative with mature transactional streams, suppressions, and verified webhook setup, but its official webhook guidance uses HTTPS plus Basic authentication/IP allowlisting rather than a native payload signature. On the current evidence, Resend is the simpler security/integration fit; final selection requires account ownership, sending-domain DNS, data-processing, volume, pricing, and support approval. Sources: [Resend idempotency](https://resend.com/docs/dashboard/emails/idempotency-keys), [Resend webhook verification](https://resend.com/docs/webhooks/ingester), and [Postmark webhooks](https://postmarkapp.com/developer/webhooks/webhooks-overview).
 
 ## Failure design
 
@@ -90,4 +94,3 @@ Railway healthchecks are deployment-time gates rather than continuous monitoring
 - Every write has authorization, validation, transaction, audit, and concurrency behavior.
 - No secret or token enters browser state, logs, source, or audit metadata.
 - The selected database supports the documented load and recovery objectives.
-

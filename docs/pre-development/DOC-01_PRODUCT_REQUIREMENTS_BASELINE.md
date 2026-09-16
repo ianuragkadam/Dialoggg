@@ -50,6 +50,36 @@ The current application is a tested UI review prototype plus a limited working f
 
 `IC-001` through `IC-003` remain non-blocking only while their documented safe defaults do not conflict with Scott's review feedback. If a clarification affects visible behavior, data ownership, authorization, or integration payloads, it becomes a formal decision before the affected module starts.
 
+## Follow-up decision trace register
+
+| Decision | Controlled design location |
+| --- | --- |
+| `FUP-001` Platform role cannot enter tenant content without membership | DOC-04, DOC-06 |
+| `FUP-002` role belongs to company membership | DOC-04, DOC-05 |
+| `FUP-003` safe External view; optional safe Gantt | DOC-04 |
+| `FUP-004` Template Categories always; exact Resources optional/off | DOC-05, DOC-08 |
+| `FUP-005` zero-lag FS starts next allowed workday | DOC-08 |
+| `FUP-006` Project Start Date offers schedule shift or date-only | DOC-07, DOC-08, DOC-13 |
+| `FUP-007` recurrence ends by date/count/no selected end | DOC-05, DOC-07, DOC-09 |
+| `FUP-008` occurrence or entire-series edit/delete | DOC-05, DOC-07, DOC-09 |
+| `FUP-009` double-booking warns but authorized confirmation may proceed | DOC-07, DOC-13 |
+| `FUP-010` one-to-one User/Resource link per company | DOC-05, DOC-09 |
+| `FUP-011` Resource deactivation preserves history | DOC-05, DOC-13 |
+| `FUP-012` suspension locks access/pauses sync/preserves data and Microsoft folders | DOC-04, DOC-09, DOC-10 |
+| `FUP-013` in-use Project Type deletion blocked | DOC-05, DOC-07 |
+| `FUP-014` Owner/Admin selects stable Microsoft root | DOC-10 |
+| `FUP-015` 72-hour invite and one-hour reset, single-use | DOC-07, DOC-11, DOC-17 |
+| `FUP-016` Google normally within two minutes; retry 24 hours | DOC-09, DOC-12, DOC-16 |
+| `FUP-017` approved company scale | DOC-05, DOC-12 |
+| `FUP-018` daily/30-day backup, ~24-hour RPO, four-hour RTO, quarterly drill | DOC-15 |
+| `FUP-019` primary workflows target WCAG 2.2 AA | DOC-12, DOC-13 |
+
+| Clarification | Safe implementation baseline | Controlled location |
+| --- | --- | --- |
+| `IC-001` completed Tasks during Project rebase | Never move completed history; offer date-only or explicit unfinished-only shift | DOC-08, DOC-13 |
+| `IC-002` Google after company restore | Keep paused until Owner/Admin health review and explicit Resume | DOC-09, DOC-16 |
+| `IC-003` concurrency test level | 10 simultaneous active Users in one company plus background sync | DOC-12, DOC-13 |
+
 ## Acceptance of this baseline
 
 Scott should confirm:
@@ -76,4 +106,3 @@ Every baseline change must record:
 | Version | Decision | Approver | Date | Exceptions |
 | --- | --- | --- | --- | --- |
 | 0.1 | Pending | Scott Grote | — | — |
-

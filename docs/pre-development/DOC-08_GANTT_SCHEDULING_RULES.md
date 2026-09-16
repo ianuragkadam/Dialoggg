@@ -23,7 +23,7 @@ The current DHTMLX Gantt UI remains the foundation. Scheduling mathematics must 
 - `normalizeForward(date, task)`: first allowed date on/after input.
 - `addWorkingDaysInclusive(start, duration, task)`: normalize start; count it as day 1; advance only through allowed dates.
 - `nextAllowedAfter(date, task)`: first allowed date strictly after input.
-- Lag is a non-negative integer counted using the dependent/successor Task's working-day rules.
+- Lag is a non-negative integer counted using the dependent/successor Task's working-day rules. Lag `0` uses the dependency's zero-lag anchor; lag `n` advances `n` additional allowed successor workdays after that anchor.
 
 Examples:
 
@@ -38,12 +38,20 @@ Examples:
 
 Let `Sx` and `Fx` be inclusive start/finish. For successor `B`:
 
-- **FS:** `SB = addLag(nextAllowedAfter(FA, B), lag, B)`. Zero lag starts the next allowed working day.
-- **SS:** `SB = addLag(normalizeForward(SA, B), lag, B)`.
-- **FF:** constrained finish is based on predecessor finish plus successor-calendar lag; derive `SB` backward so B's inclusive duration ends there.
-- **SF:** constrained finish is based on predecessor start plus successor-calendar lag; derive `SB` backward.
+- **FS:** anchor is `nextAllowedAfter(FA, B)`; advance by `lag`; zero lag starts on the anchor.
+- **SS:** anchor is `normalizeForward(SA, B)`; advance by `lag`; zero lag starts on the predecessor's start when allowed.
+- **FF:** finish anchor is the first successor-allowed date on/after `FA`; advance by `lag`; derive `SB` backward across B's allowed days so its inclusive finish equals the constrained finish.
+- **SF:** finish anchor is the first successor-allowed date on/after `SA`; advance by `lag`; derive `SB` backward across B's allowed days.
 
-The exact definition of zero-lag SS/FF/SF must be validated in the golden examples before approval. FS is explicitly approved by `FUP-005`.
+These SS/FF/SF definitions are the conservative technical baseline: a dependency never places a required successor start/finish before the referenced predecessor point merely because that calendar date is excluded by the successor. FS zero lag is explicitly approved by `FUP-005`.
+
+| Example | Result |
+| --- | --- |
+| A finishes Wednesday; B FS 0; weekdays only | B starts Thursday |
+| A finishes Friday; B FS 0; weekends excluded | B starts Monday |
+| A starts Tuesday; B SS 2; weekdays only | B starts Thursday |
+| A finishes Friday; B FF 0; Saturday excluded | B finishes Friday and its start is derived backward |
+| A starts Sunday; B SF 0; Sunday excluded | B constrained finish normalizes forward to Monday |
 
 ## Multiple predecessors
 
@@ -86,6 +94,10 @@ The exact definition of zero-lag SS/FF/SF must be validated in the golden exampl
 
 Deleting a leaf removes its incoming/outgoing links in the same transaction, recalculates affected downstream constraints, ancestors, root, Project End Date, calendars, conflicts, and outbox work. Deleting a Header with children is rejected. Completed-history retention rules apply before physical deletion.
 
+## Project Start Date rebase
+
+Under `FUP-006` and `IC-001`, changing Project Start Date offers Date only or schedule movement. Completed Tasks never move. If completed work exists, the safe baseline is Date only or an explicit shift of unfinished Tasks, with the confirmation naming excluded completed Tasks. A whole-schedule shift preserves relative working-day spacing, dependency graph, and lags for eligible Tasks and runs through the same calculation engine.
+
 ## Concurrency
 
 - Each Plan has a version.
@@ -108,5 +120,4 @@ Deleting a leaf removes its incoming/outgoing links in the same transaction, rec
 
 ## Approval blockers
 
-Scott/product review must approve worked examples for zero-lag SS, FF, and SF; linked drag with multiple predecessors; and empty Header display. Engineering must approve the database/concurrency strategy before implementation.
-
+The golden suite must confirm the technical baseline above, linked drag with multiple predecessors, and empty Header display before release. Any client-visible departure requires change control. Engineering must approve the database/concurrency strategy before implementation.

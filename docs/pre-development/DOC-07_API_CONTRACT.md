@@ -76,10 +76,12 @@ Do not include stack traces, SQL, tokens, hidden IDs, other-tenant values, or ve
 | `POST /api/v1/auth/login` | Create session | Public, rate limited |
 | `POST /api/v1/auth/logout` | Revoke current session | Authenticated |
 | `POST /api/v1/auth/forgot-password` | Issue one-hour reset if identity exists | Public, generic response |
-| `POST /api/v1/auth/reset-password` | Consume single-use reset token | Public token, rate limited |
-| `POST /api/v1/invitations/{token}/accept` | Set password/accept membership | Public token, single-use |
+| `POST /api/v1/auth/reset-password` | Consume token supplied in protected request body | Public token, rate limited |
+| `POST /api/v1/invitations/accept` | Consume token supplied in protected request body | Public token, single-use |
 | `GET /api/v1/me` | Identity, memberships, active context | Authenticated |
 | `PUT /api/v1/me/active-company` | Switch active membership | Active membership required |
+
+Invitation/reset email links should place the bearer token in the URL fragment (`#token=...`) rather than a server path or query. The landing page submits it in the HTTPS request body, applies `Referrer-Policy: no-referrer`, does not load third-party content, and replaces browser history after consumption. Server/access logs must never record the token.
 
 ### Platform companies
 
@@ -120,7 +122,10 @@ Do not include stack traces, SQL, tokens, hidden IDs, other-tenant values, or ve
 
 Lifecycle, role, assignment, schedule, integration, deletion, invite/reset, and support actions create safe audit events. External-delivery operations use an outbox idempotency key such as `google:{connection}:{source}:{occurrence}:{sourceVersion}`.
 
+## CSRF and origins
+
+All cookie-authenticated state-changing operations validate an approved Origin and use a synchronizer/double-submit CSRF token strategy where the browser flow requires it. `SameSite` is defense in depth, not the only control. OAuth callbacks validate signed state and PKCE. CORS defaults to same-origin and never combines wildcard origins with credentials.
+
 ## Contract testing
 
 Every operation requires schema validation, allowed-role test, denied-role test, cross-company/object substitution test, lifecycle-state test, version-conflict test where applicable, and error-body snapshot. OpenAPI must become the machine-readable source before frontend wiring is declared complete.
-

@@ -18,7 +18,7 @@
 
 ## Official API research
 
-Google recommends requesting the narrowest possible OAuth scope and notes that public apps using sensitive scopes may require verification. The `calendar.app.created` scope is specifically intended for secondary calendars created by the app and their events, making it the first scope to test for this design. See [Calendar scopes](https://developers.google.com/workspace/calendar/api/auth).
+Google recommends requesting the narrowest possible OAuth scope and notes that public apps using sensitive scopes may require verification. The `calendar.app.created` scope is specifically intended for secondary calendars created by the app and their events, making it the recommended scope to validate first for this design. Broader calendar scope is not approved unless the proof of concept demonstrates a missing required operation. See [Calendar scopes](https://developers.google.com/workspace/calendar/api/auth).
 
 Google documents per-project and per-user quotas and recommends exponential backoff, traffic smoothing, and a separate test project. See [Calendar quotas](https://developers.google.com/workspace/calendar/api/guides/quota). All-day events use `start.date/end.date`; timed events use `dateTime`, per [Create events](https://developers.google.com/workspace/calendar/api/guides/create-events).
 
@@ -28,7 +28,7 @@ Google documents per-project and per-user quotas and recommends exponential back
 2. Server creates short-lived, single-use signed state bound to identity/session and PKCE verifier.
 3. Redirect to Google consent with minimal tested scope.
 4. Callback validates state, issuer, redirect URI, and identity; exchanges code server-side.
-5. Encrypt refresh/access token material at rest.
+5. Request offline access so background jobs can obtain access tokens while the User is absent; encrypt refresh/access token material at rest.
 6. Create or locate the dedicated Dialoggg secondary calendar; store its stable ID.
 7. Mark connection Healthy and enqueue reconciliation of currently eligible items.
 
@@ -39,6 +39,8 @@ Tokens and calendar IDs never appear in browser payloads or ordinary logs.
 `google_connection`: identity, encrypted token envelope/key version, calendar ID, state, last success/error class, retry/reconciliation timestamps.
 
 `google_item_mapping`: connection, source type/ID, occurrence key, Google event ID, last source version, payload hash, status. Unique key prevents duplicates.
+
+Use a deterministic, Google-valid event ID derived from connection/source/occurrence plus a version-independent namespace when creating an item. Google explicitly permits client-supplied event IDs to prevent duplicate creation after an ambiguous failure. A `409 duplicate` triggers lookup/update, not creation with another random ID. See [Create events](https://developers.google.com/workspace/calendar/api/guides/create-events) and [Calendar error handling](https://developers.google.com/workspace/calendar/api/guides/errors).
 
 ## Payload rules
 
@@ -64,9 +66,11 @@ Tokens and calendar IDs never appear in browser payloads or ordinary logs.
 
 Run reconciliation after connect/reconnect, deployment of mapping changes, company restoration, or detected drift. Compare eligible source set with mapping set; create missing, update stale, remove ineligible managed mappings. Never import arbitrary Google events.
 
+After company restoration (`IC-002`), application access resumes first while Google delivery remains paused. An Owner/Admin reviews connection and queue health and explicitly selects Resume synchronization; reconciliation then runs before normal delivery.
+
 ## Recurrence decision
 
-The approved Dialoggg series and occurrence exceptions must map predictably. A technical spike must compare native Google recurrence with per-occurrence materialization. Prefer native recurrence only if this-occurrence/entire-series behavior, time zones, mapping, and deletion remain deterministic; otherwise materialize within a bounded horizon and reconcile.
+Use native Google recurrence for daily, weekly, and monthly series because the approved v1 operations are Entire series and This occurrence. Google supports RRULE series and individual instance exceptions identified by parent recurring event and original start. Maintain a parent-series mapping plus exception mappings where needed. Do not implement This and following; Google requires splitting a series for that operation, and it is explicitly outside the approved v1 scope. Validate all-day/timed DST behavior in the proof of concept. See [Recurring events](https://developers.google.com/workspace/calendar/api/guides/recurringevents).
 
 ## Security and privacy tests
 
@@ -84,4 +88,3 @@ The approved Dialoggg series and occurrence exceptions must map predictably. A t
 - OAuth consent-screen identity, privacy/support URLs, and verification owner.
 - Test Google accounts for all roles.
 - Approval of minimal scope after spike.
-

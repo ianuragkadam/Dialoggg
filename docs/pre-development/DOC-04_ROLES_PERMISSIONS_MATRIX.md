@@ -40,8 +40,8 @@ The target model stores role on company membership. The current `user.user_type`
 | Permanently delete Project | — | O with confirmation | — | — | — |
 | Internal Project Plan/Gantt | — | M | M | V | S/A if enabled per Project |
 | External safe Project task list | — | V | V | V | A/S |
-| Project Types | — | M | M | V/reference only | — |
-| Templates | — | M | M | V/reference only if approved UI requires | — |
+| Project Types settings/list | — | M | M | — | — |
+| Template Library/details/actions | — | M | M | — | — |
 | Resources/categories | — | M | M | V | No private resource detail |
 | Create/edit Tasks and dependencies | — | M | M | — | — |
 | Project Calendar | — | M | M | V | A/S |
@@ -95,16 +95,15 @@ Never serialize:
 - Do not trust company, role, or assignment IDs from the request body.
 - Apply the same policy to pages, APIs, feeds, jobs, exports, integration mappings, and support tools.
 
-## Required approval points
+## Implementation defaults from the approved baseline
 
-1. Whether Admin may view company settings read-only or only the specific settings it manages.
-2. Whether Employee may open Template details or only see Template name on Projects.
-3. Exact audit-history visibility for Admin.
-4. Exact fields permitted in the External simple Gantt.
+- There is no generic company-settings permission. Each setting has an explicit policy: Microsoft Storage is Owner/Admin; Owner/Admin management is Owner-only; Platform company lifecycle is Platform Administrator-only.
+- Employee and External/Client cannot open Project Types settings or the Template Library/details. A Project may display the already-selected Project Type/Template-derived result where needed without exposing management routes.
+- Owner receives company audit visibility. Admin receives audit entries for operational objects/actions it is permitted to manage, but not Owner-only membership/security administration.
+- External simple Gantt exposes only externally visible Task name, Start, End/Duration, progress, hierarchy needed for comprehension, and safe connector display. It excludes lag values, internal notes, Resources/private people data, internal-only Tasks, and editing controls.
 
-These refinements do not change the approved high-level role model but must be fixed before their APIs are built.
+These are conservative implementation rules derived from the approved role and privacy requirements. Any request to broaden access requires change control rather than an informal UI exception.
 
 ## Test minimum
 
 For every matrix cell, test one allowed and one denied path where applicable, including direct URL, API ID substitution, cross-company ID, unassigned Project, archived/completed state, suspended company, deactivated membership, and stale session.
-

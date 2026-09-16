@@ -36,12 +36,15 @@ Release candidates additionally require the complete browser matrix, security/de
 - Multi-company: one identity with different roles; company switch; suspended company; platform boundary.
 - Roles: every DOC-04 cell plus direct URL/API/ID substitution and stale sessions.
 - Projects: create/edit, assignments, Complete/Reopen, Archive/Restore, Owner-only deletion.
+- Project Start Date: completed Tasks never move; date-only and unfinished-only shift choices follow `IC-001`.
 - Gantt: complete DOC-08 golden suite and original component characterization.
 - Templates: relative-date copy, exact Resource option, atomic instantiation, duplicate names.
 - Events: timed/all-day, recurrence/end modes, occurrence/series changes, conflicts, time zones.
 - Google: safe payload, create/update/delete, duplicate job, revoke, disconnect choices, 24-hour retry.
+- Company restore: application access resumes while Google remains paused until explicit Owner/Admin health review and resume (`IC-002`).
 - Microsoft: create/link, stable ID after rename/move, role link visibility, permission denial, no delete/rename.
 - Operations: deployment healthcheck, failed migration, restore, alert, and incident drill.
+- Performance: 10 simultaneous active Users in one company plus background synchronization (`IC-003`), followed by a separate 2× engineering stress run.
 
 ## Test data
 
@@ -86,4 +89,3 @@ Each UAT record contains UAT ID, Requirement IDs, preconditions, role, steps, ex
 - S2 defects have explicit owner, workaround, due date, and acceptance.
 - Security, performance, accessibility, migration, backup/restore, and browser evidence meet agreed targets.
 - Scott signs UAT and release scope.
-

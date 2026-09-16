@@ -24,10 +24,14 @@ The integration should request least privilege. Microsoft documents delegated `F
 
 ## Proposed connection model
 
-- Company-level delegated OAuth connection performed by Owner/Admin.
+- Company-level delegated OAuth Authorization Code flow with PKCE, performed by Owner/Admin, requesting `offline_access` for server-side folder operations after initial consent.
 - Store tenant ID, account/object ID, site ID if applicable, drive ID, selected root item ID, root display metadata, token envelope, state, and last health result.
 - Store Project mapping by stable `driveId + itemId`; display name and web URL are refreshable metadata, not identity.
 - Encrypt tokens and protect mapping identifiers as company-confidential values.
+
+Microsoft recommends authorization-code flow with PKCE and a supported authentication library; refresh tokens are returned only when `offline_access` is requested and can expire or be revoked, so reconnect is a normal recovery state. See [Microsoft authorization-code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow).
+
+Start the proof of concept with delegated `Files.ReadWrite` for OneDrive for Business. SharePoint discovery/root selection may require a broader site/file permission depending on the exact tenant/library flow. Do not approve `Files.ReadWrite.All` or `Sites.ReadWrite.All` until the spike demonstrates why a narrower permission cannot satisfy create/link/resolve under the selected root. Microsoft recommends least privilege: [Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference).
 
 ## Setup flow
 
@@ -84,4 +88,3 @@ The server authorizes link eligibility, resolves current mapping health, and ret
 - Test OneDrive for Business and SharePoint library.
 - Authorized redirect URIs and support/privacy ownership.
 - Named Microsoft 365 administrator for permission issues.
-

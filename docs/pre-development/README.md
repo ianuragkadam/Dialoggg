@@ -56,3 +56,6 @@ No document in this folder is client-approved merely because it exists. Approval
 
 Backend foundation work should start only after DOC-01 and DOC-04 through DOC-07 have no unresolved launch-critical contradiction. DOC-03, DOC-11, DOC-12, and DOC-13 must be active and maintained from the first implementation change.
 
+## QA and research evidence
+
+The second-pass requirements, code/schema, security, vendor, operations, and document audit is recorded in [Deep QA and R&D Report — September 16, 2026](DOCUMENT_QA_REPORT_2026-09-16.md). It records corrections, launch-critical implementation gaps, official-source research, technical recommendations, and remaining approvals without representing draft decisions as client-approved.

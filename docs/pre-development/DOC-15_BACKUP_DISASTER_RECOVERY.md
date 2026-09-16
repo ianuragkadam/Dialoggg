@@ -31,6 +31,10 @@
 - Copy the verified result off the `dialoggg-data` volume; a same-volume copy does not protect against volume loss.
 - Alert when the backup, integrity check, checksum, upload, or retention cleanup fails.
 
+### PostgreSQL target path
+
+If ADR-004 is approved, replace the SQLite-specific production procedure with three layers: scheduled Railway volume backups for routine recovery, point-in-time recovery for incidents between snapshots, and encrypted portable `pg_dump` copies outside the project/provider boundary. Railway notes that deleting a volume also deletes its volume backups, so logical offsite dumps remain necessary. Restore drills must test `pg_restore`, migration compatibility, application smoke tests, and measured RPO/RTO. See [Railway PostgreSQL backup and restore](https://docs.railway.com/guides/postgres-backups-restores).
+
 ## Restore procedure
 
 1. Declare incident/maintenance and stop all application/job writers.
@@ -43,6 +47,8 @@
 8. Test Login, company isolation, memberships, Projects, Gantt/tasks/links, calendars, questionnaire totals, and integration mapping health.
 9. Reconcile/inspect pending external jobs before resuming workers.
 10. Record actual RPO/RTO, result, data loss window, and acceptance.
+
+For PostgreSQL, replace SQLite integrity/foreign-key commands with dump/restore validation, schema migration/version checks, constraint checks, row-count/business reconciliation, and application-level tests. The recovery record must identify whether the source was volume snapshot, PITR, or logical dump.
 
 ## Disaster scenarios
 
@@ -74,4 +80,3 @@
 - Final RPO and whether more frequent/PITR-style protection is required.
 - Authority to initiate a production restore.
 - Retention/legal-hold exceptions and secure deletion.
-

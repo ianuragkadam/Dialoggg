@@ -2,7 +2,7 @@
 
 **Version:** 0.1  
 **Status:** Active draft; security acceptance required before release  
-**Target:** Risk-based controls aligned with OWASP application-security practices
+**Target:** Risk-based controls aligned with OWASP ASVS 5.0.0 Level 2 where applicable
 
 ## Protected assets
 
@@ -42,6 +42,7 @@ Browser ↔ Next.js; page/Route Handler ↔ application/data layer; application 
 - Invitation token: random, hash stored, 72-hour expiry, single-use.
 - Reset token: random, hash stored, one-hour expiry, single-use, generic request response.
 - Session cookie: HttpOnly, Secure in production, SameSite policy, path, bounded expiry.
+- Store only a cryptographic hash of the session bearer value in the database; rotate on login/privilege-sensitive events and use constant-time comparison where applicable.
 - Revoke sessions on deactivation, password reset, material role/membership change, and suspected compromise.
 - Rate limit login, invitation resend, reset request/consume, and OAuth starts/callback failures.
 - Public registration is removed/disabled server-side.
@@ -84,3 +85,4 @@ Preserve evidence, rotate affected secrets, revoke sessions/tokens, contain acce
 - Backup/restore security verified.
 - Residual risks accepted by a named owner.
 
+OWASP ASVS 5.0.0 is the current verification baseline and provides versioned requirements for authentication, sessions, access control, validation, cryptography, logging, and APIs: [OWASP ASVS](https://owasp.org/projects/asvs). The release RTM should cite exact `v5.0.0-*` control IDs selected during the security review rather than an unversioned checklist.

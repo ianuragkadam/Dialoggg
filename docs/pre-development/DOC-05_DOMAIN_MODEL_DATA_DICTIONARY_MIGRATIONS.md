@@ -10,6 +10,8 @@ The existing schema directly associates one `user` with one `company_id` and one
 
 SQLite WAL allows readers and a writer to operate concurrently, but still permits only one writer at a time. SQLite also requires foreign-key enforcement to be enabled per connection. The current application correctly enables WAL and `foreign_keys`, but concurrency, migration, and job behavior must be tested before deciding to retain SQLite for launch.
 
+The installed `better-sqlite3` runtime was queried during documentation QA and reports SQLite `3.53.1`, which includes the March 2026 WAL-reset corruption fix described by SQLite. This removes that specific version risk but does not remove the single-writer/one-replica limitation.
+
 Official research: [SQLite WAL](https://www.sqlite.org/wal.html), [foreign keys](https://www.sqlite.org/foreignkeys.html), and [online backup](https://www.sqlite.org/backup.html).
 
 ## Target entity model
@@ -74,7 +76,9 @@ Evaluate two options with a production-like dataset and concurrent scenario:
 1. **Retain SQLite for v1:** one application replica, serialized background writes, short transactions, WAL/checkpoint monitoring, verified volume/backup procedure.
 2. **Move to managed PostgreSQL before backend expansion:** stronger multi-writer operation, conventional migrations/jobs, additional migration and operating cost.
 
-Decision trigger: if expected concurrent writes, integration jobs, operational availability, or horizontal scaling cannot be met with one SQLite writer, select PostgreSQL before building the new model.
+**R&D recommendation:** choose Railway PostgreSQL before implementing the new identity/membership model. The approved multi-company scale, concurrent UI writes, invitations/audit, recurring Events, and Google/Microsoft background jobs create enough write coordination and operational importance that migrating now is lower risk than migrating after the new schema is populated. Railway provides a PostgreSQL service and documents volume backup, point-in-time recovery, and portable logical dumps; it remains operator-managed and still needs tested backups. See [Railway PostgreSQL](https://docs.railway.com/databases/postgresql) and [backup/restore guidance](https://docs.railway.com/guides/postgres-backups-restores).
+
+Retaining SQLite is an exception option only if a production-like concurrency test proves DOC-12 targets, the team accepts one writable replica and volume-backed deployment downtime, background writes are serialized, and the exception is recorded in ADR-004.
 
 ## Migration sequence
 
@@ -102,4 +106,3 @@ Decision trigger: if expected concurrent writes, integration jobs, operational a
 - Audit retention period.
 - Whether identity email changes require re-verification.
 - Whether inactive Resource records may remain on future Template instantiation as unresolved placeholders.
-
