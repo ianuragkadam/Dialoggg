@@ -264,6 +264,14 @@ test("retired modules are absent from routes and fresh database schema", async (
   assert.doesNotMatch(schema, /plan_type|expiration_date/i);
 });
 
+test("database initialization waits for parallel build workers", async () => {
+  const source = await read("src/db/index.ts");
+  const busyTimeout = source.indexOf('db.pragma("busy_timeout = 30000")');
+  const journalMode = source.indexOf('db.pragma("journal_mode = WAL")');
+  assert.ok(busyTimeout >= 0, "SQLite must have a bounded busy timeout");
+  assert.ok(journalMode > busyTimeout, "busy timeout must be active before WAL/schema initialization");
+});
+
 test("production security headers and strict rendering are enabled", async () => {
   const config = await read("next.config.mjs");
   assert.match(config, /reactStrictMode:\s*true/);

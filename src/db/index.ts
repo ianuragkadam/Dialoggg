@@ -9,6 +9,10 @@ if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
 
 const dbPath = path.join(dataDir, "dialoggg.db");
 const db = new Database(dbPath);
+// Next.js loads route modules in parallel during production builds. Give a
+// concurrent worker time to finish schema initialization instead of failing
+// the build immediately with SQLITE_BUSY.
+db.pragma("busy_timeout = 30000");
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 

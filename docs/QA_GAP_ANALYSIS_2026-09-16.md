@@ -8,9 +8,9 @@
 
 ## 1. Executive conclusion
 
-The current UI is coherent enough for continued stakeholder review. All ten planned UI modules are present, the original `GanttChart.tsx` was not modified, the production build succeeds, and the complete automated suite passes **260 of 260** checks.
+The current UI is coherent enough for continued stakeholder review. All ten planned UI modules are present, the original `GanttChart.tsx` was not modified, the production build succeeds, and the complete automated suite passes **261 of 261** checks.
 
-This audit found six reproducible UI defects. All six were fixed and protected by regression tests. No additional product-behavior question for Scott was discovered. The remaining gaps are implementation gaps: persistence, complete server authorization, real invitation/reset delivery, scheduling enforcement, Google/Microsoft integrations, production backup operations, and formal release evidence.
+This audit found six reproducible UI defects and one deployment-reliability defect. All seven were fixed and protected by regression evidence. No additional product-behavior question for Scott was discovered. The remaining gaps are implementation gaps: persistence, complete server authorization, real invitation/reset delivery, scheduling enforcement, Google/Microsoft integrations, production backup operations, and formal release evidence.
 
 This result must not be interpreted as approval for production launch. Several Must requirements still have only review UI or partial foundations.
 
@@ -27,7 +27,7 @@ The audit used four complementary passes:
 
 | Suite | Passed | Failed |
 |---|---:|---:|
-| Foundation | 18 | 0 |
+| Foundation | 19 | 0 |
 | Cross-application scenarios | 96 | 0 |
 | Project Types | 12 | 0 |
 | Project Templates | 12 | 0 |
@@ -39,7 +39,7 @@ The audit used four complementary passes:
 | Calendars and Events | 15 | 0 |
 | Google Calendar | 13 | 0 |
 | Microsoft Storage | 15 | 0 |
-| **Total** | **260** | **0** |
+| **Total** | **261** | **0** |
 
 ## 3. Defects found and fixed
 
@@ -51,6 +51,7 @@ The audit used four complementary passes:
 | DG-QA-BUG-004 | Medium | DG-ODR-011 | The External/Client `Open Common` button had no click handler and gave no result. | The button now produces the same explicit protected-new-tab preview status as the internal folder view. Automated and visible click tests verify the response and confirm the current page does not navigate. |
 | DG-QA-BUG-005 | High | DG-PRJ-001, DG-CAL-003, DG-CAL-005, DG-CAL-008 | Project Calendar Task details, resource-conflict text, and the fixed Project selector could show `Reading Residence Court` or a blank selection instead of the current Project. | Task details and conflict copy now use the current Project. The disabled Project selector now includes the actual Project as its selected option. A non-sample Project test verifies the details and form value. |
 | DG-QA-BUG-006 | Medium | DG-UX-009 | Microsoft and Project-folder confirmation dialogs could open while keyboard focus remained behind the modal. | The safe Cancel action receives initial focus. Automated focus assertions and visible keyboard/Escape testing pass. |
+| DG-QA-BUG-007 | High | DG-OPS-007, DG-OPS-018 | A Railway production build could fail during parallel route collection because multiple Next.js workers initialized the same fresh SQLite database and immediately raised `SQLITE_BUSY`. The live prior deployment remained online. | SQLite now applies a bounded 30-second busy timeout before WAL and schema initialization. A foundation guard verifies the required ordering, and a fresh Railway build is the production-like concurrency check. |
 
 ## 4. Remaining production gaps
 
