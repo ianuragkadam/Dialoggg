@@ -48,7 +48,7 @@ The identity, company-membership, session, invitation, password-reset, audit, ra
 
 ## Verification
 
-- Foundation/unit tests: **21/21 passed**.
+- Foundation/unit tests: **22/22 passed**, including automatic verified pre-migration production backup.
 - Production-like API/scenario suite: **110/110 passed** (includes migration, readiness, authentication, invitation/reset, tenant isolation, CSRF, sessions, cookies, and existing regression journeys).
 - Live Chromium role/responsive suites: **146/146 passed** across ten modules. The harnesses use explicit migrations and private test fixtures; none depends on public registration.
 - TypeScript validation: passed.

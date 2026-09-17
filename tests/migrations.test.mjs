@@ -17,6 +17,16 @@ const migrate = dataDirectory => spawnSync(
   },
 );
 
+const migrateProduction = dataDirectory => spawnSync(
+  process.execPath,
+  ["node_modules/tsx/dist/cli.mjs", "src/db/migrate.ts"],
+  {
+    cwd: root,
+    env: { ...process.env, NODE_ENV: "production", RAILWAY_VOLUME_MOUNT_PATH: dataDirectory },
+    encoding: "utf8",
+  },
+);
+
 test("versioned migration backfills identity/membership data and is idempotent", async () => {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-migration-"));
   const databasePath = path.join(dataDirectory, "dialoggg.db");
@@ -104,6 +114,40 @@ test("migration history tampering fails closed", async () => {
     const second = migrate(dataDirectory);
     assert.notEqual(second.status, 0);
     assert.match(`${second.stdout}\n${second.stderr}`, /modified after application|checksum/i);
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("production migration creates and verifies a pre-migration backup", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-production-migration-"));
+  try {
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.exec(`
+      CREATE TABLE company (id INTEGER PRIMARY KEY, name TEXT NOT NULL, status TEXT DEFAULT 'active');
+      CREATE TABLE user (
+        id INTEGER PRIMARY KEY, company_id INTEGER, email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL, full_name TEXT, phone TEXT, user_type TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO company (id, name) VALUES (1, 'Backup Source');
+      INSERT INTO user (id, company_id, email, password_hash, full_name, user_type)
+        VALUES (1, 1, 'backup@example.test', 'hash', 'Backup User', 'admin');
+    `);
+    database.close();
+    const result = migrateProduction(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /Pre-migration backup verified:/);
+    assert.match(result.stdout, /sha256 [a-f0-9]{64}/);
+    const backupDirectory = path.join(dataDirectory, "backups");
+    const { readdir } = await import("node:fs/promises");
+    const files = (await readdir(backupDirectory)).filter(file => file.endsWith(".db"));
+    assert.equal(files.length, 1);
+    const backup = new Database(path.join(backupDirectory, files[0]), { readonly: true });
+    try {
+      assert.equal(backup.pragma("integrity_check", { simple: true }), "ok");
+      assert.equal(backup.prepare("SELECT name FROM company WHERE id = 1").get().name, "Backup Source");
+    } finally { backup.close(); }
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
   }

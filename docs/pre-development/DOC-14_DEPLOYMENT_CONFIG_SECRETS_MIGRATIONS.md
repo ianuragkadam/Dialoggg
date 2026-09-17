@@ -49,7 +49,7 @@ If PostgreSQL is approved, application services use Railway private networking a
 - Validate integrity, foreign keys, row counts, identities/memberships, Projects, Tasks/links, and integration mappings.
 - Destructive contract/removal occurs only after the rollback compatibility window and approval.
 
-Current implementation command: `npm run db:migrate`. Current application schema version: 3. `/api/health/ready` returns ready only when the database is responsive and the exact application schema version is present. Railway pre-deploy containers do not mount service volumes, so `npm start` runs the explicit migration command through `scripts/start-with-migration.mjs` and starts the server only after a zero exit code. This is a process-start deployment phase, not an application-module import side effect.
+Current implementation command: `npm run db:migrate`. Current application schema version: 3. `/api/health/ready` returns ready only when the database is responsive and the exact application schema version is present. Railway pre-deploy containers do not mount service volumes, so `npm start` runs the explicit migration command through `scripts/start-with-migration.mjs` and starts the server only after a zero exit code. When a populated production database is behind the application schema, the migration command first creates and verifies a timestamped backup under the mounted data directory and logs its SHA-256 checksum. This is a process-start deployment phase, not an application-module import side effect.
 
 ## Deployment procedure
 
