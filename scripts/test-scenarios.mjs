@@ -154,8 +154,15 @@ function bootstrapAccount(dataDirectory, { companyName, companyId: existingCompa
         for (const category of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) {
           database.prepare("INSERT OR IGNORE INTO resource_category (company_id, name) VALUES (?, ?)").run(companyId, category);
         }
+        for (const projectType of ["Residential Court", "Commercial Court", "Court Resurfacing"]) {
+          database.prepare("INSERT OR IGNORE INTO project_type (company_id, name, normalized_name) VALUES (?, ?, ?)")
+            .run(companyId, projectType, projectType.toLowerCase());
+        }
       }
-      return { companyId, legacyUserId, identityId, membershipId };
+      const projectTypes = companyId
+        ? database.prepare("SELECT id, name FROM project_type WHERE company_id = ? ORDER BY id").all(companyId)
+        : [];
+      return { companyId, legacyUserId, identityId, membershipId, projectTypes, defaultProjectTypeId: projectTypes[0]?.id ?? null };
     })();
   } finally {
     database.close();
@@ -246,6 +253,10 @@ try {
   let viewerAId;
   let projectAId;
   let projectBId;
+  let projectTypeAId;
+  let projectTypeASecondaryId;
+  let projectTypeBId;
+  let managedProjectTypeAId;
   let resourceAId;
   let resourceBId;
   let categoryAId;
@@ -416,6 +427,8 @@ try {
     adminAId = created.legacyUserId;
     adminAIdentityId = created.identityId;
     adminAMembershipId = created.membershipId;
+    projectTypeAId = created.defaultProjectTypeId;
+    projectTypeASecondaryId = created.projectTypes[1].id;
     const response = await adminA.request("/api/auth/login", {
       method: "POST",
       body: { email: adminAEmail, password: passwordA },
@@ -468,6 +481,7 @@ try {
     companyBId = created.companyId;
     adminBId = created.legacyUserId;
     adminBMembershipId = created.membershipId;
+    projectTypeBId = created.defaultProjectTypeId;
     const response = await adminB.request("/api/auth/login", {
       method: "POST",
       body: { email: adminBEmail, password: passwordB },
@@ -816,9 +830,12 @@ try {
     try {
       const identity = database.prepare("SELECT identity_id FROM company_membership WHERE id = ?").get(provisionedOwnerMembershipId);
       const legacy = database.prepare("SELECT legacy_user_id FROM company_membership WHERE id = ?").get(provisionedOwnerMembershipId);
+      const preservationTypeId = Number(database.prepare(`
+        INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Preservation', 'preservation')
+      `).run(provisionedCompanyId).lastInsertRowid);
       provisionedProjectId = Number(database.prepare(`
-        INSERT INTO project (company_id, name, start_date, created_by) VALUES (?, 'Private Preservation Project', '2026-09-17', ?)
-      `).run(provisionedCompanyId, legacy.legacy_user_id).lastInsertRowid);
+        INSERT INTO project (company_id, project_type_id, name, start_date, created_by) VALUES (?, ?, 'Private Preservation Project', '2026-09-17', ?)
+      `).run(provisionedCompanyId, preservationTypeId, legacy.legacy_user_id).lastInsertRowid);
       database.prepare(`
         INSERT INTO google_connection (identity_id, token_ciphertext, token_key_version, state)
         VALUES (?, 'encrypted-google-token', 1, 'healthy')
@@ -998,15 +1015,44 @@ try {
     assert.ok(response.headers.get("location")?.endsWith("/settings/project-types"));
   });
 
-  await check("admin can open the Project Types UI prototype", async () => {
+  await check("admin opens live company Project Types", async () => {
     const response = await adminA.request("/settings/project-types");
     assert.equal(response.status, 200);
     assert.match(response.text, /Project Types/);
     assert.match(response.text, /Add Project Type/);
-    assert.match(response.text, /Acrylic/);
-    assert.match(response.text, /Hardwood/);
-    assert.match(response.text, /Modular/);
-    assert.match(response.text, /UI preview/);
+    assert.match(response.text, /Residential Court/);
+    assert.match(response.text, /Commercial Court/);
+    assert.match(response.text, /Court Resurfacing/);
+    assert.match(response.text, /Live company setting/);
+    assert.doesNotMatch(response.text, /UI preview/);
+  });
+
+  await check("Project Type lists are tenant-isolated", async () => {
+    const [responseA, responseB] = await Promise.all([
+      adminA.request("/api/v1/project-types"),
+      adminB.request("/api/v1/project-types"),
+    ]);
+    assert.equal(responseA.status, 200);
+    assert.equal(responseB.status, 200);
+    assert.ok(responseA.data.data.projectTypes.every(projectType => projectType.id !== projectTypeBId));
+    assert.ok(responseB.data.data.projectTypes.every(projectType => projectType.id !== projectTypeAId));
+  });
+
+  await check("admin creates a validated Project Type and duplicate names are rejected", async () => {
+    const created = await adminA.request("/api/v1/project-types", { method: "POST", body: { name: "  Post-Tension   Concrete  " } });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    assert.equal(created.data.data.projectType.name, "Post-Tension Concrete");
+    managedProjectTypeAId = created.data.data.projectType.id;
+    const duplicate = await adminA.request("/api/v1/project-types", { method: "POST", body: { name: "post-tension concrete" } });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.data.error.code, "PROJECT_TYPE_NAME_EXISTS");
+  });
+
+  await check("another company cannot read or rename a Project Type", async () => {
+    const read = await adminB.request(`/api/v1/project-types/${managedProjectTypeAId}`);
+    assert.equal(read.status, 404);
+    const rename = await adminB.request(`/api/v1/project-types/${managedProjectTypeAId}`, { method: "PUT", body: { name: "Tenant Escape" } });
+    assert.equal(rename.status, 404);
   });
 
   await check("signed-out Project Templates routes redirect to login", async () => {
@@ -1048,11 +1094,17 @@ try {
     assert.equal(response.status, 400);
   });
 
+  await check("project creation rejects another company's Project Type", async () => {
+    const response = await adminA.request("/api/projects", { method: "POST", body: { name: "Cross-type Project", start_date: "2026-01-01", project_type_id: projectTypeBId } });
+    assert.equal(response.status, 400);
+  });
+
   await check("company A admin creates a project", async () => {
     const response = await adminA.request("/api/projects", {
       method: "POST",
       body: {
         name: "Scenario Project A",
+        project_type_id: managedProjectTypeAId,
         client_name: "Client A",
         client_email: "client-a@example.test",
         start_date: "2026-01-01",
@@ -1068,7 +1120,7 @@ try {
   await check("company B admin creates its own project", async () => {
     const response = await adminB.request("/api/projects", {
       method: "POST",
-      body: { name: "Scenario Project B", start_date: "2026-03-01" },
+      body: { name: "Scenario Project B", project_type_id: projectTypeBId, start_date: "2026-03-01" },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
     projectBId = response.data.id;
@@ -1086,6 +1138,44 @@ try {
     assert.ok(!responseA.data.projects.some(project => project.id === projectBId));
     assert.ok(responseB.data.projects.some(project => project.id === projectBId));
     assert.ok(!responseB.data.projects.some(project => project.id === projectAId));
+  });
+
+  await check("Project Type rename propagates to assigned Project reads and filters", async () => {
+    const renamed = await adminA.request(`/api/v1/project-types/${managedProjectTypeAId}`, { method: "PUT", body: { name: "Post-Tension Systems" } });
+    assert.equal(renamed.status, 200, JSON.stringify(renamed.data));
+    const projects = await adminA.request("/api/projects");
+    const project = projects.data.projects.find(item => item.id === projectAId);
+    assert.equal(project.project_type, "Post-Tension Systems");
+    const page = await adminA.request("/projects");
+    assert.match(page.text, /Post-Tension Systems/);
+  });
+
+  await check("deleting an in-use Project Type is blocked with affected Projects", async () => {
+    const response = await adminA.request(`/api/v1/project-types/${managedProjectTypeAId}`, { method: "DELETE" });
+    assert.equal(response.status, 409);
+    assert.equal(response.data.error.code, "PROJECT_TYPE_IN_USE");
+    assert.deepEqual(response.data.error.details.affectedProjects, [{ id: projectAId, name: "Scenario Project A" }]);
+  });
+
+  await check("Owner or Admin can reassign a Project and then delete the old Project Type", async () => {
+    const updated = await adminA.request(`/api/projects/${projectAId}`, {
+      method: "PUT",
+      body: { name: "Scenario Project A", project_type_id: projectTypeAId, start_date: "2026-01-01", status: "active" },
+    });
+    assert.equal(updated.status, 200, JSON.stringify(updated.data));
+    const project = await adminA.request(`/api/projects/${projectAId}`);
+    assert.equal(project.data.project.project_type_id, projectTypeAId);
+    assert.equal(project.data.project.project_type, "Residential Court");
+    const deleted = await adminA.request(`/api/v1/project-types/${managedProjectTypeAId}`, { method: "DELETE" });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.data));
+  });
+
+  await check("an unused Project Type can be deleted without affecting Projects", async () => {
+    const created = await adminA.request("/api/v1/project-types", { method: "POST", body: { name: "Temporary Unused Type" } });
+    const projectTypeId = created.data.data.projectType.id;
+    const deleted = await adminA.request(`/api/v1/project-types/${projectTypeId}`, { method: "DELETE" });
+    assert.equal(deleted.status, 200);
+    assert.equal(deleted.data.data.deletedProjectTypeId, projectTypeId);
   });
 
   await check("direct cross-company project read is hidden", async () => {
@@ -1143,7 +1233,9 @@ try {
     const response = await viewerA.request("/settings/project-types");
     assert.equal(response.status, 200);
     assert.match(response.text, /Project Types are restricted/);
-    assert.doesNotMatch(response.text, /Acrylic|Hardwood|Modular/);
+    assert.doesNotMatch(response.text, /Residential Court|Commercial Court|Court Resurfacing|Post-Tension Systems/);
+    const api = await viewerA.request("/api/v1/project-types");
+    assert.equal(api.status, 403);
   });
 
   await check("Employee cannot view Project Template management data", async () => {
@@ -1396,6 +1488,20 @@ try {
     assert.ok(masterCalendar.data.events.some(event => event.title.includes("Scenario Site Visit")));
   });
 
+  await check("Master Calendar supports one-or-more tenant-scoped Project Type filters", async () => {
+    const matching = await adminA.request(`/api/calendar?project_type_id=${projectTypeAId}`);
+    assert.equal(matching.status, 200);
+    assert.ok(matching.data.events.some(event => event.title.includes("Scenario Project A")));
+    const nonMatching = await adminA.request(`/api/calendar?project_type_id=${projectTypeASecondaryId}`);
+    assert.equal(nonMatching.status, 200);
+    assert.equal(nonMatching.data.events.length, 0);
+    const combined = await adminA.request(`/api/calendar?project_type_id=${projectTypeAId}&project_type_id=${projectTypeASecondaryId}`);
+    assert.equal(combined.status, 200);
+    assert.ok(combined.data.events.some(event => event.title.includes("Scenario Project A")));
+    const crossTenant = await adminA.request(`/api/calendar?project_type_id=${projectTypeBId}`);
+    assert.equal(crossTenant.status, 400);
+  });
+
   await check("company B master calendar excludes company A data", async () => {
     const response = await adminB.request("/api/calendar");
     assert.equal(response.status, 200);
@@ -1529,7 +1635,7 @@ try {
   await check("cross-company project update cannot alter data", async () => {
     await adminB.request(`/api/projects/${projectAId}`, {
       method: "PUT",
-      body: { name: "Cross-tenant project overwrite", start_date: "2027-01-01" },
+      body: { name: "Cross-tenant project overwrite", project_type_id: projectTypeBId, start_date: "2027-01-01" },
     });
     const response = await adminA.request(`/api/projects/${projectAId}`);
     assert.equal(response.status, 200);

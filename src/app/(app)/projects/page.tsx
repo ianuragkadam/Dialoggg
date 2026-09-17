@@ -11,7 +11,7 @@ export default async function ProjectsPage() {
   if (!user) redirect("/login");
   const external = user.user_type === "external";
   const canManage = user.user_type === "owner" || isAdmin(user);
-  const baseSelect = `SELECT p.*, (SELECT MAX(date(t.start_date, '+' || MAX(t.duration - 1, 0) || ' day')) FROM task t WHERE t.project_id = p.id AND t.is_header = 0) AS derived_end_date FROM project p`;
+  const baseSelect = `SELECT p.*, pt.name AS project_type, (SELECT MAX(date(t.start_date, '+' || MAX(t.duration - 1, 0) || ' day')) FROM task t WHERE t.project_id = p.id AND t.is_header = 0) AS derived_end_date FROM project p JOIN project_type pt ON pt.id = p.project_type_id AND pt.company_id = p.company_id`;
   const projects = (external
     ? db.prepare(`${baseSelect} JOIN project_user pu ON pu.project_id = p.id WHERE pu.user_id = ? AND p.company_id = ? ORDER BY p.created_at DESC`).all(user.id, user.company_id)
     : db.prepare(`${baseSelect} WHERE p.company_id = ? ORDER BY p.created_at DESC`).all(user.company_id)) as ProjectUiRecord[];

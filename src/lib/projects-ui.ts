@@ -2,6 +2,7 @@ export type ProjectUiStatus = "active" | "completed" | "archived";
 
 export type ProjectUiRecord = {
   id: number;
+  project_type_id: number;
   name: string;
   status: string;
   client_name: string | null;
@@ -21,8 +22,6 @@ export type ProjectUiRecord = {
   completed_task_count?: number;
 };
 
-export const PROJECT_TYPES = ["Residential Court", "Commercial Court", "Court Resurfacing"] as const;
-
 export const PROJECT_ASSIGNMENT_USERS = [
   { id: "jamie-morgan", name: "Jamie Morgan", role: "Employee (Internal)" },
   { id: "priya-shah", name: "Priya Shah", role: "Employee (Internal)" },
@@ -30,8 +29,7 @@ export const PROJECT_ASSIGNMENT_USERS = [
 ] as const;
 
 export function projectTypeFor(project: ProjectUiRecord): string {
-  if (project.project_type) return project.project_type;
-  return PROJECT_TYPES[Math.abs(project.id) % PROJECT_TYPES.length];
+  return project.project_type || "Unavailable";
 }
 
 export function normalizeProjectStatus(status: string): ProjectUiStatus {

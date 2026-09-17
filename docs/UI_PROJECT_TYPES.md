@@ -1,95 +1,54 @@
-# Project Types UI Module
+# Project Types Module
 
 ## Status
 
-This is a UI-only implementation for client review. It intentionally uses domain-specific demonstration data and does not create, rename, reassign, or delete production records. Changes reset when the page is refreshed.
+Project Types are persistent, tenant-scoped company settings. The Owner/Admin screen at `/settings/project-types` uses protected APIs for create, rename, and delete. Employee (Internal), External/Client, platform-only, signed-out, and cross-company callers cannot read management data or mutate the setting.
 
 ## Requirement traceability
 
-| Requirement | UI coverage |
+| Requirement | Implemented behavior |
 | --- | --- |
-| `DG-TYP-001` | Screen language establishes that Project Types belong to the active company. The final API must enforce tenant isolation. |
-| `DG-TYP-002` | Create and rename dialogs accept one text label only. Names are trimmed, required, limited to 50 characters, and compared case-insensitively for duplicates. |
-| `DG-TYP-003` | Summary and guidance state that every Project must always have exactly one Project Type. |
-| `DG-TYP-004` | Dedicated authenticated settings route, Admin navigation entry, restricted-access state, create dialog, and rename dialog. |
-| `DG-TYP-005` | Rename impact text identifies All Projects and Master Calendar filters as downstream consumers. Actual filtering belongs to the Projects and Calendar modules. |
-| `DG-TYP-006` / `FUP-013` | Scott approved the implemented rule: deletion is blocked while Projects use the type. The dialog explains the reason and confirms that nothing changed. |
+| `DG-TYP-001` | Every query and mutation includes the active `company_id`. Direct Company B access to Company A IDs returns not found, and cross-company Project assignment is rejected. |
+| `DG-TYP-002` | A type contains one trimmed label only. Labels are required, whitespace-normalized, limited to 50 characters, and unique case-insensitively within the company. |
+| `DG-TYP-003` | Migration 5 backfills historical Projects and database triggers reject null, inactive, missing, or cross-company types on insert and update. Project create/update APIs require one valid `project_type_id`. Owner/Admin can reassign it later. |
+| `DG-TYP-004` | The dedicated settings screen persists create and rename operations. Rename is immediately reflected by joined Project reads, All Projects, Project detail/edit, and Master Calendar filters. |
+| `DG-TYP-005` | All Projects derives a multi-select filter from real Project Type records. Master Calendar sends one or more repeated `project_type_id` parameters and returns only matching tenant Projects, Tasks, and Events. |
+| `DG-TYP-006`, `FUP-013` | In-use deletion returns `409 PROJECT_TYPE_IN_USE` with the exact affected Project IDs and names. The UI links to reassignment and exposes no destructive action. The database trigger protects the invariant during races. |
 
-## Routes
+## API surface
 
-| Route | Purpose | Access/state |
-| --- | --- | --- |
-| `/settings` | Settings entry | Redirects to `/settings/project-types`. |
-| `/settings/project-types` | Project Types management | Signed-out Users redirect to Login. Admins receive the full UI. Employees receive a restricted-access screen with no Project Type data. The final Owner role will receive the same management UI. |
+- `GET /api/v1/project-types`
+- `POST /api/v1/project-types`
+- `GET /api/v1/project-types/:id`
+- `PUT /api/v1/project-types/:id`
+- `DELETE /api/v1/project-types/:id`
+- `POST /api/projects` and `PUT /api/projects/:id` require a valid same-company `project_type_id`.
+- `GET /api/calendar?project_type_id=:id` accepts one or more repeated type IDs.
 
-## Main-screen states
+Management endpoints require an active company Owner/Admin context. Mutations require same-origin and double-submit CSRF validation and emit audit records. Responses use request IDs and no-store cache policy.
 
-1. **Default list:** Three client-supplied example types—Acrylic, Hardwood, and Modular—with Project usage and last-updated information.
-2. **Search results:** Case-insensitive name filtering.
-3. **No matching results:** Explains that no name matches and provides a **Clear search** action.
-4. **Responsive list:** Desktop uses a table. Narrow screens use stacked cards so actions do not require horizontal scrolling.
-5. **Success notice:** Create, rename, and delete actions produce a short accessible status message.
-6. **Restricted access:** Explains that only an Owner or Admin may manage Project Types and provides a route back to All Projects.
+## Persistent screen behavior
 
-## Dialogs and confirmations
+- Search, responsive table/cards, accessible dialogs, live success/error feedback, duplicate validation, and unsaved-change protection remain available.
+- Create, rename, and unused deletion survive a refresh.
+- A blocked deletion identifies every affected Project and links to its edit route.
+- An empty company receives an actionable state explaining that a Project Type is required before creating a Project.
+- The page never exposes another company's type labels or affected Project names.
 
-### Add Project Type
+## Schema and rollback
 
-- Required, focused **Project Type name** field.
-- Example placeholder uses the approved Acrylic terminology.
-- Visible 50-character counter and validation rule.
-- Empty, overlength, and duplicate-name errors.
-- **Cancel**, close icon, backdrop click, and Escape all request a safe close.
-- If the name has changed, closing opens **Discard unsaved changes?**.
+Migration 5, `project_type_invariants`, backfills legacy Projects with deterministic same-company types, indexes `(company_id, project_type_id, status)`, enforces a valid active type for every Project, prevents type-company changes, and blocks deletion while any Project uses the type.
 
-### Rename Project Type
+The local pre-migration rollback copy is `data/backups/pre-project-types-2026-09-17.db` (ignored), SHA-256 `4701DE16BF1C88CA87B18E99DDB4BE945B784909AB7CF842A05C53BEF775176B`. It is schema version 4 with integrity OK and zero foreign-key violations. The migrated local database is schema version 5 with integrity OK, zero foreign-key violations, zero null Project types, and zero invalid same-company links.
 
-- Opens with the current name selected for editing.
-- Explains that the new name will appear in All Projects and Master Calendar filters.
-- Confirms that existing Projects remain assigned.
-- Uses the same validation and unsaved-change protection as Add.
+## Verification
 
-### Delete an unused Project Type
+- Unit/foundation/migration: **23/23 passed**.
+- Production-like API/scenario: **126/126 passed**.
+- Focused Project Types live Chromium: **14/14 passed**, including Owner persistence and Employee/External denial.
+- Project integration live Chromium: **15/15 passed**.
+- Calendar integration live Chromium: **15/15 passed**.
+- Full live Chromium regression: **149/149 passed** across ten suites.
+- TypeScript, Next.js production build, and standalone packaging: passed.
 
-- Opens **Delete Project Type?** only when zero Projects use the type.
-- Names the exact type and states that deletion cannot be undone.
-- **Cancel** is initially focused.
-- **Delete Project Type** removes only the UI demonstration item and shows a success notice.
-
-### Attempt to delete an in-use Project Type
-
-- Opens **This Project Type can't be deleted**.
-- Names the type and exact number of affected Projects.
-- Tells the User to reassign those Projects first.
-- Explicitly confirms that no Project or schedule changed.
-- Provides no destructive action.
-
-### Discard unsaved changes
-
-- Opens when a User closes a changed Add/Rename form.
-- **Keep editing** returns to the existing draft.
-- **Discard changes** closes the editor without adding or renaming a type.
-
-## Keyboard and accessibility behavior
-
-- Dialogs identify themselves with `dialog` or `alertdialog`, an accessible title, description, and modal state.
-- Add/Rename places keyboard focus in the name field.
-- Escape closes clean dialogs and requests confirmation for changed forms.
-- All icon-only buttons have accessible names.
-- Form errors use an alert and are associated with the name field.
-- Success messages use a polite live region.
-- Buttons and inputs have visible focus rings and 44-pixel minimum interactive height for primary actions.
-
-## Data wiring intentionally deferred
-
-The UI currently keeps its demonstration state in the browser. Production persistence requires the approved database migration, tenant-scoped Project Type API, Project foreign key, Project create/edit integration, All Projects filters, Master Calendar filters, and server-side role enforcement. Those are outside this UI-only module.
-
-## QA loop
-
-The module is accepted for UI review only after:
-
-1. The production build and TypeScript checks pass.
-2. Foundation and authenticated scenario tests pass.
-3. Playwright exercises create, validation, rename, search, both deletion paths, unsaved-change protection, access restriction, keyboard behavior, and mobile overflow.
-4. A human-style click pass repeats the important workflows in a visible browser.
-5. Any discovered defect or gap is fixed and the affected checks are repeated.
+Railway deployment is deliberately deferred. See `docs/evidence/PENDING_DEPLOYMENT_LEDGER.md`.

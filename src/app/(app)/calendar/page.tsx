@@ -6,12 +6,14 @@ import { useEffect, useState } from "react";
 import SubscribeButton from "@/components/SubscribeButton";
 import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 
-type Project = { id: number; name: string };
+type Project = { id: number; name: string; project_type_id: number; project_type: string };
 
 export default function MasterCalendarPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectId, setProjectId] = useState<string>("all");
+  const [selectedProjectTypeIds, setSelectedProjectTypeIds] = useState<number[]>([]);
   const [canManage, setCanManage] = useState(false);
 
   useEffect(() => {
@@ -19,13 +21,26 @@ export default function MasterCalendarPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/projects").then(r => r.json()).then(j => setProjects(j.projects || []));
+    fetch("/api/projects").then(r => r.json()).then(j => {
+      const next = (j.projects || []) as Project[];
+      setProjects(next);
+      setSelectedProjectTypeIds([...new Set(next.map(project => project.project_type_id))]);
+      setProjectsLoaded(true);
+    });
   }, []);
 
   useEffect(() => {
-    const url = projectId === "all" ? "/api/calendar" : `/api/calendar?project_id=${projectId}`;
-    fetch(url).then(r => r.json()).then(j => setEvents(j.events || []));
-  }, [projectId]);
+    if (!projectsLoaded) return;
+    if (projects.length && !selectedProjectTypeIds.length) { setEvents([]); return; }
+    const params = new URLSearchParams();
+    if (projectId !== "all") params.set("project_id", projectId);
+    for (const typeId of selectedProjectTypeIds) params.append("project_type_id", String(typeId));
+    const query = params.toString();
+    fetch(query ? `/api/calendar?${query}` : "/api/calendar").then(r => r.json()).then(j => setEvents(j.events || []));
+  }, [projectId, selectedProjectTypeIds, projects.length, projectsLoaded]);
+
+  const projectTypes = [...new Map(projects.map(project => [project.project_type_id, { id: project.project_type_id, name: project.project_type }])).values()]
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="space-y-4">
@@ -49,6 +64,9 @@ export default function MasterCalendarPage() {
         context="master"
         canManage={canManage}
         projectId={projectId === "all" ? projects[0]?.id : Number(projectId)}
+        projectTypes={projectTypes}
+        selectedProjectTypeIds={selectedProjectTypeIds}
+        onProjectTypeIdsChange={setSelectedProjectTypeIds}
       />
       <div className="bg-white border rounded shadow-sm p-4">
         <FullCalendar

@@ -32,6 +32,10 @@ export function bootstrapAccount(dataDirectory, {
         ).run(companyName).lastInsertRowid);
         const category = database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, ?)");
         for (const name of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) category.run(companyId, name);
+        const projectType = database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, ?, ?)");
+        for (const name of ["Residential Court", "Commercial Court", "Court Resurfacing"]) {
+          projectType.run(companyId, name, name.toLowerCase());
+        }
       }
       const passwordHash = bcrypt.hashSync(password, 12);
       const legacyRole = platform ? "super_admin" : role === "employee" ? "internal" : role;
@@ -53,7 +57,17 @@ export function bootstrapAccount(dataDirectory, {
           VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
         `).run(identityId, companyId, legacyUserId, role).lastInsertRowid);
       }
-      return { companyId, legacyUserId, identityId, membershipId };
+      const projectTypes = companyId
+        ? database.prepare("SELECT id, name FROM project_type WHERE company_id = ? ORDER BY id").all(companyId)
+        : [];
+      return {
+        companyId,
+        legacyUserId,
+        identityId,
+        membershipId,
+        projectTypes,
+        defaultProjectTypeId: projectTypes[0]?.id ?? null,
+      };
     })();
   } finally {
     database.close();

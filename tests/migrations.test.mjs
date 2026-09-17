@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 4/);
+    assert.match(second.stdout, /version 5/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -78,6 +78,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 2, name: "identity_membership_and_v1_domain_foundation" },
           { version: 3, name: "invitation_reset_and_membership_resource_link" },
           { version: 4, name: "company_lifecycle_and_unique_name" },
+          { version: 5, name: "project_type_invariants" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -119,6 +120,43 @@ test("migration history tampering fails closed", async () => {
     const second = migrate(dataDirectory);
     assert.notEqual(second.status, 0);
     assert.match(`${second.stdout}\n${second.stderr}`, /modified after application|checksum/i);
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Project Type migration enforces required same-company types and safe deletion", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-type-invariants-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const firstCompany = Number(database.prepare("INSERT INTO company (name) VALUES ('First Company')").run().lastInsertRowid);
+      const secondCompany = Number(database.prepare("INSERT INTO company (name) VALUES ('Second Company')").run().lastInsertRowid);
+      const firstType = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Acrylic', 'acrylic')").run(firstCompany).lastInsertRowid);
+      const secondType = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Hardwood', 'hardwood')").run(secondCompany).lastInsertRowid);
+
+      assert.throws(
+        () => database.prepare("INSERT INTO project (company_id, name, start_date) VALUES (?, 'Missing type', '2026-09-17')").run(firstCompany),
+        /PROJECT_TYPE_REQUIRED_OR_INVALID/,
+      );
+      assert.throws(
+        () => database.prepare("INSERT INTO project (company_id, name, project_type_id, start_date) VALUES (?, 'Cross-company type', ?, '2026-09-17')").run(firstCompany, secondType),
+        /PROJECT_TYPE_REQUIRED_OR_INVALID/,
+      );
+      const projectId = Number(database.prepare("INSERT INTO project (company_id, name, project_type_id, start_date) VALUES (?, 'Valid Project', ?, '2026-09-17')").run(firstCompany, firstType).lastInsertRowid);
+      assert.throws(() => database.prepare("UPDATE project SET project_type_id = NULL WHERE id = ?").run(projectId), /PROJECT_TYPE_REQUIRED_OR_INVALID/);
+      assert.throws(() => database.prepare("DELETE FROM project_type WHERE id = ?").run(firstType), /PROJECT_TYPE_IN_USE/);
+      assert.throws(
+        () => database.prepare("UPDATE project SET project_type_id = ? WHERE id = ?").run(secondType, projectId),
+        /PROJECT_TYPE_REQUIRED_OR_INVALID/,
+      );
+    } finally {
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM project WHERE project_type_id IS NULL").get().count, 0);
+      database.close();
+    }
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
   }

@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import ProjectTypesPrototype from "@/components/ProjectTypesPrototype";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
+import { listProjectTypes } from "@/lib/project-types";
 
 export const metadata: Metadata = {
   title: "Project Types | Dialoggg",
@@ -26,5 +27,15 @@ export default async function ProjectTypesPage() {
     );
   }
 
-  return <ProjectTypesPrototype />;
+  const projectTypes = listProjectTypes(user!.company_id!).map(item => ({
+    ...item,
+    updatedLabel: new Intl.DateTimeFormat("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${item.updatedAt.replace(" ", "T")}Z`)),
+  }));
+
+  return <ProjectTypesPrototype initialItems={projectTypes} />;
 }

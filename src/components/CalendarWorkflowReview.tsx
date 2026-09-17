@@ -8,7 +8,6 @@ type DialogName = "event-form" | "event-review" | "event-details" | "task-detail
 type ViewName = "Day" | "Week" | "Month";
 type RepeatName = "Does not repeat" | "Daily" | "Weekly" | "Monthly";
 
-const PROJECT_TYPES = ["Residential Court", "Commercial Court", "Resurfacing"];
 const COLORS = ["#7c3aed", "#2563eb", "#059669", "#d97706", "#dc2626"];
 
 function Modal({ title, children, onClose, alert = false, wide = false }: { title: string; children: React.ReactNode; onClose: () => void; alert?: boolean; wide?: boolean }) {
@@ -20,12 +19,11 @@ function Modal({ title, children, onClose, alert = false, wide = false }: { titl
   return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-3 sm:p-6" onMouseDown={onClose}><section role={alert ? "alertdialog" : "dialog"} aria-modal="true" aria-label={title} className={`max-h-[94vh] w-full overflow-y-auto rounded-xl bg-white shadow-2xl ${wide ? "max-w-3xl" : "max-w-lg"}`} onMouseDown={event => event.stopPropagation()}><header className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-xl border-b bg-blue-900 px-5 py-4 text-white"><h2 className="text-lg font-bold">{title}</h2><button type="button" aria-label={`Close ${title}`} onClick={onClose} className="rounded px-2 text-2xl hover:bg-white/15">×</button></header>{children}</section></div>;
 }
 
-export default function CalendarWorkflowReview({ context, canManage, projectId, projectName }: { context: CalendarContext; canManage: boolean; projectId?: number; projectName?: string }) {
+export default function CalendarWorkflowReview({ context, canManage, projectId, projectName, projectTypes = [], selectedProjectTypeIds = [], onProjectTypeIdsChange }: { context: CalendarContext; canManage: boolean; projectId?: number; projectName?: string; projectTypes?: Array<{ id: number; name: string }>; selectedProjectTypeIds?: number[]; onProjectTypeIdsChange?: (ids: number[]) => void }) {
   const [view, setView] = useState<ViewName>("Month");
   const [dialog, setDialog] = useState<DialogName>(null);
   const [notice, setNotice] = useState("");
   const [includeCompleted, setIncludeCompleted] = useState(false);
-  const [types, setTypes] = useState<string[]>(PROJECT_TYPES);
   const [title, setTitle] = useState("Client walkthrough");
   const [description, setDescription] = useState("Review the completed court with the client.");
   const [selectedProject, setSelectedProject] = useState(projectName || "Reading Residence Court");
@@ -53,7 +51,7 @@ export default function CalendarWorkflowReview({ context, canManage, projectId, 
     return `${repeat} with no User-selected end date`;
   }, [repeat, endMode, repeatUntil, occurrences]);
 
-  function toggleType(type: string) { setTypes(current => current.includes(type) ? current.filter(item => item !== type) : [...current, type]); }
+  function toggleType(typeId: number) { onProjectTypeIdsChange?.(selectedProjectTypeIds.includes(typeId) ? selectedProjectTypeIds.filter(item => item !== typeId) : [...selectedProjectTypeIds, typeId]); }
   function toggleResource(resource: string) { setResources(current => current.includes(resource) ? current.filter(item => item !== resource) : [...current, resource]); }
   function openEventForm() { setErrors([]); setDialog("event-form"); }
   function reviewEvent() {
@@ -77,7 +75,7 @@ export default function CalendarWorkflowReview({ context, canManage, projectId, 
     <div className="grid gap-4 p-4 xl:grid-cols-[1fr_300px]">
       <div className="space-y-4">
         <div className="flex flex-wrap gap-3 text-xs"><span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 font-semibold text-blue-900"><span aria-hidden="true">▰</span> Task · all-day schedule</span><span className="inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 font-semibold text-violet-900"><span aria-hidden="true">●</span> Event · calendar-only</span></div>
-        {context === "master" && <div className="rounded-lg border bg-slate-50 p-3"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><fieldset><legend className="text-xs font-bold uppercase tracking-wide text-slate-500">Project Type filters</legend><div className="mt-2 flex flex-wrap gap-3">{PROJECT_TYPES.map(type => <label key={type} className="text-sm"><input type="checkbox" checked={types.includes(type)} onChange={() => toggleType(type)} className="mr-2"/>{type}</label>)}</div></fieldset><label className="rounded-md border bg-white px-3 py-2 text-sm"><input type="checkbox" checked={includeCompleted} onChange={event => setIncludeCompleted(event.target.checked)} className="mr-2"/>Include Completed Projects</label></div><p className="mt-2 text-xs text-slate-500">Active Projects are shown by default. Master-only company Events remain visible to internal Users and never appear for External/Client.</p></div>}
+        {context === "master" && <div className="rounded-lg border bg-slate-50 p-3"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><fieldset><legend className="text-xs font-bold uppercase tracking-wide text-slate-500">Project Type filters</legend><div className="mt-2 flex flex-wrap gap-3">{projectTypes.map(type => <label key={type.id} className="text-sm"><input type="checkbox" checked={selectedProjectTypeIds.includes(type.id)} onChange={() => toggleType(type.id)} className="mr-2"/>{type.name}</label>)}{!projectTypes.length && <span className="text-sm text-slate-500">No Project Types are currently used by Projects.</span>}</div></fieldset><label className="rounded-md border bg-white px-3 py-2 text-sm"><input type="checkbox" checked={includeCompleted} onChange={event => setIncludeCompleted(event.target.checked)} className="mr-2"/>Include Completed Projects</label></div><p className="mt-2 text-xs text-slate-500">Choose one or more Project Types. Active Projects are shown by default. Master-only company Events remain visible to internal Users and never appear for External/Client.</p></div>}
         {context === "resource" && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-950"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><strong>1 Resource conflict needs review</strong><p className="mt-1 text-xs">Crew Alpha · Court surfacing overlaps Client walkthrough on Sep 22, 2:00–3:00 PM.</p></div>{canManage && <button type="button" onClick={() => { setConflictAccepted(false); setDialog("conflict"); }} className="rounded border border-red-300 bg-white px-3 py-2 text-xs font-bold">Review conflict</button>}</div></div>}
         <div className="grid gap-3 md:grid-cols-2">
           <article className="rounded-lg border border-blue-200 bg-blue-50 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase text-blue-700">Task</p><h3 className="mt-1 font-bold text-blue-950">{context === "master" ? "Reading Residence Court — Court surfacing" : "Court surfacing"}</h3><p className="mt-1 text-sm text-blue-900">Sep 21–25 · All day · Crew Alpha</p></div><span aria-hidden="true" className="text-xl text-blue-700">▰</span></div><button type="button" onClick={() => setDialog("task-details")} className="mt-3 text-sm font-bold text-blue-800 underline">Open Task details</button></article>

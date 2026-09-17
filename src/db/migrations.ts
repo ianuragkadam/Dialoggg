@@ -655,7 +655,88 @@ const migration004: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004];
+const migration005: Migration = {
+  version: 5,
+  name: "project_type_invariants",
+  signature: "backfill legacy project types + require same-company active type + block in-use deletion v1",
+  up(database) {
+    const companiesWithProjects = database.prepare(`
+      SELECT DISTINCT company_id FROM project ORDER BY company_id
+    `).all() as Array<{ company_id: number }>;
+    const insertType = database.prepare(`
+      INSERT OR IGNORE INTO project_type (company_id, name, normalized_name)
+      VALUES (?, ?, ?)
+    `);
+    for (const company of companiesWithProjects) {
+      for (const name of ["Residential Court", "Commercial Court", "Court Resurfacing"]) {
+        insertType.run(company.company_id, name, name.toLocaleLowerCase());
+      }
+    }
+
+    database.exec(`
+      UPDATE project
+      SET project_type_id = (
+        SELECT pt.id FROM project_type pt
+        WHERE pt.company_id = project.company_id
+          AND pt.normalized_name = CASE ABS(project.id) % 3
+            WHEN 0 THEN 'residential court'
+            WHEN 1 THEN 'commercial court'
+            ELSE 'court resurfacing'
+          END
+      )
+      WHERE project_type_id IS NULL;
+    `);
+
+    const invalid = database.prepare(`
+      SELECT p.id FROM project p
+      LEFT JOIN project_type pt ON pt.id = p.project_type_id AND pt.company_id = p.company_id
+      WHERE p.project_type_id IS NULL OR pt.id IS NULL
+      LIMIT 1
+    `).get() as { id: number } | undefined;
+    if (invalid) throw new Error(`Project ${invalid.id} could not be assigned a valid company Project Type.`);
+
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS idx_project_company_type
+        ON project(company_id, project_type_id, status);
+
+      CREATE TRIGGER IF NOT EXISTS trg_project_type_required_insert
+      BEFORE INSERT ON project
+      WHEN NEW.project_type_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM project_type pt
+        WHERE pt.id = NEW.project_type_id AND pt.company_id = NEW.company_id AND pt.status = 'active'
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_TYPE_REQUIRED_OR_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_project_type_required_update
+      BEFORE UPDATE OF project_type_id, company_id ON project
+      WHEN NEW.project_type_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM project_type pt
+        WHERE pt.id = NEW.project_type_id AND pt.company_id = NEW.company_id AND pt.status = 'active'
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_TYPE_REQUIRED_OR_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_project_type_company_immutable
+      BEFORE UPDATE OF company_id ON project_type
+      WHEN NEW.company_id <> OLD.company_id
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_TYPE_COMPANY_IMMUTABLE');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_project_type_in_use_delete
+      BEFORE DELETE ON project_type
+      WHEN EXISTS (SELECT 1 FROM project p WHERE p.project_type_id = OLD.id)
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_TYPE_IN_USE');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

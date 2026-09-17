@@ -6,9 +6,10 @@ export function apiError(
   message: string,
   requestId: string,
   fields?: Record<string, string>,
+  details?: Record<string, unknown>,
 ) {
   return NextResponse.json(
-    { error: { code, message, ...(fields ? { fields } : {}), requestId } },
+    { error: { code, message, ...(fields ? { fields } : {}), ...(details ? { details } : {}), requestId } },
     { status, headers: { "x-request-id": requestId, "cache-control": "no-store" } },
   );
 }

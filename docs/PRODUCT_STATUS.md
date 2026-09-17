@@ -13,10 +13,11 @@ Last verified: September 17, 2026
 
 ## Complete UI review modules
 
-- Project Types management UI at `/settings/project-types`
-- Admin navigation and Employee restricted-access state
-- Create, rename, duplicate validation, search, empty results, safe delete, blocked delete, unsaved-change protection, responsive cards, and accessible dialogs
-- UI-only demonstration state is clearly labelled and does not change production Project records
+- Persistent Project Types management at `/settings/project-types`
+- Owner/Admin tenant-scoped create, rename, and safe delete APIs with CSRF protection and audit records; Employee/External management access is denied
+- Every Project is backfilled and database-enforced to have exactly one active same-company type; Project create/update rejects null and cross-company types
+- Rename propagation, All Projects multi-select filtering, Master Calendar one-or-more filtering, exact affected-Project disclosure, reassign-then-delete, refresh persistence, responsive cards, and accessible dialogs
+- Project Types local checkpoint passed 23/23 unit, 126/126 scenario, and 149/149 live browser checks; Railway deployment is deferred in `docs/evidence/PENDING_DEPLOYMENT_LEDGER.md`
 - Project Templates UI at `/templates`, `/templates/new`, `/templates/[id]`, and `/templates/[id]/use`
 - Template Library, source-Project save workflow, read-only Plan detail, start-from-Template setup, exact confirmations, role restriction, and responsive states
 - The existing original Gantt remains unchanged and is the planned destination for instantiated Project Tasks
@@ -50,8 +51,7 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 - Live provider delivery for queued first-Owner invitations and Google synchronization workers/resume controls; Company Administration persistence, audit, authorization, suspension, and per-company pause state are implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
 - Resource persistence, fixed-Category enforcement, User linkage, Event assignment, and lifecycle enforcement; the complete UI review module is implemented
-- Project field/lifecycle persistence, Project Type/assignment wiring, External access enforcement across APIs, Template instantiation, derived End Date, and working-day rebase; the complete UI review module is implemented
-- Project Types persistence/API/Project integration and complete project-access behavior; the UI review module is complete
+- Project field/lifecycle persistence beyond the now-complete Project Type invariant, assignment wiring, External access enforcement across every API, Template instantiation, derived End Date, and working-day rebase; the complete UI review module is implemented
 - Project Templates persistence, APIs, live source-Project loading, and Template instantiation; the complete UI review module is implemented
 - Complete weekend-aware Gantt persistence/cascade enforcement; the detailed UI review is complete and retains the original Gantt
 - Event persistence, recurrence calculations, assignments, authorization, and downstream calendar writes; the detailed Event/Calendar UI review is complete

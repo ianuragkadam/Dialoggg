@@ -13,20 +13,41 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const projectFilter = req.nextUrl.searchParams.get("project_id");
-  const projectWhere = projectFilter ? "AND p.id = ?" : "";
-  const projectArg: any[] = projectFilter ? [Number(projectFilter)] : [];
+  const projectId = projectFilter ? Number(projectFilter) : null;
+  if (projectFilter && (!Number.isInteger(projectId) || Number(projectId) <= 0)) {
+    return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
+  }
+  const suppliedTypeIds = req.nextUrl.searchParams.getAll("project_type_id");
+  const parsedTypeIds = suppliedTypeIds.map(Number);
+  const projectTypeIds = [...new Set(parsedTypeIds)];
+  if (parsedTypeIds.some(value => !Number.isInteger(value) || value <= 0)) {
+    return NextResponse.json({ error: "Invalid project_type_id" }, { status: 400 });
+  }
+  if (projectTypeIds.length) {
+    const placeholders = projectTypeIds.map(() => "?").join(",");
+    const found = db.prepare(`SELECT COUNT(*) AS count FROM project_type WHERE company_id = ? AND status = 'active' AND id IN (${placeholders})`).get(user.company_id, ...projectTypeIds) as { count: number };
+    if (found.count !== projectTypeIds.length) return NextResponse.json({ error: "Invalid project_type_id" }, { status: 400 });
+  }
+  const conditions = ["p.company_id = ?"];
+  const args: Array<number | null> = [user.company_id];
+  if (projectId) { conditions.push("p.id = ?"); args.push(projectId); }
+  if (projectTypeIds.length) {
+    conditions.push(`p.project_type_id IN (${projectTypeIds.map(() => "?").join(",")})`);
+    args.push(...projectTypeIds);
+  }
+  const where = conditions.join(" AND ");
 
   const events = db.prepare(`
     SELECT e.*, p.name AS project_name FROM event e
     JOIN project p ON p.id = e.project_id
-    WHERE p.company_id = ? ${projectWhere}
-  `).all(user.company_id, ...projectArg) as any[];
+    WHERE ${where}
+  `).all(...args) as any[];
 
   const tasks = db.prepare(`
     SELECT t.*, p.name AS project_name FROM task t
     JOIN project p ON p.id = t.project_id
-    WHERE p.company_id = ? AND t.is_header = 0 ${projectWhere}
-  `).all(user.company_id, ...projectArg) as any[];
+    WHERE ${where} AND t.is_header = 0
+  `).all(...args) as any[];
 
   return NextResponse.json({
     events: [

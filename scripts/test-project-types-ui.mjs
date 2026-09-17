@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import Database from "better-sqlite3";
 import { bootstrapAccount, login, prepareTestDatabase } from "./test-fixtures.mjs";
 
 const results = [];
@@ -48,21 +49,31 @@ async function loadPlaywright() {
   }
 }
 
-function sessionCookie(response) {
-  const value = response.headers.get("set-cookie")?.match(/dialoggg_session=([^;]+)/)?.[1];
-  assert.ok(value, "authentication response did not include a Dialoggg session");
-  return value;
+function authCookies(response) {
+  const combined = response.headers.get("set-cookie") || "";
+  const session = combined.match(/dialoggg_session=([^;]+)/)?.[1];
+  const csrf = combined.match(/dialoggg_csrf=([^;]+)/)?.[1];
+  assert.ok(session && csrf, "authentication response did not include Dialoggg session and CSRF cookies");
+  return { session, csrf };
 }
 
-async function addSession(context, value) {
+async function addSession(context, values) {
   await context.addCookies([{
     name: "dialoggg_session",
-    value,
+    value: values.session,
     domain: "127.0.0.1",
     path: "/",
     httpOnly: true,
     secure: false,
     sameSite: "Lax",
+  }, {
+    name: "dialoggg_csrf",
+    value: values.csrf,
+    domain: "127.0.0.1",
+    path: "/",
+    httpOnly: false,
+    secure: false,
+    sameSite: "Strict",
   }]);
 }
 
@@ -72,6 +83,8 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const suffix = Date.now().toString(36);
 const adminEmail = `project-types-admin-${suffix}@example.test`;
 const viewerEmail = `project-types-viewer-${suffix}@example.test`;
+const ownerEmail = `project-types-owner-${suffix}@example.test`;
+const externalEmail = `project-types-external-${suffix}@example.test`;
 const password = "Project-Types-Test-1!";
 
 try {
@@ -79,6 +92,18 @@ try {
   prepareTestDatabase(dataDirectory);
   const admin = bootstrapAccount(dataDirectory, { companyName: "Project Types QA Company", fullName: "Project Types Admin", email: adminEmail, password, role: "admin" });
   bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Project Types Employee", email: viewerEmail, password, role: "employee" });
+  bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Project Types Owner", email: ownerEmail, password, role: "owner" });
+  bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Project Types External", email: externalEmail, password, role: "external" });
+  const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+  database.pragma("foreign_keys = ON");
+  const insertType = database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, ?, ?)");
+  const acrylicId = Number(insertType.run(admin.companyId, "Acrylic", "acrylic").lastInsertRowid);
+  insertType.run(admin.companyId, "Hardwood", "hardwood");
+  const modularId = Number(insertType.run(admin.companyId, "Modular", "modular").lastInsertRowid);
+  const insertProject = database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date, created_by) VALUES (?, ?, ?, '2026-09-14', ?)");
+  for (let index = 1; index <= 12; index += 1) insertProject.run(admin.companyId, acrylicId, `Acrylic Project ${String(index).padStart(2, "0")}`, admin.legacyUserId);
+  for (let index = 1; index <= 2; index += 1) insertProject.run(admin.companyId, modularId, `Modular Project ${String(index).padStart(2, "0")}`, admin.legacyUserId);
+  database.close();
   appServer = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: process.cwd(),
     env: {
@@ -105,7 +130,7 @@ try {
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const registration = await login(baseUrl, adminEmail, password);
-  const adminCookie = sessionCookie(registration);
+  const adminCookie = authCookies(registration);
   await addSession(adminContext, adminCookie);
   const page = await adminContext.newPage();
 
@@ -113,7 +138,7 @@ try {
     await page.goto(`${baseUrl}/settings/project-types`);
     assert.equal(await page.title(), "Project Types | Dialoggg");
     await page.getByRole("heading", { name: "Project Types", exact: true }).waitFor();
-    assert.match(await page.locator("body").innerText(), /UI preview/);
+    assert.match(await page.locator("body").innerText(), /Live company setting/);
     assert.match(await page.locator("body").innerText(), /Acrylic/);
     assert.match(await page.locator("body").innerText(), /Hardwood/);
     assert.match(await page.locator("body").innerText(), /Modular/);
@@ -147,6 +172,8 @@ try {
     await dialog.getByRole("button", { name: "Save new name" }).click();
     await page.getByRole("button", { name: "Rename Post-Tension Concrete" }).waitFor();
     assert.match(await page.getByRole("status").innerText(), /was renamed to Post-Tension Concrete/);
+    await page.reload();
+    await page.getByRole("button", { name: "Rename Post-Tension Concrete" }).waitFor();
   });
 
   await check("search has a clear no-results recovery state", async () => {
@@ -162,6 +189,7 @@ try {
     const dialog = page.getByRole("alertdialog", { name: "This Project Type can't be deleted" });
     await dialog.waitFor();
     assert.match(await dialog.innerText(), /12 projects/i);
+    assert.match(await dialog.innerText(), /Acrylic Project 01/);
     assert.match(await dialog.innerText(), /Nothing has been deleted/);
     assert.equal(await dialog.getByRole("button", { name: "Delete Project Type" }).count(), 0);
     await dialog.getByRole("button", { name: "Close" }).click();
@@ -177,8 +205,11 @@ try {
     await page.getByRole("button", { name: "Delete Hardwood" }).click();
     dialog = page.getByRole("alertdialog", { name: "Delete Project Type?" });
     await dialog.getByRole("button", { name: "Delete Project Type" }).click();
+    await page.getByRole("button", { name: "Delete Hardwood" }).waitFor({ state: "detached" });
     assert.equal(await page.getByRole("button", { name: "Delete Hardwood" }).count(), 0);
     assert.match(await page.getByRole("status").innerText(), /Hardwood was deleted/);
+    await page.reload();
+    assert.equal(await page.getByRole("button", { name: "Delete Hardwood" }).count(), 0);
   });
 
   await check("changed editor protects against accidental dismissal", async () => {
@@ -215,16 +246,47 @@ try {
   });
 
   const viewerLogin = await login(baseUrl, viewerEmail, password);
+  const ownerLogin = await login(baseUrl, ownerEmail, password);
+  const externalLogin = await login(baseUrl, externalEmail, password);
+
+  await check("Owner can persist Project Type management actions", async () => {
+    const ownerContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await addSession(ownerContext, authCookies(ownerLogin));
+    const ownerPage = await ownerContext.newPage();
+    await ownerPage.goto(`${baseUrl}/settings/project-types`);
+    await ownerPage.getByRole("button", { name: "Add Project Type", exact: true }).click();
+    const editor = ownerPage.getByRole("dialog", { name: "Add Project Type" });
+    await editor.getByLabel("Project Type name *", { exact: true }).fill("Owner Managed Type");
+    await editor.getByRole("button", { name: "Add Project Type", exact: true }).click();
+    await ownerPage.getByRole("button", { name: "Delete Owner Managed Type" }).waitFor();
+    await ownerPage.reload();
+    await ownerPage.getByRole("button", { name: "Delete Owner Managed Type" }).click();
+    const confirmation = ownerPage.getByRole("alertdialog", { name: "Delete Project Type?" });
+    await confirmation.getByRole("button", { name: "Delete Project Type" }).click();
+    await ownerPage.getByRole("button", { name: "Delete Owner Managed Type" }).waitFor({ state: "detached" });
+    await ownerContext.close();
+  });
 
   await check("Employee sees access restriction without Project Type data", async () => {
     const viewerContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-    await addSession(viewerContext, sessionCookie(viewerLogin));
+    await addSession(viewerContext, authCookies(viewerLogin));
     const viewerPage = await viewerContext.newPage();
     await viewerPage.goto(`${baseUrl}/settings/project-types`);
     await viewerPage.getByRole("heading", { name: "Project Types are restricted" }).waitFor();
     const text = await viewerPage.locator("body").innerText();
     assert.doesNotMatch(text, /Acrylic|Hardwood|Modular/);
     await viewerContext.close();
+  });
+
+  await check("External sees access restriction without Project Type data", async () => {
+    const externalContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await addSession(externalContext, authCookies(externalLogin));
+    const externalPage = await externalContext.newPage();
+    await externalPage.goto(`${baseUrl}/settings/project-types`);
+    await externalPage.getByRole("heading", { name: "Project Types are restricted" }).waitFor();
+    const text = await externalPage.locator("body").innerText();
+    assert.doesNotMatch(text, /Acrylic|Hardwood|Modular|Post-Tension Concrete/);
+    await externalContext.close();
   });
 
   await check("signed-out direct route returns to Login", async () => {

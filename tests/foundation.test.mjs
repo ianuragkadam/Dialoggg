@@ -46,6 +46,8 @@ test("Project Types UI covers the complete safe management workflow", async () =
   const component = await read("src/components/ProjectTypesPrototype.tsx");
   const page = await read("src/app/(app)/settings/project-types/page.tsx");
   const shell = await read("src/components/AppShell.tsx");
+  const collectionApi = await read("src/app/api/v1/project-types/route.ts");
+  const itemApi = await read("src/app/api/v1/project-types/[id]/route.ts");
 
   assert.match(shell, /Project Types/);
   assert.match(shell, /\/settings\/project-types/);
@@ -59,10 +61,13 @@ test("Project Types UI covers the complete safe management workflow", async () =
   assert.match(component, /No matching Project Types/);
   assert.match(component, /role="alertdialog"/);
   assert.match(component, /aria-modal="true"/);
-  assert.match(component, /Acrylic/);
-  assert.match(component, /Hardwood/);
-  assert.match(component, /Modular/);
-  assert.match(component, /do not alter production Project records/);
+  assert.match(component, /authenticatedFetch/);
+  assert.match(component, /Live company setting/);
+  assert.match(component, /affectedProjects/);
+  assert.match(page, /listProjectTypes/);
+  assert.match(collectionApi, /createProjectType/);
+  assert.match(itemApi, /renameProjectType/);
+  assert.match(itemApi, /PROJECT_TYPE_IN_USE/);
 });
 
 test("public registration is removed and disabled server-side", async () => {
@@ -183,7 +188,8 @@ test("Projects UI covers complete fields, lifecycle, rebase, and External bounda
   const list = await read("src/components/ProjectsPrototype.tsx");
   const form = await read("src/components/ProjectFormPrototype.tsx");
   const detail = await read("src/components/ProjectWorkspacePrototype.tsx");
-  assert.match(data, /Residential Court/);
+  assert.match(data, /project_type_id/);
+  assert.doesNotMatch(data, /PROJECT_TYPES\s*=/);
   assert.match(list, /External\/Client assigned Projects only/);
   for (const field of ["Project Name", "Client Name", "Client Email", "Address", "City", "State", "Zip", "Phone Number", "Project Type", "Project Start Date"]) assert.match(form, new RegExp(field));
   assert.match(form, /Completed Tasks never move/);

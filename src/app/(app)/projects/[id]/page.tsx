@@ -8,7 +8,7 @@ export default async function ProjectViewPage({ params }: { params: Promise<{ id
   const { id } = await params; const user = await getCurrentUser();
   if (!user) redirect("/login");
   const external = user.user_type === "external";
-  const project = db.prepare(`SELECT p.*, COUNT(t.id) AS task_count, SUM(CASE WHEN t.progress >= 1 THEN 1 ELSE 0 END) AS completed_task_count, MAX(CASE WHEN t.is_header = 0 THEN date(t.start_date, '+' || MAX(t.duration - 1, 0) || ' day') END) AS derived_end_date FROM project p LEFT JOIN task t ON t.project_id = p.id WHERE p.id = ? AND p.company_id = ? GROUP BY p.id`).get(Number(id), user.company_id) as ProjectUiRecord | undefined;
+  const project = db.prepare(`SELECT p.*, pt.name AS project_type, COUNT(t.id) AS task_count, SUM(CASE WHEN t.progress >= 1 THEN 1 ELSE 0 END) AS completed_task_count, MAX(CASE WHEN t.is_header = 0 THEN date(t.start_date, '+' || MAX(t.duration - 1, 0) || ' day') END) AS derived_end_date FROM project p JOIN project_type pt ON pt.id = p.project_type_id AND pt.company_id = p.company_id LEFT JOIN task t ON t.project_id = p.id WHERE p.id = ? AND p.company_id = ? GROUP BY p.id`).get(Number(id), user.company_id) as ProjectUiRecord | undefined;
   if (!project) notFound();
   if (external) {
     const assigned = db.prepare("SELECT 1 FROM project_user WHERE project_id = ? AND user_id = ?").get(project.id, user.id);
