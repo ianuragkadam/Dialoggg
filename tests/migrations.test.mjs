@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 3/);
+    assert.match(second.stdout, /version 4/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -77,6 +77,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 1, name: "legacy_foundation" },
           { version: 2, name: "identity_membership_and_v1_domain_foundation" },
           { version: 3, name: "invitation_reset_and_membership_resource_link" },
+          { version: 4, name: "company_lifecycle_and_unique_name" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -93,6 +94,10 @@ test("versioned migration backfills identity/membership data and is idempotent",
         0,
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM resource_category WHERE company_id = 1").get().count, 5);
+      assert.deepEqual(
+        migrated.prepare("SELECT state, pause_reason FROM company_google_sync_state WHERE company_id = 1").get(),
+        { state: "active", pause_reason: null },
+      );
     } finally {
       migrated.close();
     }

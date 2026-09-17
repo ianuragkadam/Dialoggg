@@ -616,7 +616,46 @@ const migration003: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003];
+const migration004: Migration = {
+  version: 4,
+  name: "company_lifecycle_and_unique_name",
+  signature: "case-insensitive trimmed company name uniqueness + per-company Google sync lifecycle v1",
+  up(database) {
+    const duplicate = database.prepare(`
+      SELECT lower(trim(name)) AS normalized_name, COUNT(*) AS count
+      FROM company
+      GROUP BY lower(trim(name))
+      HAVING COUNT(*) > 1
+      LIMIT 1
+    `).get() as { normalized_name: string; count: number } | undefined;
+    if (duplicate) {
+      throw new Error(`Cannot enforce unique company names: ${duplicate.count} rows normalize to "${duplicate.normalized_name}".`);
+    }
+
+    database.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_company_normalized_name
+        ON company(lower(trim(name)));
+
+      CREATE TABLE IF NOT EXISTS company_google_sync_state (
+        company_id INTEGER PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT 'active' CHECK (state IN ('active','paused')),
+        pause_reason TEXT,
+        paused_at TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE
+      );
+
+      INSERT OR IGNORE INTO company_google_sync_state (company_id, state, pause_reason, paused_at)
+      SELECT id,
+        CASE WHEN lower(status) = 'suspended' THEN 'paused' ELSE 'active' END,
+        CASE WHEN lower(status) = 'suspended' THEN 'company_suspended' ELSE NULL END,
+        CASE WHEN lower(status) = 'suspended' THEN COALESCE(suspended_at, CURRENT_TIMESTAMP) ELSE NULL END
+      FROM company;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

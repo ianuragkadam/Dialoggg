@@ -11,7 +11,7 @@ The identity, company-membership, session, invitation, password-reset, audit, ra
 | Requirement IDs | Checkpoint result | Evidence |
 | --- | --- | --- |
 | `DG-TEN-007`, `DG-TEN-009` | Implemented and scenario-tested | Global unique identity plus per-company memberships and independently evaluated Roles; second-company invitation attaches to the existing identity. |
-| `DG-TEN-008` | Backend implemented; UI switcher still required | `/api/v1/me` lists allowed contexts; `/api/v1/me/active-company` validates membership and rotates the session. |
+| `DG-TEN-008` | Implemented and live-browser tested | `/api/v1/me` lists allowed contexts; `/api/v1/me/active-company` validates membership and rotates the session; the authenticated header provides a responsive company/platform selector. |
 | `DG-TEN-010` | Implemented for the authentication/membership boundary; broader entity matrix remains in later modules | Forged active-company selection, inactive membership, suspended company, and cross-company membership substitution are rejected server-side. |
 | `DG-AUT-001`–`DG-AUT-005` | Implemented and tested locally | Bcrypt cost 12; generic failures; hashed session/invite/reset tokens; 72-hour invitation; one-hour reset; expiry, replay, and reissue tests. |
 | `DG-AUT-006` | Adapter and configuration contract implemented; external ownership gate open | Resend adapter, encrypted outbox, retries, idempotency keys, and templates exist. A verified sender domain, account owner, API credential, commercial/privacy approval, and controlled live send remain required. |
@@ -30,10 +30,11 @@ The identity, company-membership, session, invitation, password-reset, audit, ra
 | 1 | `legacy_foundation` | Reproduces the prior compatible schema. |
 | 2 | `identity_membership_and_v1_domain_foundation` | Adds identity/membership/session/security/outbox and v1 domain foundations; backfills legacy Users and Project assignments. |
 | 3 | `invitation_reset_and_membership_resource_link` | Adds one-to-one membership/Resource linkage and live-token lookup indexes. |
+| 4 | `company_lifecycle_and_unique_name` | Enforces normalized Company Name uniqueness and adds per-company Google synchronization lifecycle state. |
 
 - Migration application is explicit through `npm run db:migrate`; application module initialization never migrates.
 - Startup fails closed for an absent, newer, incomplete, or checksum-modified schema.
-- Live local database after migration: version 3, `integrity_check=ok`, zero `foreign_key_check` rows.
+- Live local database after migration: version 4, `integrity_check=ok`, zero `foreign_key_check` rows.
 - Pre-version-3 rollback copy: `data/backups/pre-auth-token-schema-2026-09-17.db` (ignored local evidence), SHA-256 `3AB008E2ED16E062744C8F74D99DC05A86497DB9FA2334121A40C9BD2FD3B93D`, schema version 2, integrity OK, zero foreign-key violations.
 - Rollback posture: code rollback may leave additive tables/columns in place when compatible; otherwise stop writes and restore the verified version-2 copy. A Railway image rollback does not revert volume data.
 
@@ -49,8 +50,8 @@ The identity, company-membership, session, invitation, password-reset, audit, ra
 ## Verification
 
 - Foundation/unit tests: **22/22 passed**, including automatic verified pre-migration production backup.
-- Production-like API/scenario suite: **110/110 passed** (includes migration, readiness, authentication, invitation/reset, tenant isolation, CSRF, sessions, cookies, and existing regression journeys).
-- Live Chromium role/responsive suites: **146/146 passed** across ten modules. The harnesses use explicit migrations and private test fixtures; none depends on public registration.
+- Production-like API/scenario suite: **117/117 passed** (includes migration, readiness, authentication, invitation/reset, tenant isolation, Company Administration lifecycle, CSRF, sessions, cookies, and existing regression journeys).
+- Live Chromium role/responsive suites: **147/147 passed** across ten modules. The harnesses use explicit migrations and private test fixtures; none depends on public registration.
 - TypeScript validation: passed.
 - Next.js production build: passed.
 - Readiness endpoint: `/api/health/ready` validates exact schema version and a SQLite quick check without exposing internals.

@@ -1,6 +1,6 @@
 # Product Status
 
-Last verified: September 16, 2026
+Last verified: September 17, 2026
 
 ## Complete foundations
 
@@ -23,6 +23,8 @@ Last verified: September 16, 2026
 - Company Administration UI at `/platform/companies`, `/platform/companies/new`, and `/platform/companies/[id]`
 - Platform-only navigation, tenant-safe restricted states, company search/filtering, operational metadata, first-Owner provisioning review, and approved suspension/restore confirmations
 - Scott's approved `FUP-001`, `FUP-002`, `FUP-012`, and `FUP-015` choices are reflected in the platform boundary, lifecycle behavior, per-company role direction, and 72-hour invitation language
+- Company Administration is now server-backed: platform-only APIs persist unique companies, seed fixed Categories, queue encrypted first-Owner invitations, enforce suspension/session revocation, preserve tenant/Microsoft records, and restore access with Google still paused for review
+- The authenticated header now switches one global identity among its authorized company and Platform Administration contexts by rotating the session
 - Users, Roles, Invitations, and Project Access UI at `/users`, `/users/new`, `/users/[id]`, and `/users/[id]/projects`
 - Approved fixed Roles, search/filtering, invitation review, optional linked Resource, lifecycle confirmations, exact Project-access changes, External/Client minimum access, and Owner/Admin locks
 - Focused automated and human-click QA completed; the incorrect Owner-screen Employee explanation found manually was fixed and regression-tested
@@ -45,7 +47,7 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 
 ## Not complete Reboot v1 scope
 
-- Company Administration persistence, first-Owner invitation delivery, audit records, suspension enforcement, and synchronization control; the complete UI review module is implemented
+- Live provider delivery for queued first-Owner invitations and Google synchronization workers/resume controls; Company Administration persistence, audit, authorization, suspension, and per-company pause state are implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
 - Resource persistence, fixed-Category enforcement, User linkage, Event assignment, and lifecycle enforcement; the complete UI review module is implemented
 - Project field/lifecycle persistence, Project Type/assignment wiring, External access enforcement across APIs, Template instantiation, derived End Date, and working-day rebase; the complete UI review module is implemented

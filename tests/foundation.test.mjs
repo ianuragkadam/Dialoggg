@@ -129,11 +129,12 @@ test("Company Administration UI is isolated from tenant navigation and content",
   assert.match(list, /Suspend company\?/);
   assert.match(list, /Restore company\?/);
   assert.match(create, /Confirm company setup/);
-  assert.match(create, /single-use Owner invitation/);
+  assert.match(create, /single-use invitation/);
   assert.match(detail, /Tenant privacy boundary/);
   assert.match(detail, /Microsoft folders stay exactly where they are/);
   assert.match(login, /super_admin.+platform\/companies/);
-  assert.match(`${list}\n${create}\n${detail}`, /UI preview/);
+  assert.match(`${list}\n${create}\n${detail}`, /api\/v1\/platform\/companies/);
+  assert.doesNotMatch(`${list}\n${create}\n${detail}`, /UI preview only|reset on refresh|Confirm UI preview/);
 });
 
 test("Users, Roles, Invitations, and Project Access UI covers the approved fixed-role workflow", async () => {

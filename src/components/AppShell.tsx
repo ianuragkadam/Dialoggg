@@ -2,11 +2,18 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { roleLabel } from "@/lib/product-language";
 import { authenticatedFetch } from "@/lib/client-fetch";
 
 type User = { id: number; email: string; full_name: string | null; user_type: string };
+type AuthContext = {
+  type: "platform" | "company";
+  companyId: number | null;
+  companyName: string | null;
+  membershipId: number | null;
+  role: string;
+};
 
 const MENU = [
   { label: "Companies",          href: "/platform/companies",  icon: "🏢", adminOnly: false, platformOnly: true, tenantOnly: false },
@@ -27,7 +34,44 @@ export default function AppShell({ user, children }: { user: User; children: Rea
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(true);
+  const [contexts, setContexts] = useState<AuthContext[]>([]);
+  const [activeContext, setActiveContext] = useState("");
+  const [switchingContext, setSwitchingContext] = useState(false);
   const platformAdmin = user.user_type === "super_admin";
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/me", { cache: "no-store" })
+      .then(response => response.ok ? response.json() : null)
+      .then(payload => {
+        if (cancelled || !payload?.data) return;
+        const available = payload.data.contexts as AuthContext[];
+        const active = payload.data.activeContext as AuthContext;
+        setContexts(available);
+        setActiveContext(active.type === "platform" ? "platform" : `company:${active.membershipId}`);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [user.id, user.user_type]);
+
+  async function switchContext(value: string) {
+    if (!value || value === activeContext) return;
+    setSwitchingContext(true);
+    const isPlatform = value === "platform";
+    const membershipId = isPlatform ? null : Number(value.split(":")[1]);
+    try {
+      const response = await authenticatedFetch("/api/v1/me/active-company", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: isPlatform ? "platform" : "company", membershipId }),
+      });
+      if (!response.ok) throw new Error("Context switch failed");
+      setActiveContext(value);
+      window.location.assign(isPlatform ? "/platform/companies" : "/projects");
+    } finally {
+      setSwitchingContext(false);
+    }
+  }
 
   async function logout() {
     await authenticatedFetch("/api/auth/logout", { method: "POST" });
@@ -47,6 +91,7 @@ export default function AppShell({ user, children }: { user: User; children: Rea
             </div>
           </div>
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+            {contexts.length > 1 && <div><label htmlFor="active-company-context" className="sr-only">Active company context</label><select id="active-company-context" value={activeContext} disabled={switchingContext} onChange={event => switchContext(event.target.value)} className="w-32 max-w-32 rounded border border-blue-500 bg-blue-900 px-2 py-1.5 text-xs font-semibold text-white outline-none focus:ring-2 focus:ring-white disabled:opacity-60 sm:w-auto sm:max-w-52"><option value="" disabled>Choose context</option>{contexts.map(context => <option key={context.type === "platform" ? "platform" : `company:${context.membershipId}`} value={context.type === "platform" ? "platform" : `company:${context.membershipId}`}>{context.type === "platform" ? "Platform Administration" : `${context.companyName} · ${context.role}`}</option>)}</select></div>}
             <span className="hidden truncate text-sm text-blue-100 sm:inline">{user.full_name || user.email}</span>
             <span className="hidden whitespace-nowrap rounded bg-blue-700 px-2 py-1 text-xs sm:inline">{roleLabel(user.user_type)}</span>
             <button onClick={logout} className="whitespace-nowrap rounded bg-blue-700 px-3 py-1 text-sm hover:bg-blue-900">

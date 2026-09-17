@@ -222,6 +222,7 @@ try {
   const viewerA = new Client(baseUrl);
   const oldPasswordClient = new Client(baseUrl);
   const invitedClient = new Client(baseUrl);
+  const provisionedOwner = new Client(baseUrl);
 
   const suffix = Date.now().toString(36);
   const adminAEmail = `admin-a-${suffix}@example.test`;
@@ -251,6 +252,9 @@ try {
   let predecessorId;
   let successorId;
   let overlapId;
+  let provisionedCompanyId;
+  let provisionedOwnerMembershipId;
+  let provisionedProjectId;
 
   await check("signed-out root redirects to login", async () => {
     const response = await anonymous.request("/");
@@ -731,6 +735,143 @@ try {
     assert.equal(me.data.user.company_id, null);
   });
 
+  await check("tenant Admin cannot call Platform Company Administration APIs", async () => {
+    const response = await adminA.request("/api/v1/platform/companies");
+    assert.equal(response.status, 403);
+    const create = await adminA.request("/api/v1/platform/companies", {
+      method: "POST",
+      body: { name: "Forbidden Company", timeZone: "America/New_York", ownerFirstName: "No", ownerLastName: "Access", ownerEmail: `forbidden-${suffix}@example.test` },
+    });
+    assert.equal(create.status, 403);
+  });
+
+  await check("company provisioning rejects an invalid IANA time zone", async () => {
+    const response = await platform.request("/api/v1/platform/companies", {
+      method: "POST",
+      body: { name: "Invalid Zone Company", timeZone: "Mars/Olympus", ownerFirstName: "Invalid", ownerLastName: "Zone", ownerEmail: `invalid-zone-${suffix}@example.test` },
+    });
+    assert.equal(response.status, 400);
+    assert.equal(response.data.error.code, "VALIDATION_FAILED");
+    assert.ok(response.data.error.fields.timeZone);
+  });
+
+  const provisionedOwnerEmail = `first-owner-${suffix}@example.test`;
+  const provisionedOwnerPassword = "First-Owner-Password-1!";
+  await check("Platform Administrator creates a company, fixed categories, and encrypted first-Owner invitation", async () => {
+    const response = await platform.request("/api/v1/platform/companies", {
+      method: "POST",
+      body: {
+        name: "Provisioned Scenario Company",
+        timeZone: "America/Chicago",
+        ownerFirstName: "First",
+        ownerLastName: "Owner",
+        ownerEmail: provisionedOwnerEmail,
+      },
+    });
+    assert.equal(response.status, 201, JSON.stringify(response.data));
+    provisionedCompanyId = response.data.data.company.id;
+    provisionedOwnerMembershipId = response.data.data.firstOwnerMembershipId;
+    assert.equal(response.data.data.company.ownerStatus, "pending");
+    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", provisionedOwnerEmail);
+    assert.ok(emailJob);
+    assert.equal(emailJob.payload_json.includes(provisionedOwnerEmail), false);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM resource_category WHERE company_id = ?").get(provisionedCompanyId).count, 5);
+      assert.deepEqual(database.prepare("SELECT role, status FROM company_membership WHERE id = ?").get(provisionedOwnerMembershipId), { role: "owner", status: "pending" });
+    } finally { database.close(); }
+  });
+
+  await check("case-insensitive duplicate Company Name is rejected", async () => {
+    const response = await platform.request("/api/v1/platform/companies", {
+      method: "POST",
+      body: {
+        name: "  provisioned scenario company  ",
+        timeZone: "America/Chicago",
+        ownerFirstName: "Duplicate",
+        ownerLastName: "Owner",
+        ownerEmail: `duplicate-owner-${suffix}@example.test`,
+      },
+    });
+    assert.equal(response.status, 409);
+    assert.equal(response.data.error.code, "COMPANY_NAME_EXISTS");
+  });
+
+  await check("first Owner accepts the 72-hour invitation and enters the new company", async () => {
+    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", provisionedOwnerEmail);
+    const token = fragmentToken(emailJob.message.variables.actionUrl);
+    const accepted = await provisionedOwner.request("/api/v1/invitations/accept", {
+      method: "POST",
+      body: { token, password: provisionedOwnerPassword },
+    });
+    assert.equal(accepted.status, 201, JSON.stringify(accepted.data));
+    const me = await provisionedOwner.request("/api/v1/me");
+    assert.equal(me.status, 200);
+    assert.equal(me.data.data.activeContext.companyId, provisionedCompanyId);
+    assert.equal(me.data.data.activeContext.role, "owner");
+  });
+
+  await check("suspension revokes company sessions, pauses Google, and preserves business and Microsoft records", async () => {
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try {
+      const identity = database.prepare("SELECT identity_id FROM company_membership WHERE id = ?").get(provisionedOwnerMembershipId);
+      const legacy = database.prepare("SELECT legacy_user_id FROM company_membership WHERE id = ?").get(provisionedOwnerMembershipId);
+      provisionedProjectId = Number(database.prepare(`
+        INSERT INTO project (company_id, name, start_date, created_by) VALUES (?, 'Private Preservation Project', '2026-09-17', ?)
+      `).run(provisionedCompanyId, legacy.legacy_user_id).lastInsertRowid);
+      database.prepare(`
+        INSERT INTO google_connection (identity_id, token_ciphertext, token_key_version, state)
+        VALUES (?, 'encrypted-google-token', 1, 'healthy')
+      `).run(identity.identity_id);
+      database.prepare(`
+        INSERT INTO microsoft_connection (
+          company_id, tenant_id_ciphertext, drive_id_ciphertext, root_item_id_ciphertext,
+          token_ciphertext, token_key_version, service_type, state
+        ) VALUES (?, 'tenant', 'drive', 'root', 'token', 1, 'sharepoint', 'healthy')
+      `).run(provisionedCompanyId);
+      database.prepare(`
+        INSERT INTO project_folder_mapping (project_id, kind, drive_id_ciphertext, item_id_ciphertext, display_name)
+        VALUES (?, 'common', 'drive', 'item', 'Private Preservation Folder')
+      `).run(provisionedProjectId);
+    } finally { database.close(); }
+
+    const response = await platform.request(`/api/v1/platform/companies/${provisionedCompanyId}/suspend`, { method: "POST", body: {} });
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.data.status, "suspended");
+    assert.ok(response.data.data.revokedSessions >= 1);
+    assert.equal((await provisionedOwner.request("/api/v1/me")).status, 401);
+
+    const detail = await platform.request(`/api/v1/platform/companies/${provisionedCompanyId}`);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.data.data.company.googleStatus, "Paused");
+    assert.equal(JSON.stringify(detail.data).includes("Private Preservation Project"), false);
+    const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(verify.prepare("SELECT status FROM company WHERE id = ?").get(provisionedCompanyId).status, "suspended");
+      assert.equal(verify.prepare("SELECT state FROM company_google_sync_state WHERE company_id = ?").get(provisionedCompanyId).state, "paused");
+      assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM project WHERE id = ?").get(provisionedProjectId).count, 1);
+      assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM project_folder_mapping WHERE project_id = ?").get(provisionedProjectId).count, 1);
+      assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM microsoft_connection WHERE company_id = ?").get(provisionedCompanyId).count, 1);
+    } finally { verify.close(); }
+  });
+
+  await check("restoration re-enables login while Google remains paused for review", async () => {
+    const response = await platform.request(`/api/v1/platform/companies/${provisionedCompanyId}/restore`, { method: "POST", body: {} });
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.data.status, "active");
+    assert.equal(response.data.data.googleSync, "paused");
+    const login = await provisionedOwner.request("/api/auth/login", {
+      method: "POST",
+      body: { email: provisionedOwnerEmail, password: provisionedOwnerPassword },
+    });
+    assert.equal(login.status, 200);
+    const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.deepEqual(verify.prepare("SELECT state, pause_reason FROM company_google_sync_state WHERE company_id = ?").get(provisionedCompanyId), { state: "paused", pause_reason: "restored_review_required" });
+      assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM audit_event WHERE company_id = ? AND action IN ('company.create','company.suspend','company.restore')").get(provisionedCompanyId).count, 3);
+    } finally { verify.close(); }
+  });
+
   await check("Platform Administrator entry routes to Companies", async () => {
     const root = await platform.request("/");
     assert.equal(root.status, 307);
@@ -741,7 +882,7 @@ try {
   });
 
   await check("signed-out Company Administration routes redirect to Login", async () => {
-    for (const route of ["/platform/companies", "/platform/companies/new", "/platform/companies/sport-court-east-pa"]) {
+    for (const route of ["/platform/companies", "/platform/companies/new", `/platform/companies/${companyAId}`]) {
       const response = await anonymous.request(route);
       assert.equal(response.status, 307, route);
       assert.ok(response.headers.get("location")?.endsWith("/login"), route);
@@ -759,13 +900,13 @@ try {
     const expectations = [
       ["/platform/companies", /Platform companies/],
       ["/platform/companies/new", /Review company setup/],
-      ["/platform/companies/sport-court-east-pa", /Tenant privacy boundary/],
+      [`/platform/companies/${companyAId}`, /Tenant privacy boundary/],
     ];
     for (const [route, pattern] of expectations) {
       const response = await platform.request(route);
       assert.equal(response.status, 200, route);
       assert.match(response.text, pattern);
-      assert.match(response.text, /UI preview/);
+      assert.doesNotMatch(response.text, /UI preview/);
     }
   });
 
