@@ -57,10 +57,10 @@ The identity, company-membership, session, invitation, password-reset, audit, ra
 
 ## Open external and release gates
 
-1. Railway deployment is deliberately not performed in this record. At the deployment gate, use a fresh interactive CLI login without invalidating other sessions, confirm only non-secret linkage, back up, migrate, deploy, and capture the new deployment ID/live smoke results.
+1. A fresh interactive Railway CLI login completed without invalidating other sessions. Non-secret linkage was verified as `Linkedin Automation` → `dialoggg` → `production` → `dialoggg-web`, with `dialoggg-data` mounted at `/data`; the prior successful deployment remains `861b045c-d8ca-4e96-b0d0-b09f8587be36`. Deployment is paused before migration because creating the new persistent `APP_ENCRYPTION_KEY` requires explicit user approval. No workaround or partial auth deployment was attempted.
 2. The user explicitly accepted the residual risk of leaving existing remote Railway sessions active because other processes may depend on them. The local CLI was logged out; no token value was retained or reused.
 3. Production currently has no PostgreSQL service. ADR-004 remains unresolved: approve/provision PostgreSQL or explicitly accept/test the single-writer SQLite exception before production backend expansion.
-4. Configure `APP_BASE_URL`, a freshly generated `APP_ENCRYPTION_KEY`, `RESEND_API_KEY`, and `EMAIL_FROM`; verify the sender domain and complete one controlled invitation and reset delivery. Never place values in documentation or logs.
+4. With explicit authorization, configure `APP_BASE_URL` and a freshly generated `APP_ENCRYPTION_KEY` without displaying values. Separately configure `RESEND_API_KEY` and `EMAIL_FROM`, verify the sender domain, and complete one controlled invitation and reset delivery. Never place values in documentation or logs.
 5. Complete dependency vulnerability disposition, off-volume daily backup scheduling/retention, wider application CSRF/authorization retrofit, UAT, and final release approval before claiming Dialoggg v1 complete.
 
 ## Defects caught and resolved in this checkpoint
