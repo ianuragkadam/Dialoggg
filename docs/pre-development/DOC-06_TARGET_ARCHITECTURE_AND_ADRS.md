@@ -50,15 +50,15 @@ Operations: structured logs + metrics/alerts + backup destination + deployment h
 | ADR | Decision | State | Rationale/next evidence |
 | --- | --- | --- | --- |
 | ADR-001 | Keep Next.js App Router monolith for v1 | Proposed accept | Current fit; one team/repo; avoid premature services |
-| ADR-002 | Separate global identity from company membership | Required | Approved multi-company/per-membership role requirements |
+| ADR-002 | Separate global identity from company membership | Accepted; implemented locally | Approved multi-company/per-membership role requirements; migrations 2–3 and authentication scenarios provide evidence |
 | ADR-003 | Centralize authorization in server policy functions | Required | Current `isAdmin()` is insufficient and misclassifies Owner |
 | ADR-004 | Migrate target backend to Railway PostgreSQL before new identity/membership implementation | Recommended; approval pending | Multi-company writes/jobs/recovery outweigh early migration cost; SQLite exception requires benchmark and explicit acceptance |
-| ADR-005 | Use transactional outbox for email and external sync | Proposed accept | Prevent source commit without delivery record; idempotent retry |
+| ADR-005 | Use transactional outbox for email and external sync | Accepted; email path implemented locally | Prevent source commit without delivery record; encrypted payload, idempotent retry, and dead-letter behavior implemented for transactional email |
 | ADR-006 | Dialoggg remains Google source of truth | Approved product decision | One-way sync requirement |
 | ADR-007 | Store stable Microsoft IDs; do not manage permissions | Approved product decision | Links only; Microsoft authorization remains external |
 | ADR-008 | Preserve DHTMLX Gantt component; isolate calculation engine | Proposed accept | Core original UX with testable deterministic rules |
 | ADR-009 | Use date-only domain values for Tasks and zoned instants for timed Events | Proposed accept | Avoid device-zone shifts; preserve local Event time |
-| ADR-010 | Use Resend for transactional invitations/resets | Recommended; commercial/ownership approval pending | Signed webhooks and 24-hour idempotency keys fit secure retry; validate domain, data terms, support, pricing, and regional needs |
+| ADR-010 | Use Resend for transactional invitations/resets | Selected for adapter; live/commercial approval pending | Adapter, templates, idempotency, and retry exist; verify domain/account ownership, data terms, support, pricing, region, and controlled live delivery before release |
 
 ## Email-provider R&D
 

@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import Database from "better-sqlite3";
+import { bootstrapAccount, login, prepareTestDatabase } from "./test-fixtures.mjs";
 
 const results = [];
 let appServer;
@@ -66,6 +66,9 @@ const password = "Company-Admin-UI-Test-1!";
 
 try {
   const playwright = await loadPlaywright();
+  prepareTestDatabase(dataDirectory);
+  bootstrapAccount(dataDirectory, { fullName: "Platform Administrator", email: platformEmail, password, platform: true });
+  bootstrapAccount(dataDirectory, { companyName: "Tenant QA Company", fullName: "Tenant Admin", email: tenantAdminEmail, password, role: "admin" });
   appServer = spawn(process.execPath, ["scripts/start-production.mjs"], {
     cwd: process.cwd(),
     env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory },
@@ -85,19 +88,9 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
 
-  const platformRegistration = await fetch(`${baseUrl}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ company_name: "Platform Bootstrap", full_name: "Platform Administrator", email: platformEmail, password }) });
-  const platformPayload = await platformRegistration.json();
-  assert.equal(platformRegistration.status, 200, JSON.stringify(platformPayload));
+  const platformRegistration = await login(baseUrl, platformEmail, password);
   const platformCookie = sessionCookie(platformRegistration);
-  const testDb = new Database(path.join(dataDirectory, "dialoggg.db"));
-  try {
-    testDb.prepare("UPDATE user SET user_type = 'super_admin', company_id = NULL WHERE id = ?").run(platformPayload.userId);
-  } finally {
-    testDb.close();
-  }
-
-  const tenantRegistration = await fetch(`${baseUrl}/api/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ company_name: "Tenant QA Company", full_name: "Tenant Admin", email: tenantAdminEmail, password }) });
-  assert.equal(tenantRegistration.status, 200, await tenantRegistration.text());
+  const tenantRegistration = await login(baseUrl, tenantAdminEmail, password);
   const tenantCookie = sessionCookie(tenantRegistration);
 
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });

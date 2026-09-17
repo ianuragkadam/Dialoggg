@@ -6,7 +6,7 @@
   "packageManager": "npm@10.8.2",
   "scripts": {
     "test": "npm run test:unit && npm run build && npm run test:scenarios",
-    "test:unit": "node --test tests/foundation.test.mjs",
+    "test:unit": "node --test tests/*.test.mjs",
     "verify": "npm test",
     "dev": "next dev -p 3030",
     "build": "next build",
@@ -24,8 +24,10 @@
     "test:ui:google-calendar": "node scripts/test-google-calendar-ui.mjs",
     "test:ui:microsoft-storage": "node scripts/test-microsoft-storage-ui.mjs",
     "db:backup": "node scripts/backup-database.mjs",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "email:process": "tsx src/db/process-email-outbox.ts",
     "db:restore": "node scripts/restore-database.mjs",
-    "seed": "node --experimental-strip-types src/db/seed.ts"
+    "seed": "tsx src/db/seed.ts"
   },
   "engines": {
     "node": ">=22.22.2 <25"

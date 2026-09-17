@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createDecipheriv } from "node:crypto";
 import Database from "better-sqlite3";
+import bcrypt from "bcryptjs";
 
 const results = [];
 let server;
@@ -50,6 +52,11 @@ class Client {
       headers.set("Cookie", [...this.cookies].map(([key, value]) => `${key}=${value}`).join("; "));
     }
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
+    if ((options.method || "GET") !== "GET") {
+      headers.set("Origin", this.baseUrl);
+      const csrf = this.cookies.get("dialoggg_csrf");
+      if (csrf) headers.set("X-CSRF-Token", csrf);
+    }
 
     const response = await fetch(`${this.baseUrl}${urlPath}`, {
       method: options.method || "GET",
@@ -58,8 +65,14 @@ class Client {
       redirect: options.redirect || "manual",
     });
 
-    const setCookie = response.headers.get("set-cookie");
-    if (setCookie) {
+    const combinedSetCookie = response.headers.get("set-cookie");
+    const rawSetCookies = typeof response.headers.getSetCookie === "function"
+      ? response.headers.getSetCookie()
+      : combinedSetCookie
+        ? [combinedSetCookie]
+        : [];
+    const setCookies = rawSetCookies.flatMap(value => value.split(/,(?=\s*[^;,=\s]+=)/));
+    for (const setCookie of setCookies) {
       const pair = setCookie.split(";", 1)[0];
       const separator = pair.indexOf("=");
       const name = pair.slice(0, separator);
@@ -73,19 +86,105 @@ class Client {
     if ((response.headers.get("content-type") || "").includes("application/json")) {
       try { data = JSON.parse(text); } catch { data = text; }
     }
-    return { status: response.status, headers: response.headers, data, text };
+    return { status: response.status, headers: response.headers, data, text, setCookies };
+  }
+}
+
+function readEmailOutbox(dataDirectory, key, kind, recipient) {
+  const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+  try {
+    const rows = database.prepare(`
+      SELECT id, payload_json FROM outbox_job WHERE kind = ? ORDER BY id DESC
+    `).all(kind);
+    for (const row of rows) {
+      const envelope = JSON.parse(row.payload_json);
+      const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(envelope.iv, "base64"));
+      decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
+      const message = JSON.parse(Buffer.concat([
+        decipher.update(Buffer.from(envelope.ciphertext, "base64")), decipher.final(),
+      ]).toString("utf8"));
+      if (message.to === recipient) return { ...row, message };
+    }
+    return null;
+  } finally {
+    database.close();
+  }
+}
+
+function fragmentToken(actionUrl) {
+  return new URLSearchParams(new URL(actionUrl).hash.slice(1)).get("token");
+}
+
+function bootstrapAccount(dataDirectory, { companyName, companyId: existingCompanyId = null, fullName, email, password, role = "admin", platform = false }) {
+  const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+  database.pragma("foreign_keys = ON");
+  try {
+    return database.transaction(() => {
+      let companyId = existingCompanyId;
+      if (!platform) {
+        if (!companyId) {
+          const company = database.prepare(
+            "INSERT INTO company (name, time_zone, status) VALUES (?, 'America/New_York', 'active')",
+          ).run(companyName);
+          companyId = Number(company.lastInsertRowid);
+        }
+      }
+      const passwordHash = bcrypt.hashSync(password, 12);
+      const legacy = database.prepare(`
+        INSERT INTO user (company_id, email, password_hash, full_name, user_type)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(companyId, email, passwordHash, fullName, platform ? "super_admin" : role);
+      const legacyUserId = Number(legacy.lastInsertRowid);
+      const [firstName, ...rest] = fullName.split(" ");
+      const identity = database.prepare(`
+        INSERT INTO identity (
+          legacy_user_id, normalized_email, password_hash, first_name, last_name,
+          status, is_platform_admin, email_verified_at
+        ) VALUES (?, ?, ?, ?, ?, 'active', ?, CURRENT_TIMESTAMP)
+      `).run(legacyUserId, email.toLowerCase(), passwordHash, firstName, rest.join(" "), platform ? 1 : 0);
+      const identityId = Number(identity.lastInsertRowid);
+      let membershipId = null;
+      if (companyId) {
+        const membership = database.prepare(`
+          INSERT INTO company_membership (
+            identity_id, company_id, legacy_user_id, role, status, accepted_at
+          ) VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
+        `).run(identityId, companyId, legacyUserId, role);
+        membershipId = Number(membership.lastInsertRowid);
+        for (const category of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) {
+          database.prepare("INSERT OR IGNORE INTO resource_category (company_id, name) VALUES (?, ?)").run(companyId, category);
+        }
+      }
+      return { companyId, legacyUserId, identityId, membershipId };
+    })();
+  } finally {
+    database.close();
   }
 }
 
 const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-scenarios-"));
 const port = await freePort();
 const baseUrl = `http://127.0.0.1:${port}`;
+const testEncryptionKey = Buffer.alloc(32, 7);
 const initialFormToken = "scenario-initial-form-token-please-keep-private";
 const initialReviewToken = "scenario-initial-review-token-please-keep-private";
 const followUpFormToken = "scenario-follow-up-form-token-please-keep-private";
 const followUpReviewToken = "scenario-follow-up-review-token-please-keep-private";
 
 try {
+  const migration = spawnSync(process.execPath, ["node_modules/tsx/dist/cli.mjs", "src/db/migrate.ts"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: "test",
+      RAILWAY_VOLUME_MOUNT_PATH: dataDirectory,
+    },
+    encoding: "utf8",
+  });
+  if (migration.status !== 0) {
+    throw new Error(`Test database migration failed.\n${migration.stdout}\n${migration.stderr}`);
+  }
+
   server = spawn(process.execPath, ["scripts/start-production.mjs"], {
     cwd: process.cwd(),
     env: {
@@ -97,6 +196,8 @@ try {
       REQUIREMENTS_REVIEW_TOKEN: initialReviewToken,
       FOLLOW_UP_REQUIREMENTS_FORM_TOKEN: followUpFormToken,
       FOLLOW_UP_REQUIREMENTS_REVIEW_TOKEN: followUpReviewToken,
+      APP_BASE_URL: baseUrl,
+      APP_ENCRYPTION_KEY: testEncryptionKey.toString("base64"),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -120,6 +221,7 @@ try {
   const platform = new Client(baseUrl);
   const viewerA = new Client(baseUrl);
   const oldPasswordClient = new Client(baseUrl);
+  const invitedClient = new Client(baseUrl);
 
   const suffix = Date.now().toString(36);
   const adminAEmail = `admin-a-${suffix}@example.test`;
@@ -135,7 +237,10 @@ try {
   let companyAId;
   let companyBId;
   let adminAId;
+  let adminAIdentityId;
+  let adminAMembershipId;
   let adminBId;
+  let adminBMembershipId;
   let platformUserId;
   let viewerAId;
   let projectAId;
@@ -160,11 +265,17 @@ try {
     assert.doesNotMatch(response.text, /back to home/i);
   });
 
+  await check("readiness healthcheck verifies the current schema and database", async () => {
+    const response = await fetch(`${baseUrl}/api/health/ready`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { status: "ready" });
+  });
+
   await check("security headers are returned", async () => {
     const response = await anonymous.request("/login");
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
     assert.equal(response.headers.get("x-frame-options"), "DENY");
-    assert.equal(response.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
   });
 
   await check("initial and follow-up workshops use separate response sets", async () => {
@@ -279,31 +390,42 @@ try {
     assert.equal(response.status, 401);
   });
 
-  await check("registration rejects missing fields", async () => {
+  await check("public registration API is disabled", async () => {
     const response = await anonymous.request("/api/auth/register", { method: "POST", body: {} });
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 404);
   });
 
-  await check("registration rejects a short password", async () => {
-    const response = await anonymous.request("/api/auth/register", {
-      method: "POST",
-      body: { company_name: "Invalid Company", email: `short-${suffix}@example.test`, password: "123" },
+  await check("public registration page is absent", async () => {
+    const response = await anonymous.request("/register");
+    assert.equal(response.status, 404);
+  });
+
+  await check("pre-provisioned company Admin can create a session", async () => {
+    const created = bootstrapAccount(dataDirectory, {
+      companyName: "Scenario Company A",
+      fullName: "Admin A",
+      email: adminAEmail,
+      password: passwordA,
+      role: "admin",
     });
-    assert.equal(response.status, 400);
-  });
-
-  await check("first company registration creates an admin session", async () => {
-    const response = await adminA.request("/api/auth/register", {
+    companyAId = created.companyId;
+    adminAId = created.legacyUserId;
+    adminAIdentityId = created.identityId;
+    adminAMembershipId = created.membershipId;
+    const response = await adminA.request("/api/auth/login", {
       method: "POST",
-      body: { company_name: "Scenario Company A", full_name: "Admin A", email: adminAEmail, password: passwordA },
+      body: { email: adminAEmail, password: passwordA },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
-    companyAId = response.data.companyId;
-    adminAId = response.data.userId;
+    assert.ok(adminA.cookies.has("dialoggg_csrf"), `cookies: ${[...adminA.cookies.keys()].join(",")}`);
+    const sessionCookie = response.setCookies.find(value => value.startsWith("dialoggg_session="));
+    assert.match(sessionCookie || "", /HttpOnly/i);
+    assert.match(sessionCookie || "", /Secure/i);
+    assert.match(sessionCookie || "", /SameSite=Lax/i);
     assert.ok(companyAId && adminAId);
   });
 
-  await check("registered user is the company admin", async () => {
+  await check("authenticated user is the company Admin", async () => {
     const response = await adminA.request("/api/me");
     assert.equal(response.status, 200);
     assert.equal(response.data.user.id, adminAId);
@@ -311,12 +433,16 @@ try {
     assert.equal(response.data.user.user_type, "admin");
   });
 
-  await check("duplicate email is rejected case-insensitively", async () => {
-    const response = await anonymous.request("/api/auth/register", {
-      method: "POST",
-      body: { company_name: "Duplicate", email: adminAEmail.toUpperCase(), password: passwordA },
-    });
-    assert.equal(response.status, 409);
+  await check("global identity email is unique case-insensitively", async () => {
+    const testDb = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try {
+      assert.throws(() => testDb.prepare(`
+        INSERT INTO identity (normalized_email, password_hash, first_name, last_name)
+        VALUES (?, 'hash', 'Duplicate', '')
+      `).run(adminAEmail.toUpperCase()), /UNIQUE/i);
+    } finally {
+      testDb.close();
+    }
   });
 
   await check("invalid login is rejected", async () => {
@@ -327,31 +453,278 @@ try {
     assert.equal(response.status, 401);
   });
 
-  await check("second company registration creates an isolated tenant", async () => {
-    const response = await adminB.request("/api/auth/register", {
+  await check("second pre-provisioned company creates an isolated tenant", async () => {
+    const created = bootstrapAccount(dataDirectory, {
+      companyName: "Scenario Company B",
+      fullName: "Admin B",
+      email: adminBEmail,
+      password: passwordB,
+      role: "admin",
+    });
+    companyBId = created.companyId;
+    adminBId = created.legacyUserId;
+    adminBMembershipId = created.membershipId;
+    const response = await adminB.request("/api/auth/login", {
       method: "POST",
-      body: { company_name: "Scenario Company B", full_name: "Admin B", email: adminBEmail, password: passwordB },
+      body: { email: adminBEmail, password: passwordB },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
-    companyBId = response.data.companyId;
-    adminBId = response.data.userId;
     assert.notEqual(companyAId, companyBId);
     assert.ok(adminBId);
   });
 
-  await check("test Platform Administrator identity is distinct from company roles", async () => {
-    const response = await platform.request("/api/auth/register", {
+  const invitedEmail = `invited-${suffix}@example.test`;
+  const invitedPassword = "Invited-Password-1!";
+  const invitedNewPassword = "Invited-Password-2!";
+  let invitedMembershipId;
+  let invitationToken;
+
+  await check("Admin cannot provision another User password", async () => {
+    const response = await adminA.request("/api/users", {
       method: "POST",
-      body: { company_name: "Scenario Platform Bootstrap", full_name: "Platform Administrator", email: platformEmail, password: platformPassword },
+      body: { firstName: "Unsafe", lastName: "Provisioning", email: `unsafe-${suffix}@example.test`, role: "employee", password: "Unsafe-Password-1!" },
+    });
+    assert.equal(response.status, 400);
+  });
+
+  await check("Admin invitation creates pending membership, linked Resource, and encrypted 72-hour email", async () => {
+    const response = await adminA.request("/api/v1/memberships", {
+      method: "POST",
+      body: { firstName: "Invited", lastName: "Employee", email: invitedEmail, role: "employee", addAsResource: true },
+    });
+    assert.equal(response.status, 201, JSON.stringify(response.data));
+    invitedMembershipId = response.data.id;
+    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", invitedEmail);
+    assert.ok(emailJob);
+    invitationToken = fragmentToken(emailJob.message.variables.actionUrl);
+    assert.ok(invitationToken?.length >= 32);
+    assert.equal(emailJob.payload_json.includes(invitedEmail), false);
+    assert.equal(emailJob.payload_json.includes(invitationToken), false);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const membership = database.prepare("SELECT status FROM company_membership WHERE id = ?").get(invitedMembershipId);
+      const invitation = database.prepare("SELECT token_hash, expires_at FROM invitation_token WHERE membership_id = ? AND revoked_at IS NULL").get(invitedMembershipId);
+      assert.equal(membership.status, "pending");
+      assert.notEqual(invitation.token_hash, invitationToken);
+      const hours = (Date.parse(invitation.expires_at) - Date.now()) / 3_600_000;
+      assert.ok(hours > 71.9 && hours <= 72.1, `invite lifetime ${hours}`);
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM resource WHERE linked_membership_id = ?").get(invitedMembershipId).count, 1);
+    } finally { database.close(); }
+  });
+
+  await check("single-use invitation activates the intended membership and creates a session", async () => {
+    const accepted = await invitedClient.request("/api/v1/invitations/accept", {
+      method: "POST",
+      body: { token: invitationToken, password: invitedPassword },
+    });
+    assert.equal(accepted.status, 201, JSON.stringify(accepted.data));
+    assert.equal(accepted.data.data.context.membershipId, invitedMembershipId);
+    const me = await invitedClient.request("/api/v1/me");
+    assert.equal(me.status, 200);
+    assert.equal(me.data.data.activeContext.role, "employee");
+    const replay = await anonymous.request("/api/v1/invitations/accept", {
+      method: "POST",
+      body: { token: invitationToken, password: invitedPassword },
+    });
+    assert.equal(replay.status, 400);
+  });
+
+  await check("an existing global identity accepts a second-company membership without duplicate credentials", async () => {
+    const created = await adminB.request("/api/v1/memberships", {
+      method: "POST",
+      body: { firstName: "Invited", lastName: "Employee", email: invitedEmail, role: "employee" },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", invitedEmail);
+    const token = fragmentToken(emailJob.message.variables.actionUrl);
+    const secondCompanyClient = new Client(baseUrl);
+    const wrongCredential = await secondCompanyClient.request("/api/v1/invitations/accept", { method: "POST", body: { token, password: "Incorrect-Password-1!" } });
+    assert.equal(wrongCredential.status, 400);
+    const accepted = await secondCompanyClient.request("/api/v1/invitations/accept", { method: "POST", body: { token, password: invitedPassword } });
+    assert.equal(accepted.status, 201, JSON.stringify(accepted.data));
+    assert.equal(accepted.data.data.context.companyId, companyBId);
+    const me = await secondCompanyClient.request("/api/v1/me");
+    assert.equal(me.data.data.contexts.length, 2);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM identity WHERE normalized_email = ?").get(invitedEmail).count, 1);
+    } finally { database.close(); }
+  });
+
+  await check("forgot-password responses are generic and queue an encrypted one-hour reset", async () => {
+    const existing = await anonymous.request("/api/v1/auth/forgot-password", { method: "POST", body: { email: invitedEmail } });
+    const missing = await anonymous.request("/api/v1/auth/forgot-password", { method: "POST", body: { email: `missing-reset-${suffix}@example.test` } });
+    assert.equal(existing.status, 200);
+    assert.equal(missing.status, 200);
+    assert.equal(existing.data.data.message, missing.data.data.message);
+    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "password_reset_email", invitedEmail);
+    assert.ok(emailJob);
+    const token = fragmentToken(emailJob.message.variables.actionUrl);
+    assert.ok(token?.length >= 32);
+    assert.equal(emailJob.payload_json.includes(invitedEmail), false);
+    assert.equal(emailJob.payload_json.includes(token), false);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const reset = database.prepare("SELECT expires_at FROM password_reset_token ORDER BY id DESC LIMIT 1").get();
+      const hours = (Date.parse(reset.expires_at) - Date.now()) / 3_600_000;
+      assert.ok(hours > 0.9 && hours <= 1.1, `reset lifetime ${hours}`);
+    } finally { database.close(); }
+  });
+
+  await check("password reset is single-use, revokes sessions, and changes the credential", async () => {
+    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "password_reset_email", invitedEmail);
+    const resetToken = fragmentToken(emailJob.message.variables.actionUrl);
+    const reset = await anonymous.request("/api/v1/auth/reset-password", { method: "POST", body: { token: resetToken, password: invitedNewPassword } });
+    assert.equal(reset.status, 200, JSON.stringify(reset.data));
+    assert.equal((await invitedClient.request("/api/v1/me")).status, 401);
+    const replay = await anonymous.request("/api/v1/auth/reset-password", { method: "POST", body: { token: resetToken, password: invitedNewPassword } });
+    assert.equal(replay.status, 400);
+    const login = await invitedClient.request("/api/auth/login", { method: "POST", body: { email: invitedEmail, password: invitedNewPassword } });
+    assert.equal(login.status, 200);
+  });
+
+  await check("expired password-reset tokens cannot change credentials", async () => {
+    const requested = await anonymous.request("/api/v1/auth/forgot-password", { method: "POST", body: { email: invitedEmail } });
+    assert.equal(requested.status, 200);
+    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "password_reset_email", invitedEmail);
+    const token = fragmentToken(emailJob.message.variables.actionUrl);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try { database.prepare("UPDATE password_reset_token SET expires_at = datetime('now', '-1 minute') WHERE id = (SELECT id FROM password_reset_token ORDER BY id DESC LIMIT 1)").run(); }
+    finally { database.close(); }
+    const response = await anonymous.request("/api/v1/auth/reset-password", { method: "POST", body: { token, password: "Should-Not-Apply-1!" } });
+    assert.equal(response.status, 400);
+    const login = await new Client(baseUrl).request("/api/auth/login", { method: "POST", body: { email: invitedEmail, password: invitedNewPassword } });
+    assert.equal(login.status, 200);
+  });
+
+  await check("expired invitations fail without activating membership", async () => {
+    const email = `expired-invite-${suffix}@example.test`;
+    const created = await adminA.request("/api/v1/memberships", { method: "POST", body: { firstName: "Expired", lastName: "Invite", email, role: "employee" } });
+    assert.equal(created.status, 201);
+    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", email);
+    const token = fragmentToken(emailJob.message.variables.actionUrl);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try { database.prepare("UPDATE invitation_token SET expires_at = datetime('now', '-1 minute') WHERE membership_id = ?").run(created.data.id); }
+    finally { database.close(); }
+    const accepted = await anonymous.request("/api/v1/invitations/accept", { method: "POST", body: { token, password: "Expired-Password-1!" } });
+    assert.equal(accepted.status, 400);
+  });
+
+  await check("reissuing an invitation invalidates the prior bearer", async () => {
+    const email = `reissued-invite-${suffix}@example.test`;
+    const created = await adminA.request("/api/v1/memberships", { method: "POST", body: { firstName: "Reissued", lastName: "Invite", email, role: "employee" } });
+    assert.equal(created.status, 201);
+    const firstJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", email);
+    const oldToken = fragmentToken(firstJob.message.variables.actionUrl);
+    const resent = await adminA.request(`/api/v1/memberships/${created.data.id}/invitations`, { method: "POST", body: {} });
+    assert.equal(resent.status, 200);
+    const secondJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", email);
+    const newToken = fragmentToken(secondJob.message.variables.actionUrl);
+    assert.notEqual(newToken, oldToken);
+    assert.equal((await anonymous.request("/api/v1/invitations/accept", { method: "POST", body: { token: oldToken, password: "Reissued-Password-1!" } })).status, 400);
+    const reissuedClient = new Client(baseUrl);
+    assert.equal((await reissuedClient.request("/api/v1/invitations/accept", { method: "POST", body: { token: newToken, password: "Reissued-Password-1!" } })).status, 201);
+  });
+
+  await check("one identity exposes only its authorized company contexts", async () => {
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try {
+      database.prepare(`
+        INSERT INTO company_membership (identity_id, company_id, role, status, accepted_at)
+        VALUES (?, ?, 'external', 'active', CURRENT_TIMESTAMP)
+      `).run(adminAIdentityId, companyBId);
+    } finally {
+      database.close();
+    }
+    const response = await adminA.request("/api/v1/me");
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    const contexts = response.data.data.contexts;
+    assert.equal(contexts.length, 2);
+    assert.ok(contexts.some(context => context.companyId === companyAId && context.role === "admin"));
+    assert.ok(contexts.some(context => context.companyId === companyBId && context.role === "external"));
+  });
+
+  let adminACompanyBMembershipId;
+  await check("company context switching rotates the session and effective Role", async () => {
+    const before = await adminA.request("/api/v1/me");
+    adminACompanyBMembershipId = before.data.data.contexts.find(context => context.companyId === companyBId).membershipId;
+    const switched = await adminA.request("/api/v1/me/active-company", {
+      method: "PUT",
+      body: { type: "company", membershipId: adminACompanyBMembershipId },
+    });
+    assert.equal(switched.status, 200, JSON.stringify(switched.data));
+    const after = await adminA.request("/api/v1/me");
+    assert.equal(after.data.data.activeContext.companyId, companyBId);
+    assert.equal(after.data.data.activeContext.role, "external");
+
+    const switchedBack = await adminA.request("/api/v1/me/active-company", {
+      method: "PUT",
+      body: { type: "company", membershipId: adminAMembershipId },
+    });
+    assert.equal(switchedBack.status, 200, JSON.stringify(switchedBack.data));
+  });
+
+  await check("forged company context and missing CSRF are rejected", async () => {
+    const forged = await adminA.request("/api/v1/me/active-company", {
+      method: "PUT",
+      body: { type: "company", membershipId: adminBMembershipId },
+    });
+    assert.equal(forged.status, 404);
+
+    const session = adminA.cookies.get("dialoggg_session");
+    const unprotected = await fetch(`${baseUrl}/api/v1/me/active-company`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        cookie: `dialoggg_session=${session}`,
+        origin: baseUrl,
+      },
+      body: JSON.stringify({ type: "company", membershipId: adminACompanyBMembershipId }),
+    });
+    assert.equal(unprotected.status, 403);
+  });
+
+  await check("login failures remain generic and rate limited", async () => {
+    const attacker = new Client(baseUrl);
+    const unknownEmail = `unknown-${suffix}@example.test`;
+    const wrongKnown = await attacker.request("/api/auth/login", {
+      method: "POST",
+      body: { email: adminAEmail, password: "wrong-password-again" },
+    });
+    const unknown = await attacker.request("/api/auth/login", {
+      method: "POST",
+      body: { email: unknownEmail, password: "wrong-password" },
+    });
+    assert.equal(wrongKnown.status, 401);
+    assert.equal(unknown.status, 401);
+    assert.equal(wrongKnown.data.error, unknown.data.error);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await attacker.request("/api/auth/login", {
+        method: "POST",
+        body: { email: unknownEmail, password: "wrong-password" },
+      });
+    }
+    const limited = await attacker.request("/api/auth/login", {
+      method: "POST",
+      body: { email: unknownEmail, password: "wrong-password" },
+    });
+    assert.equal(limited.status, 429);
+    assert.ok(Number(limited.headers.get("retry-after")) > 0);
+  });
+
+  await check("test Platform Administrator identity is distinct from company roles", async () => {
+    const created = bootstrapAccount(dataDirectory, {
+      fullName: "Platform Administrator",
+      email: platformEmail,
+      password: platformPassword,
+      platform: true,
+    });
+    platformUserId = created.legacyUserId;
+    const response = await platform.request("/api/auth/login", {
+      method: "POST",
+      body: { email: platformEmail, password: platformPassword },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
-    platformUserId = response.data.userId;
-    const testDb = new Database(path.join(dataDirectory, "dialoggg.db"));
-    try {
-      testDb.prepare("UPDATE user SET user_type = 'super_admin', company_id = NULL WHERE id = ?").run(platformUserId);
-    } finally {
-      testDb.close();
-    }
     const me = await platform.request("/api/me");
     assert.equal(me.status, 200);
     assert.equal(me.data.user.user_type, "super_admin");
@@ -602,13 +975,15 @@ try {
     assert.ok(response.headers.get("location")?.endsWith("/login"));
   });
 
-  await check("admin creates a viewer", async () => {
-    const response = await adminA.request("/api/users", {
-      method: "POST",
-      body: { email: viewerAEmail, full_name: "Viewer A", password: viewerPassword, role: "viewer" },
+  await check("Employee identity is provisioned without public registration", async () => {
+    const created = bootstrapAccount(dataDirectory, {
+      companyId: companyAId,
+      fullName: "Viewer A",
+      email: viewerAEmail,
+      password: viewerPassword,
+      role: "employee",
     });
-    assert.equal(response.status, 200, JSON.stringify(response.data));
-    viewerAId = response.data.id;
+    viewerAId = created.legacyUserId;
     assert.ok(viewerAId);
   });
 
@@ -685,10 +1060,10 @@ try {
     assert.equal(response.status, 403);
   });
 
-  await check("admin user list contains the viewer", async () => {
+  await check("Admin user list contains the Employee", async () => {
     const response = await adminA.request("/api/users");
     assert.equal(response.status, 200);
-    assert.ok(response.data.users.some(user => user.id === viewerAId && user.user_type === "viewer"));
+    assert.ok(response.data.users.some(user => user.id === viewerAId && user.user_type === "employee"));
   });
 
   await check("signed-in Employee displays the approved role name", async () => {

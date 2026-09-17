@@ -1,24 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
-import { getCurrentUser, verifyPassword, hashPassword } from "@/lib/auth";
+import { getCurrentActor, hashPassword, revokeIdentitySessions, verifyPassword } from "@/lib/auth";
+import { validateMutationRequest } from "@/lib/request-security";
+import { recordAudit, requestId } from "@/lib/security";
 
-export async function POST(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { current_password, new_password } = await req.json();
-
-  if (!current_password || !new_password) {
-    return NextResponse.json({ error: "Both current and new password are required." }, { status: 400 });
+export async function POST(request: NextRequest) {
+  const traceId = requestId(request);
+  const actor = await getCurrentActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: { "x-request-id": traceId } });
+  if (await validateMutationRequest(request, actor)) {
+    recordAudit({ actorIdentityId: actor.identityId, requestId: traceId, action: "identity.password.change", result: "denied", metadata: { reason: "request_protection" } });
+    return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: { "x-request-id": traceId } });
   }
-  if (String(new_password).length < 6) {
-    return NextResponse.json({ error: "New password must be at least 6 characters." }, { status: 400 });
+
+  let body: { current_password?: unknown; new_password?: unknown };
+  try { body = await request.json(); } catch {
+    return NextResponse.json({ error: "Both current and new password are required." }, { status: 400, headers: { "x-request-id": traceId } });
+  }
+  const currentPassword = typeof body.current_password === "string" ? body.current_password : "";
+  const newPassword = typeof body.new_password === "string" ? body.new_password : "";
+  if (!currentPassword || !newPassword) {
+    return NextResponse.json({ error: "Both current and new password are required." }, { status: 400, headers: { "x-request-id": traceId } });
+  }
+  if (newPassword.length < 12) {
+    return NextResponse.json({ error: "New password must be at least 12 characters." }, { status: 400, headers: { "x-request-id": traceId } });
   }
 
-  const row = db.prepare("SELECT password_hash FROM user WHERE id = ?").get(user.id) as { password_hash: string };
-  const ok = await verifyPassword(current_password, row.password_hash);
-  if (!ok) return NextResponse.json({ error: "Current password is incorrect." }, { status: 403 });
+  const identity = db.prepare("SELECT password_hash FROM identity WHERE id = ?").get(actor.identityId) as { password_hash: string };
+  if (!(await verifyPassword(currentPassword, identity.password_hash))) {
+    recordAudit({ actorIdentityId: actor.identityId, requestId: traceId, action: "identity.password.change", result: "denied", metadata: { reason: "current_password_invalid" } });
+    return NextResponse.json({ error: "Current password is incorrect." }, { status: 403, headers: { "x-request-id": traceId } });
+  }
 
-  const hash = await hashPassword(new_password);
-  db.prepare("UPDATE user SET password_hash = ? WHERE id = ?").run(hash, user.id);
-  return NextResponse.json({ ok: true });
+  const passwordHash = await hashPassword(newPassword);
+  db.transaction(() => {
+    db.prepare("UPDATE identity SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .run(passwordHash, actor.identityId);
+    if (actor.legacyUserId) {
+      db.prepare("UPDATE user SET password_hash = ? WHERE id = ?").run(passwordHash, actor.legacyUserId);
+    }
+    revokeIdentitySessions(actor.identityId, "password_changed", actor.sessionId);
+    recordAudit({
+      actorIdentityId: actor.identityId,
+      actorMembershipId: actor.membershipId,
+      companyId: actor.companyId,
+      requestId: traceId,
+      action: "identity.password.change",
+      targetType: "identity",
+      targetId: actor.identityId,
+      result: "success",
+    });
+  })();
+  return NextResponse.json({ ok: true }, { headers: { "x-request-id": traceId, "cache-control": "no-store" } });
 }

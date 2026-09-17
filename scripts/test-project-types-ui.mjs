@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { bootstrapAccount, login, prepareTestDatabase } from "./test-fixtures.mjs";
 
 const results = [];
 let appServer;
@@ -75,6 +76,9 @@ const password = "Project-Types-Test-1!";
 
 try {
   const playwright = await loadPlaywright();
+  prepareTestDatabase(dataDirectory);
+  const admin = bootstrapAccount(dataDirectory, { companyName: "Project Types QA Company", fullName: "Project Types Admin", email: adminEmail, password, role: "admin" });
+  bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Project Types Employee", email: viewerEmail, password, role: "employee" });
   appServer = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-H", "127.0.0.1", "-p", String(port)], {
     cwd: process.cwd(),
     env: {
@@ -100,17 +104,7 @@ try {
 
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const registration = await fetch(`${baseUrl}/api/auth/register`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      company_name: "Project Types QA Company",
-      full_name: "Project Types Admin",
-      email: adminEmail,
-      password,
-    }),
-  });
-  assert.equal(registration.status, 200, await registration.text());
+  const registration = await login(baseUrl, adminEmail, password);
   const adminCookie = sessionCookie(registration);
   await addSession(adminContext, adminCookie);
   const page = await adminContext.newPage();
@@ -220,18 +214,7 @@ try {
     await page.screenshot({ path: path.join(process.cwd(), ".tools", "project-types-playwright-mobile.png"), fullPage: true });
   });
 
-  const viewerCreation = await fetch(`${baseUrl}/api/users`, {
-    method: "POST",
-    headers: { "content-type": "application/json", cookie: `dialoggg_session=${adminCookie}` },
-    body: JSON.stringify({ full_name: "Project Types Employee", email: viewerEmail, password, role: "viewer" }),
-  });
-  assert.equal(viewerCreation.status, 200, await viewerCreation.text());
-  const viewerLogin = await fetch(`${baseUrl}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: viewerEmail, password }),
-  });
-  assert.equal(viewerLogin.status, 200, await viewerLogin.text());
+  const viewerLogin = await login(baseUrl, viewerEmail, password);
 
   await check("Employee sees access restriction without Project Type data", async () => {
     const viewerContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });

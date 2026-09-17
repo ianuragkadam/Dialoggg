@@ -65,10 +65,13 @@ test("Project Types UI covers the complete safe management workflow", async () =
   assert.match(component, /do not alter production Project records/);
 });
 
-test("registration performs a reliable full navigation into Projects", async () => {
-  const registration = await read("src/app/register/page.tsx");
-  assert.match(registration, /window\.location\.assign\("\/projects"\)/);
-  assert.doesNotMatch(registration, /router\.push\("\/projects"\)/);
+test("public registration is removed and disabled server-side", async () => {
+  await assert.rejects(access(path.join(root, "src/app/register/page.tsx")));
+  const login = await read("src/components/LoginForm.tsx");
+  const route = await read("src/app/api/auth/register/route.ts");
+  assert.doesNotMatch(login, /Create your company|\/register/);
+  assert.match(route, /status:\s*404/);
+  assert.doesNotMatch(route, /INSERT INTO company|createSession/);
 });
 
 test("Login labels are programmatically associated with their fields", async () => {
@@ -264,12 +267,15 @@ test("retired modules are absent from routes and fresh database schema", async (
   assert.doesNotMatch(schema, /plan_type|expiration_date/i);
 });
 
-test("database initialization waits for parallel build workers", async () => {
-  const source = await read("src/db/index.ts");
-  const busyTimeout = source.indexOf('db.pragma("busy_timeout = 30000")');
-  const journalMode = source.indexOf('db.pragma("journal_mode = WAL")');
+test("database connection uses a bounded lock wait and module initialization never migrates", async () => {
+  const source = await read("src/db/connection.ts");
+  const index = await read("src/db/index.ts");
+  const busyTimeout = source.indexOf('database.pragma("busy_timeout = 30000")');
+  const journalMode = source.indexOf('database.pragma("journal_mode = WAL")');
   assert.ok(busyTimeout >= 0, "SQLite must have a bounded busy timeout");
-  assert.ok(journalMode > busyTimeout, "busy timeout must be active before WAL/schema initialization");
+  assert.ok(journalMode > busyTimeout, "busy timeout must be active before WAL mode");
+  assert.match(index, /assertSchemaCompatible/);
+  assert.doesNotMatch(index, /CREATE TABLE|ALTER TABLE|runMigrations/);
 });
 
 test("production security headers and strict rendering are enabled", async () => {

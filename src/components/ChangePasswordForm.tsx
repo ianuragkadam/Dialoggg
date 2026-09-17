@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { authenticatedFetch } from "@/lib/client-fetch";
 
 export default function ChangePasswordForm() {
   const [cur, setCur] = useState("");
@@ -11,7 +12,7 @@ export default function ChangePasswordForm() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null); setSaving(true);
-    const r = await fetch("/api/account/password", {
+    const r = await authenticatedFetch("/api/account/password", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ current_password: cur, new_password: next }),
     });

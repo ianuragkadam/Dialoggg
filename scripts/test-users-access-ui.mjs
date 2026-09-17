@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { bootstrapAccount, login, prepareTestDatabase } from "./test-fixtures.mjs";
 
 const results = [];
 let appServer;
@@ -65,6 +66,9 @@ const password = "Users-Access-UI-Test-1!";
 
 try {
   const playwright = await loadPlaywright();
+  prepareTestDatabase(dataDirectory);
+  const admin = bootstrapAccount(dataDirectory, { companyName: "Users Access QA", fullName: "QA Administrator", email: adminEmail, password, role: "admin" });
+  bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "QA Employee", email: viewerEmail, password, role: "employee" });
   appServer = spawn(process.execPath, ["scripts/start-production.mjs"], {
     cwd: process.cwd(),
     env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory },
@@ -84,26 +88,9 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
 
-  const registration = await fetch(`${baseUrl}/api/auth/register`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ company_name: "Users Access QA", full_name: "QA Administrator", email: adminEmail, password }),
-  });
-  assert.equal(registration.status, 200, await registration.text());
+  const registration = await login(baseUrl, adminEmail, password);
   const adminCookie = sessionCookie(registration);
-
-  const viewerCreation = await fetch(`${baseUrl}/api/users`, {
-    method: "POST",
-    headers: { "content-type": "application/json", cookie: `dialoggg_session=${adminCookie}` },
-    body: JSON.stringify({ email: viewerEmail, full_name: "QA Employee", password, role: "viewer" }),
-  });
-  assert.equal(viewerCreation.status, 200, await viewerCreation.text());
-  const viewerLogin = await fetch(`${baseUrl}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: viewerEmail, password }),
-  });
-  assert.equal(viewerLogin.status, 200, await viewerLogin.text());
+  const viewerLogin = await login(baseUrl, viewerEmail, password);
   const viewerCookie = sessionCookie(viewerLogin);
 
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });

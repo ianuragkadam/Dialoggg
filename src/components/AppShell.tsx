@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { roleLabel } from "@/lib/product-language";
+import { authenticatedFetch } from "@/lib/client-fetch";
 
 type User = { id: number; email: string; full_name: string | null; user_type: string };
 
@@ -29,7 +30,7 @@ export default function AppShell({ user, children }: { user: User; children: Rea
   const platformAdmin = user.user_type === "super_admin";
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await authenticatedFetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
     router.refresh();
   }

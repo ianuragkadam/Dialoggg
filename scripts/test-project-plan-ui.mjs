@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { authenticatedHeaders, bootstrapAccount, login, prepareTestDatabase } from "./test-fixtures.mjs";
 
 const results = []; let appServer; let appOutput = ""; let browser;
 async function check(name, operation) { try { await operation(); results.push({ name, status: "PASS" }); process.stdout.write(`PASS  ${name}\n`); } catch (error) { const message = error instanceof Error ? error.message : String(error); results.push({ name, status: "FAIL", message }); process.stdout.write(`FAIL  ${name}\n      ${message}\n`); } }
@@ -15,22 +16,22 @@ async function addSession(context, value) { await context.addCookies([{ name: "d
 async function json(url, options = {}) { const response = await fetch(url, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } }); return { response, data: await response.json() }; }
 
 const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-plan-ui-"));
-const port = await freePort(); const baseUrl = `http://127.0.0.1:${port}`; const suffix = Date.now().toString(36); const password = "Project-Plan-UI-Test-1!";
+const port = await freePort(); const baseUrl = `http://127.0.0.1:${port}`; const suffix = Date.now().toString(36); const password = "Project-Plan-UI-Test-1!"; const adminEmail = `plan-admin-${suffix}@example.test`; const employeeEmail = `plan-employee-${suffix}@example.test`;
 try {
   const playwright = await loadPlaywright();
+  prepareTestDatabase(dataDirectory); const admin = bootstrapAccount(dataDirectory, { companyName: "Project Plan QA", fullName: "Plan Admin", email: adminEmail, password, role: "admin" }); bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Plan Employee", email: employeeEmail, password, role: "employee" });
   appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory }, stdio: ["ignore", "pipe", "pipe"] });
   appServer.stdout.on("data", chunk => { appOutput += chunk.toString(); }); appServer.stderr.on("data", chunk => { appOutput += chunk.toString(); });
   const started = Date.now(); while (true) { if (appServer.exitCode !== null) throw new Error(`Server exited.\n${appOutput}`); try { if ((await fetch(`${baseUrl}/login`)).status === 200) break; } catch {} if (Date.now() - started > 25_000) throw new Error(`Server timeout.\n${appOutput}`); await new Promise(resolve => setTimeout(resolve, 200)); }
 
-  const registration = await json(`${baseUrl}/api/auth/register`, { method: "POST", body: JSON.stringify({ company_name: "Project Plan QA", full_name: "Plan Admin", email: `plan-admin-${suffix}@example.test`, password }) });
-  assert.equal(registration.response.status, 200); const adminCookie = sessionCookie(registration.response); const auth = { cookie: `dialoggg_session=${adminCookie}` };
+  const registration = await login(baseUrl, adminEmail, password);
+  const adminCookie = sessionCookie(registration); const auth = authenticatedHeaders(registration, baseUrl);
   const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Reading Residence Court", start_date: "2026-09-15" }) });
   assert.equal(projectResult.response.status, 200); const projectId = projectResult.data.id;
   for (const task of [{ text: "Concrete base", start_date: "2026-09-16", duration: 2 }, { text: "Court surfacing", start_date: "2026-09-18", duration: 3 }]) {
     const taskResult = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { method: "POST", headers: auth, body: JSON.stringify(task) }); assert.equal(taskResult.response.status, 200);
   }
-  const userResult = await json(`${baseUrl}/api/users`, { method: "POST", headers: auth, body: JSON.stringify({ full_name: "Plan Employee", email: `plan-employee-${suffix}@example.test`, password, role: "viewer" }) });
-  assert.equal(userResult.response.status, 200); const employeeLogin = await json(`${baseUrl}/api/auth/login`, { method: "POST", body: JSON.stringify({ email: `plan-employee-${suffix}@example.test`, password }) }); const employeeCookie = sessionCookie(employeeLogin.response);
+  const employeeLogin = await login(baseUrl, employeeEmail, password); const employeeCookie = sessionCookie(employeeLogin);
 
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); await addSession(adminContext, adminCookie); const page = await adminContext.newPage();

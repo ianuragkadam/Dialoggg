@@ -85,4 +85,10 @@ Preserve evidence, rotate affected secrets, revoke sessions/tokens, contain acce
 - Backup/restore security verified.
 - Residual risks accepted by a named owner.
 
+## 17 September authentication-control evidence
+
+The local Foundation/Auth checkpoint implements hashed bounded session bearers, CSRF hashes, session rotation/revocation, bcrypt cost 12, persistent abuse limits, single-use 72-hour invitations, single-use one-hour resets, fragment-only token pages, AES-256-GCM encrypted email-outbox payloads, safe audit metadata, and disabled public registration. Production cookie attributes, replay/expiry, generic responses, cross-company context forgery, deactivation, and role-change revocation are covered by production-like scenarios. See `docs/evidence/FOUNDATION_AUTH_CHECKPOINT_2026-09-17.md`.
+
+This closes only the authentication-scope controls. `DG-SEC-002`, `DG-SEC-003`, the application-wide portion of `DG-SEC-005`–`006`, dependency disposition, OAuth threat controls, backup protection, and final ASVS mapping remain release gates.
+
 OWASP ASVS 5.0.0 is the current verification baseline and provides versioned requirements for authentication, sessions, access control, validation, cryptography, logging, and APIs: [OWASP ASVS](https://owasp.org/projects/asvs). The release RTM should cite exact `v5.0.0-*` control IDs selected during the security review rather than an unversioned checklist.

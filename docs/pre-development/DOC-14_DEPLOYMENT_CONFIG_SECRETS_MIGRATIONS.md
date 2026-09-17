@@ -23,6 +23,8 @@ Use separate Local, Test/CI, UAT, and Production data and credentials. Vendor OA
 
 Never record secret values in source, Markdown, tickets, logs, screenshots, or test fixtures.
 
+Authentication/email deployment requires non-secret `APP_BASE_URL` plus secret `APP_ENCRYPTION_KEY` (fresh 32 random bytes, base64), `RESEND_API_KEY`, and an approved `EMAIL_FROM` on a verified sender domain. Run `npm run email:process` through the approved worker/scheduler. The outbox stores encrypted payloads; operators must not decrypt or print them during normal support.
+
 If PostgreSQL is approved, application services use Railway private networking and `DATABASE_URL`; public database access is disabled unless a time-bounded operational task explicitly requires it. Connection pooling, maximum connections, statement/lock timeouts, SSL behavior, and migration credentials must be documented and load-tested separately from normal application credentials.
 
 ## Pre-deployment checklist
@@ -46,6 +48,8 @@ If PostgreSQL is approved, application services use Railway private networking a
 - Record migration ID, checksum, start/end time, result, and deployment ID.
 - Validate integrity, foreign keys, row counts, identities/memberships, Projects, Tasks/links, and integration mappings.
 - Destructive contract/removal occurs only after the rollback compatibility window and approval.
+
+Current implementation command: `npm run db:migrate`. Current application schema version: 3. `/api/health/ready` returns ready only when the database is responsive and the exact application schema version is present. The production start phase must not substitute implicit module-import migrations for this explicit step.
 
 ## Deployment procedure
 

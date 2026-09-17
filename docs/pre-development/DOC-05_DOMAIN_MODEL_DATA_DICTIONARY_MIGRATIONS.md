@@ -37,7 +37,7 @@ identity/membership/company/project 1─* audit_event
 | `company_membership` | id, identity_id, company_id, role, status, invited_at, accepted_at | Unique identity+company; role Owner/Admin/Employee/External |
 | `invitation_token` | id, membership_id, token_hash, expires_at, used_at | Store hash only; 72-hour, single-use |
 | `password_reset_token` | id, identity_id, token_hash, expires_at, used_at | Store hash only; one-hour, single-use |
-| `session` | id_hash or opaque id, identity_id, active_company_id, expires_at, revoked_at | Revoke on sensitive changes; bounded lifetime |
+| `auth_session` | token_hash, identity_id, active_company_id, active_membership_id, context_type, csrf_hash, expires_at, revoked_at | Store bearer/CSRF hashes only; revoke on sensitive changes; bounded lifetime |
 | `project_type` | id, company_id, name, active/status | Case-insensitive unique per company; deletion blocked when used |
 | `project` | id, company_id, project_type_id, name, status, dates, client/contact/address fields, external_gantt_enabled, version | End date derived; lifecycle timestamps preserved |
 | `project_membership` | project_id, company_membership_id, assignment_kind/metadata | Drives External access and Internal team/folder/notifications |
@@ -106,3 +106,9 @@ Retaining SQLite is an exception option only if a production-like concurrency te
 - Audit retention period.
 - Whether identity email changes require re-verification.
 - Whether inactive Resource records may remain on future Template instantiation as unresolved placeholders.
+
+## 17 September foundation implementation checkpoint
+
+Migrations 1–3 now implement the additive identity/membership, authentication, audit/outbox, and v1 domain foundation described above. `src/db/migration-runner.ts` records a checksum for each applied migration, executes pending versions transactionally, and refuses incompatible startup. `src/db/index.ts` opens and validates only; it does not mutate schema. The legacy-to-identity backfill and repeat/tamper tests pass. Exact evidence and rollback checksum are recorded in `docs/evidence/FOUNDATION_AUTH_CHECKPOINT_2026-09-17.md`.
+
+ADR-004 remains open: this local checkpoint uses SQLite compatibility and does not constitute approval of SQLite as the final production database.
