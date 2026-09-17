@@ -11,7 +11,7 @@
     "dev": "next dev -p 3030",
     "build": "next build",
     "postbuild": "node scripts/prepare-standalone.mjs",
-    "start": "node scripts/start-production.mjs",
+    "start": "node scripts/start-with-migration.mjs",
     "test:scenarios": "node scripts/test-scenarios.mjs",
     "test:ui:project-types": "node scripts/test-project-types-ui.mjs",
     "test:ui:project-templates": "node scripts/test-project-templates-ui.mjs",
