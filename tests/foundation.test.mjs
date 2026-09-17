@@ -32,7 +32,7 @@ test("follow-up workshop keeps nineteen plain-language questions with examples",
   const definition = await read("src/lib/follow-up-questionnaire.ts");
   const workshopRegistry = await read("src/lib/requirements-workshops.ts");
 
-  const questionIds = [...definition.matchAll(/\n\s*"(fu\d{2})",\n\s*\d+,/g)].map(match => match[1]);
+  const questionIds = [...definition.matchAll(/\r?\n\s*"(fu\d{2})",\r?\n\s*\d+,/g)].map(match => match[1]);
   assert.equal(questionIds.length, 19);
   assert.equal(new Set(questionIds).size, 19);
   assert.deepEqual(questionIds, Array.from({ length: 19 }, (_, index) => `fu${String(index + 1).padStart(2, "0")}`));
