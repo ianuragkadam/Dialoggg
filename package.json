@@ -17,6 +17,7 @@
     "test:ui:project-templates": "node scripts/test-project-templates-ui.mjs",
     "test:ui:company-admin": "node scripts/test-company-admin-ui.mjs",
     "test:ui:users-access": "node scripts/test-users-access-ui.mjs",
+    "test:ui:integration-setup": "node scripts/test-integration-setup-ui.mjs",
     "test:ui:resources": "node scripts/test-resources-ui.mjs",
     "test:ui:projects": "node scripts/test-projects-ui.mjs",
     "test:ui:project-plan": "node scripts/test-project-plan-ui.mjs",

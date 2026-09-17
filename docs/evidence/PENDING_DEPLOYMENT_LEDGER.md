@@ -12,6 +12,7 @@ Apply checkpoints only in this dependency order:
 | 2 | Project Types (`b2e4bc8`) | v5 `project_type_invariants` | 23/23 unit, 126/126 scenarios, 149/149 browser, TypeScript/build/package; local rollback copy verified | Deployed in `0dab30fa-e3f5-4f9e-91f4-bb5bafef3635` |
 | 3 | Project Templates (`4a48fc9`) | v6 `project_template_invariants` | 24/24 unit, 133/133 scenarios, 152/152 browser, TypeScript/build/package; schema-v5 rollback copy verified | Deployed in `0dab30fa-e3f5-4f9e-91f4-bb5bafef3635` |
 | 4 | Users, Roles, Invitations, and Project Access (`3638b03`) | v7 `membership_access_invariants` | 25/25 unit, 136/136 scenarios, 142/142 browser, TypeScript/build/package; schema-v6 rollback copy verified | Pending; requires lead-controlled deployment and live role smoke test |
+| 5 | Secure Integration Setup Workshop (checkpoint commit containing this row) | v8 `secure_integration_setup_workshop` | 27/27 unit, 136/136 scenarios, 158/158 browser, TypeScript/build/standalone/package audits; schema-v7 rollback copy verified | Pending behind order 4; requires controlled deployment, access-boundary smoke test, then private link issuance |
 
 For each future deployment:
 

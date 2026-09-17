@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 7/);
+    assert.match(second.stdout, /version 8/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -81,6 +81,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 5, name: "project_type_invariants" },
           { version: 6, name: "project_template_invariants" },
           { version: 7, name: "membership_access_invariants" },
+          { version: 8, name: "secure_integration_setup_workshop" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -103,6 +104,55 @@ test("versioned migration backfills identity/membership data and is idempotent",
       );
     } finally {
       migrated.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("integration setup migration enforces invitation, provider scope, version, and cascade invariants", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-integration-setup-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const companyId = Number(database.prepare("INSERT INTO company (name) VALUES ('Integration Company')").run().lastInsertRowid);
+      assert.throws(() => database.prepare(`
+        INSERT INTO integration_setup_invitation (token_hash, access_kind, scope_kind, company_id, expires_at)
+        VALUES (?, 'workshop', 'platform', ?, datetime('now', '+1 day'))
+      `).run("a".repeat(64), companyId), /CHECK constraint failed/);
+      const invitationId = Number(database.prepare(`
+        INSERT INTO integration_setup_invitation (token_hash, access_kind, scope_kind, company_id, expires_at)
+        VALUES (?, 'workshop', 'platform_and_company', ?, datetime('now', '+1 day'))
+      `).run("b".repeat(64), companyId).lastInsertRowid);
+      assert.throws(() => database.prepare(`
+        INSERT INTO integration_config (provider, scope_kind, company_id) VALUES ('google_platform', 'company', ?)
+      `).run(companyId), /CHECK constraint failed/);
+      const configId = Number(database.prepare(`
+        INSERT INTO integration_config (provider, scope_kind, company_id, status)
+        VALUES ('microsoft_company', 'company', ?, 'saved')
+      `).run(companyId).lastInsertRowid);
+      database.prepare(`
+        INSERT INTO integration_credential_version (config_id, version, encrypted_envelope, fingerprint, last_four)
+        VALUES (?, 1, 'ciphertext-only', '123456789abc', '1234')
+      `).run(configId);
+      assert.throws(() => database.prepare(`
+        INSERT INTO integration_credential_version (config_id, version, encrypted_envelope, fingerprint, last_four)
+        VALUES (?, 2, 'second-ciphertext', 'abcdef123456', '5678')
+      `).run(configId), /UNIQUE constraint failed/);
+      database.prepare(`
+        INSERT INTO integration_setup_session (invitation_id, token_hash, csrf_hash, expires_at)
+        VALUES (?, ?, ?, datetime('now', '+1 hour'))
+      `).run(invitationId, "c".repeat(64), "d".repeat(64));
+      database.prepare("DELETE FROM company WHERE id = ?").run(companyId);
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM integration_setup_invitation").get().count, 0);
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM integration_setup_session").get().count, 0);
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM integration_credential_version").get().count, 0);
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+      database.close();
     }
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });

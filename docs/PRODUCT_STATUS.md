@@ -17,15 +17,16 @@ Last verified: September 17, 2026
 - Owner/Admin tenant-scoped create, rename, and safe delete APIs with CSRF protection and audit records; Employee/External management access is denied
 - Every Project is backfilled and database-enforced to have exactly one active same-company type; Project create/update rejects null and cross-company types
 - Rename propagation, All Projects multi-select filtering, Master Calendar one-or-more filtering, exact affected-Project disclosure, reassign-then-delete, refresh persistence, responsive cards, and accessible dialogs
-- Project Types local checkpoint passed 23/23 unit, 126/126 scenario, and 149/149 live browser checks; Railway deployment is deferred in `docs/evidence/PENDING_DEPLOYMENT_LEDGER.md`
+- Project Types passed 23/23 unit, 126/126 scenario, and 149/149 live browser checks and was deployed in Railway release `0dab30fa-e3f5-4f9e-91f4-bb5bafef3635`
 - Persistent Project Templates at `/templates`, `/templates/new`, `/templates/[id]`, and `/templates/[id]/use`, backed by tenant-scoped CSRF-protected APIs and audit records
 - Owner/Admin can atomically snapshot hierarchy, Headers/leaves, durations, relative working-day offsets, all dependency types, colors, weekend rules, Categories, and optional exact Resources from a live company Project Plan
 - Instantiation is idempotent and transactional, requires a valid same-company Project Type and Start Date, resets progress to 0%, handles missing/inactive defaults with visible warnings, and creates ordinary independent Project Tasks in the unchanged original Gantt
-- Project Templates local checkpoint passed 24/24 unit, 133/133 scenario, 15/15 focused browser, and 152/152 complete browser checks; Railway deployment is deferred in `docs/evidence/PENDING_DEPLOYMENT_LEDGER.md`
+- Project Templates passed 24/24 unit, 133/133 scenario, 15/15 focused browser, and 152/152 complete browser checks and was deployed in Railway release `0dab30fa-e3f5-4f9e-91f4-bb5bafef3635`
 - Company Administration UI at `/platform/companies`, `/platform/companies/new`, and `/platform/companies/[id]`
 - Platform-only navigation, tenant-safe restricted states, company search/filtering, operational metadata, first-Owner provisioning review, and approved suspension/restore confirmations
 - Scott's approved `FUP-001`, `FUP-002`, `FUP-012`, and `FUP-015` choices are reflected in the platform boundary, lifecycle behavior, per-company role direction, and 72-hour invitation language
 - Company Administration is now server-backed: platform-only APIs persist unique companies, seed fixed Categories, queue encrypted first-Owner invitations, enforce suspension/session revocation, preserve tenant/Microsoft records, and restore access with Google still paused for review
+- Secure Integration Setup is locally complete: hashed fragment invitations, short-lived HttpOnly sessions, platform/company scope separation, versioned AES-256-GCM credentials, PKCE OAuth verification, Resend domain/test controls, read-only review, and Platform Administrator link rotation are covered by the schema-v8 checkpoint
 - The authenticated header now switches one global identity among its authorized company and Platform Administration contexts by rotating the session
 - Users, Roles, Invitations, and Project Access UI at `/users`, `/users/new`, `/users/[id]`, and `/users/[id]/projects`
 - Approved fixed Roles, search/filtering, invitation review, optional linked Resource, lifecycle confirmations, exact Project-access changes, External/Client minimum access, and Owner/Admin locks

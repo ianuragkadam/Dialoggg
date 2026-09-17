@@ -306,6 +306,31 @@ test("production security headers and strict rendering are enabled", async () =>
   assert.match(config, /Referrer-Policy/);
 });
 
+test("secure integration workshop separates scopes, hashes invitations, encrypts versions, and redacts review output", async () => {
+  const migration = await read("src/db/migrations.ts");
+  const service = await read("src/lib/integration-setup.ts");
+  const crypto = await read("src/lib/integration-crypto.ts");
+  const providers = await read("src/lib/integration-providers.ts");
+  const workshop = await read("src/components/IntegrationSetupWorkshop.tsx");
+  const api = await read("src/app/api/integration-setup/route.ts");
+  const session = await read("src/app/api/integration-setup/session/route.ts");
+  for (const table of ["integration_setup_invitation", "integration_setup_session", "integration_config", "integration_credential_version", "integration_validation_attempt", "integration_oauth_state"]) assert.match(migration, new RegExp(`CREATE TABLE ${table}`));
+  assert.match(migration, /platform_and_company/);
+  assert.match(service, /sha256\(rawToken\)/);
+  assert.match(crypto, /aes-256-gcm/i);
+  assert.match(crypto, /setAAD/);
+  assert.match(providers, /code_challenge_method/);
+  assert.match(providers, /calendar\.app\.created/);
+  assert.match(providers, /Files\.ReadWrite/);
+  assert.match(api, /validateIntegrationMutation/);
+  assert.match(api, /RATE_LIMITED/);
+  assert.match(session, /httpOnly:\s*true/);
+  assert.match(workshop, /Never enter a personal Google or Microsoft password/);
+  assert.match(workshop, /Internal read-only view/);
+  assert.match(workshop, /Secret fields are never autosaved/i);
+  assert.doesNotMatch(workshop, /localStorage|sessionStorage/);
+});
+
 test("database backup command creates a verified SQLite copy", async () => {
   const temporaryDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-backup-test-"));
   try {

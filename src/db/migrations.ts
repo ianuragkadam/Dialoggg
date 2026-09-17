@@ -993,7 +993,135 @@ const migration007: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007];
+const migration008: Migration = {
+  version: 8,
+  name: "secure_integration_setup_workshop",
+  signature: "hashed scoped invitations + short sessions + provider-neutral encrypted credential versions + validation history v1",
+  up(database) {
+    database.exec(`
+      CREATE TABLE integration_setup_invitation (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token_hash TEXT NOT NULL UNIQUE CHECK (length(token_hash) = 64),
+        access_kind TEXT NOT NULL CHECK (access_kind IN ('workshop','review')),
+        scope_kind TEXT NOT NULL CHECK (scope_kind IN ('platform','company','platform_and_company')),
+        company_id INTEGER,
+        label TEXT NOT NULL DEFAULT '',
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        completed_at TEXT,
+        last_accessed_at TEXT,
+        created_by_identity_id INTEGER,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CHECK (
+          (scope_kind = 'platform' AND company_id IS NULL) OR
+          (scope_kind IN ('company','platform_and_company') AND company_id IS NOT NULL)
+        ),
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by_identity_id) REFERENCES identity(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX idx_integration_invitation_expiry
+        ON integration_setup_invitation(expires_at, revoked_at, access_kind);
+
+      CREATE TABLE integration_setup_session (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invitation_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE CHECK (length(token_hash) = 64),
+        csrf_hash TEXT NOT NULL CHECK (length(csrf_hash) = 64),
+        expires_at TEXT NOT NULL,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (invitation_id) REFERENCES integration_setup_invitation(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_integration_session_invitation
+        ON integration_setup_session(invitation_id, expires_at, revoked_at);
+
+      CREATE TABLE integration_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL CHECK (provider IN ('google_platform','microsoft_company','resend_platform')),
+        scope_kind TEXT NOT NULL CHECK (scope_kind IN ('platform','company')),
+        company_id INTEGER,
+        environment TEXT NOT NULL DEFAULT 'production' CHECK (environment IN ('test','production')),
+        non_secret_json TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','saved','action_required','verified')),
+        safe_status_code TEXT,
+        credential_version INTEGER NOT NULL DEFAULT 0 CHECK (credential_version >= 0),
+        saved_at TEXT,
+        verified_at TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CHECK (
+          (provider IN ('google_platform','resend_platform') AND scope_kind = 'platform' AND company_id IS NULL) OR
+          (provider = 'microsoft_company' AND scope_kind = 'company' AND company_id IS NOT NULL)
+        ),
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE
+      );
+
+      CREATE UNIQUE INDEX ux_integration_platform_provider
+        ON integration_config(provider) WHERE company_id IS NULL;
+      CREATE UNIQUE INDEX ux_integration_company_provider
+        ON integration_config(provider, company_id) WHERE company_id IS NOT NULL;
+      CREATE INDEX idx_integration_config_status
+        ON integration_config(status, provider, company_id);
+
+      CREATE TABLE integration_credential_version (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_id INTEGER NOT NULL,
+        version INTEGER NOT NULL CHECK (version > 0),
+        encrypted_envelope TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        last_four TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        retired_at TEXT,
+        UNIQUE (config_id, version),
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE
+      );
+
+      CREATE UNIQUE INDEX ux_integration_credential_active
+        ON integration_credential_version(config_id) WHERE is_active = 1;
+
+      CREATE TABLE integration_validation_attempt (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_id INTEGER NOT NULL,
+        invitation_id INTEGER,
+        operation TEXT NOT NULL CHECK (operation IN ('oauth','validate','test_email')),
+        status TEXT NOT NULL CHECK (status IN ('started','passed','failed')),
+        error_code TEXT,
+        safe_details_json TEXT NOT NULL DEFAULT '{}',
+        request_id TEXT NOT NULL,
+        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at TEXT,
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE,
+        FOREIGN KEY (invitation_id) REFERENCES integration_setup_invitation(id) ON DELETE SET NULL
+      );
+
+      CREATE INDEX idx_integration_validation_config
+        ON integration_validation_attempt(config_id, started_at DESC);
+
+      CREATE TABLE integration_oauth_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        config_id INTEGER NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN ('google','microsoft')),
+        state_hash TEXT NOT NULL UNIQUE CHECK (length(state_hash) = 64),
+        encrypted_context TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES integration_setup_session(id) ON DELETE CASCADE,
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_integration_oauth_expiry
+        ON integration_oauth_state(expires_at, used_at);
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {
