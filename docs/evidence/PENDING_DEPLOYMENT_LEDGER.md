@@ -10,6 +10,7 @@ Apply checkpoints only in this dependency order:
 | --- | --- | --- | --- | --- |
 | 1 | Foundation/Auth plus fail-closed startup, deployment config gate, and Company Administration (`22512b8`, `4de537f`, `6303fb1`, `482f591`, `5c89614`) | Through v4 | Foundation evidence plus Company Administration evidence; unit/scenario/build and full browser regression passed at checkpoint | Pending; do not mutate Railway until explicitly authorized |
 | 2 | Project Types (checkpoint commit containing this ledger) | v5 `project_type_invariants` | 23/23 unit, 126/126 scenarios, 149/149 browser, TypeScript/build/package; local rollback copy verified | Pending behind order 1 |
+| 3 | Project Templates (checkpoint commit containing this update) | v6 `project_template_invariants` | 24/24 unit, 133/133 scenarios, 152/152 browser, TypeScript/build/package; schema-v5 rollback copy verified | Pending behind order 2 |
 
 For each future deployment:
 

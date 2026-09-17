@@ -34,3 +34,58 @@ export function minIso(...isos: string[]): string {
 export function todayIso(): string {
   return toISO(new Date());
 }
+
+export type WorkingDayRules = {
+  allowSaturday: boolean;
+  allowSunday: boolean;
+};
+
+export function isWorkingDay(iso: string, rules: WorkingDayRules) {
+  const day = parseISO(iso).getDay();
+  if (day === 6) return rules.allowSaturday;
+  if (day === 0) return rules.allowSunday;
+  return true;
+}
+
+export function alignWorkingDay(iso: string, rules: WorkingDayRules, direction: 1 | -1 = 1) {
+  let value = iso;
+  while (!isWorkingDay(value, rules)) value = addDays(value, direction);
+  return value;
+}
+
+export function addWorkingDays(iso: string, workdays: number, rules: WorkingDayRules) {
+  if (!Number.isInteger(workdays)) throw new Error("Working-day offset must be an integer.");
+  let value = alignWorkingDay(iso, rules, workdays < 0 ? -1 : 1);
+  const direction: 1 | -1 = workdays < 0 ? -1 : 1;
+  let remaining = Math.abs(workdays);
+  while (remaining > 0) {
+    value = addDays(value, direction);
+    if (isWorkingDay(value, rules)) remaining -= 1;
+  }
+  return value;
+}
+
+export function workingDayOffset(anchor: string, target: string, rules: WorkingDayRules) {
+  const alignedAnchor = alignWorkingDay(anchor, rules, 1);
+  if (!isWorkingDay(target, rules)) throw new Error("Task starts on an excluded weekend day.");
+  const alignedTarget = target;
+  if (alignedTarget < alignedAnchor) throw new Error("Task starts before the Project Start Date.");
+  let value = alignedAnchor;
+  let offset = 0;
+  while (value < alignedTarget) {
+    value = addWorkingDays(value, 1, rules);
+    offset += 1;
+  }
+  if (value !== alignedTarget) throw new Error("Task Start Date could not be represented as a working-day offset.");
+  return offset;
+}
+
+export function workingDayEnd(start: string, duration: number, rules: WorkingDayRules) {
+  if (!Number.isInteger(duration) || duration < 1) throw new Error("Duration must be at least one working day.");
+  return addWorkingDays(start, duration - 1, rules);
+}
+
+export function startForWorkingDayEnd(end: string, duration: number, rules: WorkingDayRules) {
+  const alignedEnd = alignWorkingDay(end, rules, 1);
+  return addWorkingDays(alignedEnd, -(duration - 1), rules);
+}

@@ -1,71 +1,68 @@
-# Project Templates UI Module
+# Project Templates Module
 
-Last verified: September 15, 2026
+Last verified: September 17, 2026
 
 ## Delivery boundary
 
-This module is a detailed UI-only implementation for client review. It does not create or change production Templates, Projects, Tasks, Resources, or dates. All preview changes reset on refresh. Persistence, APIs, Template-to-Project instantiation, and schedule calculation remain deferred.
+Project Templates are persistent and tenant-scoped locally. Owner/Admin can save a current company Project Plan, inspect its read-only content, rename or delete it, and atomically create an independent Project from it. Employee (Internal) and External/Client cannot access Template data or APIs. Production deployment remains deferred in `docs/evidence/PENDING_DEPLOYMENT_LEDGER.md`.
 
-The existing original `GanttChart` remains Dialoggg's Project Plan engine. None of the Template preview components imports, replaces, or renders another Gantt. Once backend integration is approved, a Project created from a Template must open in the existing `/projects/[id]#plan` experience.
+The existing original `GanttChart` remains Dialoggg's Project Plan engine. Template code does not import, replace, or render another Gantt. A Project created from a Template opens at `/projects/[id]#plan`.
 
 ## Requirements traceability
 
-| Requirement | UI coverage |
+| Requirement | Implemented evidence |
 | --- | --- |
-| `DG-TPL-001` | Owner/Admin-only **Save Project as Template** journey with company-Project source selection. |
-| `DG-TPL-002` | Detail and save-summary views show Tasks, Headers, durations, dependencies, relative offsets, and Resource Categories. |
-| `DG-TPL-003` | Detail view exposes saved colors and Saturday/Sunday work rules. |
-| `DG-TPL-004` | Plan preview uses working-day offsets instead of fixed source dates. |
-| `DG-TPL-005` | Library, detail, use, and confirmation states state that progress starts at 0%. |
-| `DG-TPL-006` / `FUP-004` | Scott approved the implemented choice: categories always copy; exact Resources copy only when a save-time switch is enabled, off by default. |
-| `DG-TPL-007` | Save UI explains that inactive/missing Resources cannot block Project creation. |
-| `DG-TPL-008` | Library states company isolation; names validate as unique without case sensitivity. |
-| `DG-TPL-009` | Library provides view, rename, and confirmation-protected delete actions. |
-| `DG-TPL-010` | Read-only details state that v1 recreates Template content from a Project Plan and has no dedicated Template schedule editor. |
-| `DG-TPL-011` | **Use Template** journey collects Project name, exactly one Project Type, and a required Project Start Date before review. |
-| `DG-TPL-012` | Confirmation previews the Start Date anchor, copied Task count, reset progress, and future schedule-calculation handoff. |
-| `DG-TPL-013` | Use flow states that created Tasks become ordinary editable Tasks and never change the saved Template. |
+| `DG-TPL-001` | Owner/Admin save API and live `/templates/new` form accept only an editable same-company source Project; Employee/External are denied. |
+| `DG-TPL-002` | One transaction snapshots Task names, hierarchy, Header/leaf type, working-day duration, dependencies, and category defaults. |
+| `DG-TPL-003` | Per-Task colors and Saturday/Sunday rules are stored and copied into ordinary Tasks. |
+| `DG-TPL-004` | Each Task stores a non-negative relative working-day offset from Project Start; disconnected Tasks and branches retain their anchors. |
+| `DG-TPL-005` | Instantiation always writes Task progress as `0`, independent of source progress. |
+| `DG-TPL-006`, `FUP-004` | Resource Categories always snapshot; exact Resource IDs snapshot only when the explicit save-time switch is enabled, off by default. |
+| `DG-TPL-007` | Missing/inactive Resources and missing/remapped Categories never create cross-company references or abort instantiation; the response and success UI show actionable warnings. |
+| `DG-TPL-008` | Active Templates are company-scoped and names are whitespace-normalized, limited to 80 characters, and unique per company without case sensitivity. |
+| `DG-TPL-009` | Tenant-scoped list/detail/rename/delete APIs back the Library; delete requires UI confirmation and leaves created Projects unchanged. |
+| `DG-TPL-010` | Detail is read-only; Plan content changes require saving a new Template from a Project Plan. |
+| `DG-TPL-011` | Use flow requires one valid active same-company Project Type and a valid Project Start Date before confirmation. |
+| `DG-TPL-012` | Instantiation calculates offsets, chains, branches, all four dependency types, non-negative working-day lag, and per-Task weekend rules inside one transaction. |
+| `DG-TPL-013` | Instantiated rows are ordinary `project`, `task`, `task_link`, and `task_resource` records; later Project edits cannot mutate Template rows. |
 
-## Routes
+## Routes and authorization
 
-| Route | Purpose | Signed-out | Employee (Internal) | Admin |
+| Route | Purpose | Signed-out | Employee / External | Owner / Admin |
 | --- | --- | --- | --- | --- |
-| `/templates` | Company Template Library | Redirect to Login | Restricted state with no Template data | Full preview |
-| `/templates/new` | Save an existing Project Plan as a Template | Redirect to Login | Restricted state | Source and content form |
-| `/templates/[id]` | Read-only Template details and representative Plan rows | Redirect to Login | Restricted state | Full preview; unknown ID is 404 |
-| `/templates/[id]/use` | Start a Project from the selected Template | Redirect to Login | Restricted state | Project setup and confirmation |
+| `/templates` | Company Template Library | Redirect to Login | Restricted; no Template data | Live Library |
+| `/templates/new` | Save a Project Plan | Redirect to Login | Restricted | Persistent save form |
+| `/templates/[id]` | Read-only saved Plan | Redirect to Login | Restricted | Same-company detail or 404 |
+| `/templates/[id]/use` | Create a Project from a Template | Redirect to Login | Restricted | Validated confirmation and atomic creation |
+| `/api/v1/project-templates` | List/source list and save | 401 | 403 | Tenant-scoped GET/POST |
+| `/api/v1/project-templates/[id]` | Read, rename, delete | 401 | 403 | Tenant-scoped GET/PUT/DELETE |
+| `/api/v1/project-templates/[id]/instantiate` | Create independent Project Plan | 401 | 403 | Tenant-scoped POST |
 
-The **Project Templates** Admin navigation item opens `/templates`.
+All mutations require the authenticated CSRF token and record audit events. Creation and instantiation use client-generated idempotency keys so safe retries do not duplicate Templates or Projects.
 
-## Library states and actions
+## Save and use semantics
 
-- Summary cards show company Template count, total reusable Tasks, and the 0% progress rule.
-- Search matches Template or source-Project name.
-- A no-results state quotes the search and provides **Clear search**.
-- Each Template card exposes Task, working-day, and category totals plus View, Use Template, Rename, and Delete actions.
-- Rename validates required input, the 80-character maximum, and case-insensitive duplicate names.
-- Successful rename states that existing Projects were not changed.
-- Delete confirmation names the Template, explains irreversibility, and states that existing Projects are independent.
-- All modifications are in-memory demonstration state.
+- Save rejects invalid durations, negative offsets, negative/unknown link values, Header-linked dependencies, missing/non-Header parents, dependency cycles, and hierarchy cycles without leaving partial rows.
+- Source Project dates become relative working-day offsets. Fixed source dates, progress, Project status, Events, and client/job-site details are not Template content.
+- Instantiation validates Template, Project Type, Project name, and Start Date before opening a transaction.
+- Dependency calculations support Finish-to-Start, Start-to-Start, Finish-to-Finish, and Start-to-Finish. Multiple predecessor constraints use the latest valid start.
+- Duration is inclusive in allowed working days. Finish-to-Start `+0` starts on the next working day, and lag counts the dependent Task's working days.
+- Parent references and dependencies are rebuilt with new Task IDs. Exact Resources are attached only when still active and in the same company.
+- Delete cascades only Template-owned snapshots and idempotency metadata; previously created Projects and their Tasks remain intact.
 
-## Dialog and confirmation inventory
+## Migration and rollback
 
-1. **Rename Template** — input focus, impact notice, validation, Cancel, and Save new name.
-2. **Discard unsaved changes?** — Keep editing is initially focused; Discard changes closes the rename without mutation.
-3. **Delete Template?** — Cancel is initially focused; destructive action removes only the in-memory preview item.
-4. **Leave without saving?** — protects edited save-from-Project choices.
-5. **Confirm Project setup** — repeats Project, Project Type, Start Date, Template, copied Task count, and 0% progress before the non-persistent preview is confirmed.
-6. **Leave Project setup?** — protects Project-specific inputs from accidental cancellation.
+Migration 6, `project_template_invariants`, adds source-name/idempotency snapshots, Task category linkage, Template indexes, retry metadata, and database triggers for tenant source/creator scope, non-negative offsets, dependency references, and same-company Task categories.
 
-Escape closes non-destructive dialogs, body scrolling is locked while a modal is open, changed rename forms require a discard decision, and focus is restored to the initiating control where applicable.
+The local pre-migration rollback copy is `data/backups/pre-project-templates-2026-09-17.db` (Git-ignored), SHA-256 `E4AD20BE7A5BC24D85F3AC9F8E4858EC6C8100E325B5F2E9DFAE9D47941E9EFC`. It is schema version 5 with integrity `ok` and zero foreign-key violations. The migrated local database is schema version 6 with integrity `ok`, zero foreign-key violations, zero invalid Template/source relationships, and zero invalid Task/category relationships.
 
 ## QA evidence
 
-- Production Next.js build and TypeScript checks passed with 30 generated routes.
-- Foundation suite passed 10 of 10.
-- Isolated application scenario suite passed 79 of 79.
-- Focused Project Templates Playwright suite passed 12 of 12 after a fresh-database rerun.
-- Existing Project Types Playwright regression suite remains available separately.
-- Visible human-click QA covered Login, authenticated navigation, Library layout, rename validation, unsaved changes, save-from-Project, Project setup, date/type entry, confirmation, success, and the original-Gantt boundary.
-- Human QA found and fixed programmatic Login label association and missing Escape/body-scroll handling on the save-Template discard dialog.
-- The Gantt component was not changed.
+- Unit/foundation/migration: **24 passed, 0 failed**.
+- API/scenario: **133 passed, 0 failed**.
+- Focused Project Templates Chromium: **15 passed, 0 failed**, including real Admin/Owner persistence, refresh, instantiation, independence after delete, and Employee/External denial.
+- Complete ten-suite Chromium regression: **152 passed, 0 failed**.
+- TypeScript: passed.
+- Next.js production build: passed with 50 routes.
+- Standalone asset packaging: passed.
+- Original `src/components/GanttChart.tsx`: unchanged.

@@ -257,8 +257,11 @@ try {
   let projectTypeASecondaryId;
   let projectTypeBId;
   let managedProjectTypeAId;
+  let projectTemplateAId;
+  let instantiatedProjectId;
   let resourceAId;
   let resourceBId;
+  let templateResourceId;
   let categoryAId;
   let predecessorId;
   let successorId;
@@ -1056,30 +1059,28 @@ try {
   });
 
   await check("signed-out Project Templates routes redirect to login", async () => {
-    for (const route of ["/templates", "/templates/new", "/templates/backyard-court", "/templates/backyard-court/use"]) {
+    for (const route of ["/templates", "/templates/new", "/templates/999999", "/templates/999999/use"]) {
       const response = await anonymous.request(route);
       assert.equal(response.status, 307, route);
       assert.ok(response.headers.get("location")?.endsWith("/login"), route);
     }
   });
 
-  await check("admin can open every Project Templates UI route", async () => {
+  await check("admin opens the live Template Library and save route", async () => {
     const expectations = [
       ["/templates", /Template Library/],
       ["/templates/new", /Save Project as Template/],
-      ["/templates/backyard-court", /Project Plan preview/],
-      ["/templates/backyard-court/use", /Start Project from Template/],
     ];
     for (const [route, pattern] of expectations) {
       const response = await adminA.request(route);
       assert.equal(response.status, 200, route);
       assert.match(response.text, pattern);
-      assert.match(response.text, /UI preview/);
+      assert.doesNotMatch(response.text, /UI preview/);
     }
   });
 
   await check("unknown Project Template returns not found for an admin", async () => {
-    const response = await adminA.request("/templates/not-a-template");
+    const response = await adminA.request("/templates/999999");
     assert.equal(response.status, 404);
   });
 
@@ -1239,12 +1240,14 @@ try {
   });
 
   await check("Employee cannot view Project Template management data", async () => {
-    for (const route of ["/templates", "/templates/new", "/templates/backyard-court", "/templates/backyard-court/use"]) {
+    for (const route of ["/templates", "/templates/new", "/templates/999999", "/templates/999999/use"]) {
       const response = await viewerA.request(route);
       assert.equal(response.status, 200, route);
       assert.match(response.text, /Project Templates are restricted/);
-      assert.doesNotMatch(response.text, /Miller Residence|Westfield Recreation Center|Hillside Tennis Club/);
+      assert.doesNotMatch(response.text, /Scenario Project A|Scenario Template/);
     }
+    const api = await viewerA.request("/api/v1/project-templates");
+    assert.equal(api.status, 403);
   });
 
   await check("Employee receives User management restriction without directory data", async () => {
@@ -1452,6 +1455,201 @@ try {
     assert.equal(schedule.status, 200);
     const conflicted = schedule.data.events.filter(event => event.extendedProps.conflict);
     assert.equal(conflicted.length, 2);
+  });
+
+  await check("Template save rejects a source Task placed on its excluded weekend without partial rows", async () => {
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    let invalidProjectId;
+    try {
+      database.transaction(() => {
+        invalidProjectId = Number(database.prepare(`
+          INSERT INTO project (company_id, project_type_id, name, start_date, created_by)
+          VALUES (?, ?, 'Invalid Weekend Source', '2026-01-01', ?)
+        `).run(companyAId, projectTypeAId, adminAId).lastInsertRowid);
+        database.prepare(`
+          INSERT INTO task (project_id, name, start_date, duration, allow_saturday, allow_sunday)
+          VALUES (?, 'Excluded Saturday Task', '2026-01-03', 1, 0, 0)
+        `).run(invalidProjectId);
+      })();
+    } finally { database.close(); }
+    const response = await adminA.request("/api/v1/project-templates", {
+      method: "POST",
+      body: { sourceProjectId: invalidProjectId, name: "Invalid Weekend Template", includeResourceAssignments: false, idempotencyKey: `invalid-weekend-${suffix}` },
+    });
+    assert.equal(response.status, 409, JSON.stringify(response.data));
+    assert.equal(response.data.error.code, "TEMPLATE_SOURCE_PLAN_INVALID");
+    const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(verify.prepare("SELECT COUNT(*) count FROM project_template WHERE normalized_name = 'invalid weekend template'").get().count, 0);
+    } finally { verify.close(); }
+  });
+
+  await check("source Project Plan is prepared with hierarchy, all dependency types, weekends, categories, and an exact Resource", async () => {
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      database.transaction(() => {
+        database.prepare("UPDATE task SET resource_category_id = ? WHERE id IN (?, ?)").run(categoryAId, predecessorId, successorId);
+        templateResourceId = Number(database.prepare(`
+          INSERT INTO resource (company_id, category_id, name, status)
+          VALUES (?, ?, 'Template-only Crew', 'active')
+        `).run(companyAId, categoryAId).lastInsertRowid);
+        const insertTask = database.prepare(`
+          INSERT INTO task (
+            project_id, parent_id, name, start_date, duration, progress, color,
+            is_header, sort_order, allow_saturday, allow_sunday, resource_category_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const headerId = Number(insertTask.run(projectAId, null, "Template Test Header", "2026-01-01", 10, 0.8, "#334155", 1, 100, 0, 0, null).lastInsertRowid);
+        const task = (name, start, duration, order, saturday = 0) => Number(insertTask.run(projectAId, headerId, name, start, duration, 0.75, "#0f766e", 0, order, saturday, 0, categoryAId).lastInsertRowid);
+        const fsSource = task("FS Source", "2026-01-01", 1, 101);
+        const fsTarget = task("FS Target", "2026-01-01", 1, 102);
+        const ssSource = task("SS Source", "2026-01-01", 1, 103);
+        const ssTarget = task("SS Target", "2026-01-01", 1, 104);
+        const ffSource = task("FF Source", "2026-01-01", 3, 105);
+        const ffTarget = task("FF Target", "2026-01-01", 2, 106);
+        const sfSource = task("SF Source", "2026-01-06", 1, 107);
+        const sfTarget = task("SF Target", "2026-01-01", 2, 108);
+        const branchTarget = task("Branch Target", "2026-01-01", 1, 109);
+        const weekendTask = task("Saturday Offset Task", "2026-01-03", 2, 110, 1);
+        insertTask.run(projectAId, headerId, "No Category Task", "2026-01-08", 1, 0.5, "#7c3aed", 0, 111, 0, 0, null);
+        const insertLink = database.prepare(`
+          INSERT INTO task_link (project_id, source_task_id, target_task_id, link_type, lag_days)
+          VALUES (?, ?, ?, ?, ?)
+        `);
+        insertLink.run(projectAId, fsSource, fsTarget, "fs", 0);
+        insertLink.run(projectAId, ssSource, ssTarget, "ss", 1);
+        insertLink.run(projectAId, ffSource, ffTarget, "ff", 0);
+        insertLink.run(projectAId, sfSource, sfTarget, "sf", 0);
+        insertLink.run(projectAId, ffSource, branchTarget, "fs", 0);
+        insertLink.run(projectAId, sfSource, branchTarget, "ss", 0);
+        database.prepare("INSERT INTO task_resource (task_id, resource_id) VALUES (?, ?)").run(weekendTask, templateResourceId);
+      })();
+    } finally { database.close(); }
+    assert.ok(templateResourceId);
+  });
+
+  await check("admin saves a tenant-scoped Template atomically and retries idempotently", async () => {
+    const key = `template-create-${suffix}`;
+    const created = await adminA.request("/api/v1/project-templates", {
+      method: "POST",
+      body: { sourceProjectId: projectAId, name: "  Scenario   Template  ", includeResourceAssignments: true, idempotencyKey: key },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    projectTemplateAId = created.data.data.template.id;
+    assert.equal(created.data.data.template.name, "Scenario Template");
+    assert.equal(created.data.data.template.includeResourceAssignments, true);
+    assert.ok(created.data.data.template.tasks.some(task => task.name === "Template Test Header" && task.kind === "Header"));
+    assert.ok(created.data.data.template.dependencies.some(link => link.linkType === "sf"));
+
+    const replay = await adminA.request("/api/v1/project-templates", {
+      method: "POST",
+      body: { sourceProjectId: projectAId, name: "Scenario Template", includeResourceAssignments: true, idempotencyKey: key },
+    });
+    assert.equal(replay.status, 200, JSON.stringify(replay.data));
+    assert.equal(replay.data.data.replayed, true);
+    assert.equal(replay.data.data.template.id, projectTemplateAId);
+
+    const duplicate = await adminA.request("/api/v1/project-templates", {
+      method: "POST",
+      body: { sourceProjectId: projectAId, name: "scenario template", includeResourceAssignments: false, idempotencyKey: `${key}-duplicate` },
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.data.error.code, "PROJECT_TEMPLATE_NAME_EXISTS");
+  });
+
+  await check("Template list, detail, rename, and UI routes are tenant-isolated and persistent", async () => {
+    const [listA, listB] = await Promise.all([
+      adminA.request("/api/v1/project-templates"),
+      adminB.request("/api/v1/project-templates"),
+    ]);
+    assert.equal(listA.status, 200);
+    assert.equal(listB.status, 200);
+    assert.ok(listA.data.data.projectTemplates.some(template => template.id === projectTemplateAId));
+    assert.ok(!listB.data.data.projectTemplates.some(template => template.id === projectTemplateAId));
+    assert.equal((await adminB.request(`/api/v1/project-templates/${projectTemplateAId}`)).status, 404);
+    assert.equal((await adminB.request(`/api/v1/project-templates/${projectTemplateAId}`, { method: "PUT", body: { name: "Tenant Escape" } })).status, 404);
+
+    const renamed = await adminA.request(`/api/v1/project-templates/${projectTemplateAId}`, { method: "PUT", body: { name: "Scenario Template Renamed" } });
+    assert.equal(renamed.status, 200, JSON.stringify(renamed.data));
+    assert.equal(renamed.data.data.projectTemplate.name, "Scenario Template Renamed");
+    for (const [route, pattern] of [
+      ["/templates", /Scenario Template Renamed/],
+      [`/templates/${projectTemplateAId}`, /Saved Project Plan/],
+      [`/templates/${projectTemplateAId}/use`, /Start Project from Template/],
+    ]) {
+      const response = await adminA.request(route);
+      assert.equal(response.status, 200, route);
+      assert.match(response.text, pattern, route);
+      assert.doesNotMatch(response.text, /UI preview/, route);
+    }
+  });
+
+  await check("Template instantiation rejects cross-tenant and invalid Project Type requests", async () => {
+    const crossTenant = await adminB.request(`/api/v1/project-templates/${projectTemplateAId}/instantiate`, {
+      method: "POST",
+      body: { name: "Cross Tenant Project", projectTypeId: projectTypeBId, startDate: "2026-10-02", idempotencyKey: `cross-${suffix}` },
+    });
+    assert.equal(crossTenant.status, 404);
+    const invalidType = await adminA.request(`/api/v1/project-templates/${projectTemplateAId}/instantiate`, {
+      method: "POST",
+      body: { name: "Invalid Type Project", projectTypeId: projectTypeBId, startDate: "2026-10-02", idempotencyKey: `invalid-type-${suffix}` },
+    });
+    assert.equal(invalidType.status, 400);
+    assert.equal(invalidType.data.error.code, "PROJECT_TYPE_INVALID");
+  });
+
+  await check("Template instantiation calculates working-day schedules, resets progress, and omits inactive exact Resources", async () => {
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.prepare("UPDATE resource SET status = 'inactive', deactivated_at = CURRENT_TIMESTAMP WHERE id = ?").run(templateResourceId);
+    database.close();
+    const key = `template-use-${suffix}`;
+    const created = await adminA.request(`/api/v1/project-templates/${projectTemplateAId}/instantiate`, {
+      method: "POST",
+      body: { name: "Instantiated Scenario Project", projectTypeId: projectTypeAId, startDate: "2026-10-02", clientName: "Template Client", idempotencyKey: key },
+    });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    instantiatedProjectId = created.data.data.projectId;
+    assert.ok(created.data.data.warnings.some(message => /inactive or missing saved Resource/.test(message)));
+    const replay = await adminA.request(`/api/v1/project-templates/${projectTemplateAId}/instantiate`, {
+      method: "POST",
+      body: { name: "Instantiated Scenario Project", projectTypeId: projectTypeAId, startDate: "2026-10-02", clientName: "Template Client", idempotencyKey: key },
+    });
+    assert.equal(replay.status, 200, JSON.stringify(replay.data));
+    assert.equal(replay.data.data.replayed, true);
+    assert.equal(replay.data.data.projectId, instantiatedProjectId);
+
+    const tasks = await adminA.request(`/api/projects/${instantiatedProjectId}/tasks`);
+    assert.equal(tasks.status, 200);
+    const byName = new Map(tasks.data.data.map(task => [task.text, task]));
+    assert.equal(byName.get("FS Target").start_date, "2026-10-05");
+    assert.equal(byName.get("SS Target").start_date, "2026-10-05");
+    assert.equal(byName.get("FF Target").start_date, "2026-10-05");
+    assert.equal(byName.get("SF Target").start_date, "2026-10-06");
+    assert.equal(byName.get("Branch Target").start_date, "2026-10-07");
+    assert.equal(byName.get("Saturday Offset Task").start_date, "2026-10-05");
+    assert.ok(tasks.data.data.every(task => task.progress === 0));
+    assert.ok(tasks.data.links.some(link => link.type === "3"));
+
+    const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const header = verify.prepare("SELECT id FROM task WHERE project_id = ? AND name = 'Template Test Header'").get(instantiatedProjectId);
+      assert.ok(header?.id);
+      assert.ok(verify.prepare("SELECT COUNT(*) count FROM task WHERE project_id = ? AND parent_id = ?").get(instantiatedProjectId, header.id).count >= 10);
+      assert.equal(verify.prepare("SELECT COUNT(*) count FROM task WHERE project_id = ? AND resource_category_id IS NULL AND is_header = 0").get(instantiatedProjectId).count, 1);
+      assert.equal(verify.prepare("SELECT COUNT(*) count FROM task_resource tr JOIN task t ON t.id = tr.task_id WHERE t.project_id = ? AND tr.resource_id = ?").get(instantiatedProjectId, templateResourceId).count, 0);
+    } finally { verify.close(); }
+  });
+
+  await check("Template deletion never changes an instantiated Project", async () => {
+    const deleted = await adminA.request(`/api/v1/project-templates/${projectTemplateAId}`, { method: "DELETE" });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.data));
+    assert.equal((await adminA.request(`/api/v1/project-templates/${projectTemplateAId}`)).status, 404);
+    const project = await adminA.request(`/api/projects/${instantiatedProjectId}`);
+    assert.equal(project.status, 200);
+    assert.equal(project.data.project.name, "Instantiated Scenario Project");
+    const tasks = await adminA.request(`/api/projects/${instantiatedProjectId}/tasks`);
+    assert.ok(tasks.data.data.some(task => task.text === "Saturday Offset Task"));
   });
 
   await check("event creation rejects missing required fields", async () => {

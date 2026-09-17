@@ -88,31 +88,42 @@ test("Login labels are programmatically associated with their fields", async () 
   assert.match(login, /role="alert"/);
 });
 
-test("Project Templates UI covers library, source Plan, detail, and use workflows", async () => {
-  const data = await read("src/lib/project-templates-ui.ts");
+test("Project Templates persist tenant-scoped source Plans and instantiate atomically", async () => {
+  const service = await read("src/lib/project-templates.ts");
   const library = await read("src/components/ProjectTemplatesPrototype.tsx");
   const create = await read("src/components/TemplateCreatePrototype.tsx");
   const detail = await read("src/components/TemplateDetailPrototype.tsx");
   const use = await read("src/components/TemplateUsePrototype.tsx");
+  const collectionApi = await read("src/app/api/v1/project-templates/route.ts");
+  const itemApi = await read("src/app/api/v1/project-templates/[id]/route.ts");
+  const instantiateApi = await read("src/app/api/v1/project-templates/[id]/instantiate/route.ts");
   const shell = await read("src/components/AppShell.tsx");
 
   assert.match(shell, /Project Templates/);
   assert.match(shell, /\/templates/);
-  assert.match(data, /Backyard Court/);
-  assert.match(data, /Commercial Athletic Surface/);
-  assert.match(data, /Court Resurfacing/);
   assert.match(library, /Template Library/);
   assert.match(library, /Rename Template/);
   assert.match(library, /Delete Template\?/);
   assert.match(library, /Discard unsaved changes\?/);
+  assert.match(library, /authenticatedFetch/);
   assert.match(create, /Save Project as Template/);
   assert.match(create, /Also save current Resource assignments/);
-  assert.match(detail, /Project Plan preview/);
+  assert.match(create, /authenticatedFetch/);
+  assert.match(detail, /Saved Project Plan/);
   assert.match(detail, /no separate Template schedule editor/);
   assert.match(use, /Start Project from Template/);
   assert.match(use, /Confirm Project setup/);
-  assert.match(use, /existing original Project Plan\/Gantt chart/);
-  assert.match(`${library}\n${create}\n${detail}\n${use}`, /UI preview/);
+  assert.match(use, /Open Project Plan/);
+  assert.match(use, /authenticatedFetch/);
+  assert.match(service, /saveProjectAsTemplate/);
+  assert.match(service, /instantiateProjectTemplate/);
+  assert.match(service, /calculateTemplateSchedule/);
+  assert.match(service, /progress, color, is_header/);
+  assert.match(service, /project_template_instantiation/);
+  assert.match(collectionApi, /validateMutationRequest/);
+  assert.match(itemApi, /deleteProjectTemplate/);
+  assert.match(instantiateApi, /project_template\.instantiate/);
+  assert.doesNotMatch(`${library}\n${create}\n${detail}\n${use}`, /UI preview/);
   assert.doesNotMatch(`${library}\n${create}\n${detail}\n${use}`, /import\(.+GanttChart|from ["']@\/components\/GanttChart/);
 });
 

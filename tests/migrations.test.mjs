@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 5/);
+    assert.match(second.stdout, /version 6/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -79,6 +79,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 3, name: "invitation_reset_and_membership_resource_link" },
           { version: 4, name: "company_lifecycle_and_unique_name" },
           { version: 5, name: "project_type_invariants" },
+          { version: 6, name: "project_template_invariants" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -155,6 +156,54 @@ test("Project Type migration enforces required same-company types and safe delet
       );
     } finally {
       assert.equal(database.prepare("SELECT COUNT(*) AS count FROM project WHERE project_type_id IS NULL").get().count, 0);
+      database.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Project Template migration enforces tenant-scoped sources, graph references, offsets, and Task categories", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-template-invariants-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const companyOne = Number(database.prepare("INSERT INTO company (name) VALUES ('Template Company One')").run().lastInsertRowid);
+      const companyTwo = Number(database.prepare("INSERT INTO company (name) VALUES ('Template Company Two')").run().lastInsertRowid);
+      const typeOne = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type One', 'type one')").run(companyOne).lastInsertRowid);
+      const projectOne = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Source One', '2026-09-17')").run(companyOne, typeOne).lastInsertRowid);
+      const identity = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('template@example.test', 'hash', 'Template', 'active')").run().lastInsertRowid);
+      const membershipOne = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'admin', 'active')").run(identity, companyOne).lastInsertRowid);
+      const membershipTwo = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'admin', 'active')").run(identity, companyTwo).lastInsertRowid);
+
+      assert.throws(() => database.prepare(`
+        INSERT INTO project_template (company_id, source_project_id, name, normalized_name, created_by_membership_id)
+        VALUES (?, ?, 'Cross scope', 'cross scope', ?)
+      `).run(companyOne, projectOne, membershipTwo), /PROJECT_TEMPLATE_SCOPE_INVALID/);
+      const templateId = Number(database.prepare(`
+        INSERT INTO project_template (company_id, source_project_id, source_project_name, name, normalized_name, created_by_membership_id)
+        VALUES (?, ?, 'Source One', 'Safe Template', 'safe template', ?)
+      `).run(companyOne, projectOne, membershipOne).lastInsertRowid);
+      assert.throws(() => database.prepare(`
+        INSERT INTO template_task (template_id, template_ref, name, relative_start_workdays, duration_workdays)
+        VALUES (?, 'negative', 'Negative offset', -1, 1)
+      `).run(templateId), /TEMPLATE_TASK_OFFSET_INVALID/);
+      database.prepare(`INSERT INTO template_task (template_id, template_ref, name, duration_workdays) VALUES (?, 'a', 'Task A', 1)`).run(templateId);
+      database.prepare(`INSERT INTO template_task (template_id, template_ref, name, duration_workdays) VALUES (?, 'b', 'Task B', 1)`).run(templateId);
+      assert.throws(() => database.prepare(`
+        INSERT INTO template_dependency (template_id, source_ref, target_ref, link_type) VALUES (?, 'a', 'missing', 'fs')
+      `).run(templateId), /TEMPLATE_DEPENDENCY_INVALID/);
+      database.prepare(`INSERT INTO template_dependency (template_id, source_ref, target_ref, link_type) VALUES (?, 'a', 'b', 'fs')`).run(templateId);
+
+      const categoryTwo = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Other Company Category')").run(companyTwo).lastInsertRowid);
+      assert.throws(() => database.prepare(`
+        INSERT INTO task (project_id, name, start_date, duration, resource_category_id) VALUES (?, 'Scoped Task', '2026-09-17', 1, ?)
+      `).run(projectOne, categoryTwo), /TASK_RESOURCE_CATEGORY_SCOPE_INVALID/);
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
       database.close();
     }
   } finally {

@@ -736,7 +736,145 @@ const migration005: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005];
+const migration006: Migration = {
+  version: 6,
+  name: "project_template_invariants",
+  signature: "template source snapshots + task category scope + template graph guards v1",
+  up(database) {
+    addColumn(database, "project_template", "source_project_name", "source_project_name TEXT NOT NULL DEFAULT ''");
+    addColumn(database, "project_template", "creation_idempotency_key", "creation_idempotency_key TEXT");
+    addColumn(database, "task", "resource_category_id", "resource_category_id INTEGER REFERENCES resource_category(id)");
+
+    database.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_project_template_creation_idempotency
+        ON project_template(company_id, creation_idempotency_key)
+        WHERE creation_idempotency_key IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_project_template_company_status
+        ON project_template(company_id, status, updated_at);
+      CREATE INDEX IF NOT EXISTS idx_template_task_template_order
+        ON template_task(template_id, sort_order, id);
+      CREATE INDEX IF NOT EXISTS idx_template_dependency_template
+        ON template_dependency(template_id, id);
+      CREATE INDEX IF NOT EXISTS idx_task_resource_category
+        ON task(resource_category_id, project_id);
+
+      CREATE TABLE IF NOT EXISTS project_template_instantiation (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id INTEGER NOT NULL,
+        template_id INTEGER NOT NULL,
+        project_id INTEGER NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        warnings_json TEXT NOT NULL DEFAULT '[]',
+        copied_task_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (company_id, idempotency_key),
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE,
+        FOREIGN KEY (template_id) REFERENCES project_template(id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE
+      );
+
+      CREATE TRIGGER IF NOT EXISTS trg_project_template_scope_insert
+      BEFORE INSERT ON project_template
+      WHEN NOT EXISTS (
+        SELECT 1 FROM company_membership cm
+        WHERE cm.id = NEW.created_by_membership_id
+          AND cm.company_id = NEW.company_id
+      ) OR (
+        NEW.source_project_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM project p
+          WHERE p.id = NEW.source_project_id AND p.company_id = NEW.company_id
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_TEMPLATE_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_project_template_scope_update
+      BEFORE UPDATE OF company_id, source_project_id, created_by_membership_id ON project_template
+      WHEN NOT EXISTS (
+        SELECT 1 FROM company_membership cm
+        WHERE cm.id = NEW.created_by_membership_id
+          AND cm.company_id = NEW.company_id
+      ) OR (
+        NEW.source_project_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM project p
+          WHERE p.id = NEW.source_project_id AND p.company_id = NEW.company_id
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_TEMPLATE_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_template_task_offset_insert
+      BEFORE INSERT ON template_task
+      WHEN NEW.relative_start_workdays < 0
+      BEGIN
+        SELECT RAISE(ABORT, 'TEMPLATE_TASK_OFFSET_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_template_task_offset_update
+      BEFORE UPDATE OF relative_start_workdays ON template_task
+      WHEN NEW.relative_start_workdays < 0
+      BEGIN
+        SELECT RAISE(ABORT, 'TEMPLATE_TASK_OFFSET_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_template_dependency_refs_insert
+      BEFORE INSERT ON template_dependency
+      WHEN NEW.source_ref = NEW.target_ref
+        OR NOT EXISTS (
+          SELECT 1 FROM template_task tt
+          WHERE tt.template_id = NEW.template_id AND tt.template_ref = NEW.source_ref
+        )
+        OR NOT EXISTS (
+          SELECT 1 FROM template_task tt
+          WHERE tt.template_id = NEW.template_id AND tt.template_ref = NEW.target_ref
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'TEMPLATE_DEPENDENCY_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_template_dependency_refs_update
+      BEFORE UPDATE OF template_id, source_ref, target_ref ON template_dependency
+      WHEN NEW.source_ref = NEW.target_ref
+        OR NOT EXISTS (
+          SELECT 1 FROM template_task tt
+          WHERE tt.template_id = NEW.template_id AND tt.template_ref = NEW.source_ref
+        )
+        OR NOT EXISTS (
+          SELECT 1 FROM template_task tt
+          WHERE tt.template_id = NEW.template_id AND tt.template_ref = NEW.target_ref
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'TEMPLATE_DEPENDENCY_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_task_category_scope_insert
+      BEFORE INSERT ON task
+      WHEN NEW.resource_category_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM resource_category rc
+        JOIN project p ON p.id = NEW.project_id
+        WHERE rc.id = NEW.resource_category_id AND rc.company_id = p.company_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'TASK_RESOURCE_CATEGORY_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_task_category_scope_update
+      BEFORE UPDATE OF project_id, resource_category_id ON task
+      WHEN NEW.resource_category_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM resource_category rc
+        JOIN project p ON p.id = NEW.project_id
+        WHERE rc.id = NEW.resource_category_id AND rc.company_id = p.company_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'TASK_RESOURCE_CATEGORY_SCOPE_INVALID');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

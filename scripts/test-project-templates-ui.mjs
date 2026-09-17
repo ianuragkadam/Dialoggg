@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import Database from "better-sqlite3";
 import { bootstrapAccount, login, prepareTestDatabase } from "./test-fixtures.mjs";
 
 const results = [];
@@ -46,14 +47,17 @@ async function loadPlaywright() {
   }
 }
 
-function sessionCookie(response) {
-  const value = response.headers.get("set-cookie")?.match(/dialoggg_session=([^;]+)/)?.[1];
-  assert.ok(value, "authentication response did not include a Dialoggg session");
+function cookieValue(response, name) {
+  const value = response.headers.get("set-cookie")?.match(new RegExp(`${name}=([^;]+)`))?.[1];
+  assert.ok(value, `authentication response did not include ${name}`);
   return value;
 }
 
-async function addSession(context, value) {
-  await context.addCookies([{ name: "dialoggg_session", value, domain: "127.0.0.1", path: "/", httpOnly: true, secure: false, sameSite: "Lax" }]);
+async function addAuth(context, response) {
+  await context.addCookies([
+    { name: "dialoggg_session", value: cookieValue(response, "dialoggg_session"), domain: "127.0.0.1", path: "/", httpOnly: true, secure: false, sameSite: "Lax" },
+    { name: "dialoggg_csrf", value: cookieValue(response, "dialoggg_csrf"), domain: "127.0.0.1", path: "/", httpOnly: false, secure: false, sameSite: "Lax" },
+  ]);
 }
 
 const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-templates-ui-"));
@@ -61,14 +65,50 @@ const port = await freePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const suffix = Date.now().toString(36);
 const adminEmail = `project-templates-admin-${suffix}@example.test`;
-const viewerEmail = `project-templates-viewer-${suffix}@example.test`;
+const ownerEmail = `project-templates-owner-${suffix}@example.test`;
+const employeeEmail = `project-templates-employee-${suffix}@example.test`;
+const externalEmail = `project-templates-external-${suffix}@example.test`;
 const password = "Project-Templates-Test-1!";
+let projectId;
+let templateId;
+let ownerTemplateId;
+let createdProjectId;
 
 try {
   const playwright = await loadPlaywright();
   prepareTestDatabase(dataDirectory);
   const admin = bootstrapAccount(dataDirectory, { companyName: "Project Templates QA Company", fullName: "Project Templates Admin", email: adminEmail, password, role: "admin" });
-  bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Project Templates Employee", email: viewerEmail, password, role: "employee" });
+  bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Project Templates Owner", email: ownerEmail, password, role: "owner" });
+  bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Project Templates Employee", email: employeeEmail, password, role: "employee" });
+  bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Project Templates External", email: externalEmail, password, role: "external" });
+
+  const seed = new Database(path.join(dataDirectory, "dialoggg.db"));
+  seed.pragma("foreign_keys = ON");
+  try {
+    seed.transaction(() => {
+      projectId = Number(seed.prepare(`
+        INSERT INTO project (company_id, project_type_id, name, start_date, created_by)
+        VALUES (?, ?, 'Miller Residence', '2026-09-01', ?)
+      `).run(admin.companyId, admin.defaultProjectTypeId, admin.legacyUserId).lastInsertRowid);
+      const categoryId = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(admin.companyId).id;
+      const resourceId = Number(seed.prepare(`
+        INSERT INTO resource (company_id, category_id, name, status) VALUES (?, ?, 'Template Crew', 'active')
+      `).run(admin.companyId, categoryId).lastInsertRowid);
+      const insertTask = seed.prepare(`
+        INSERT INTO task (
+          project_id, parent_id, name, start_date, duration, progress, color,
+          is_header, sort_order, allow_saturday, allow_sunday, resource_category_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const headerId = Number(insertTask.run(projectId, null, "Pre-construction", "2026-09-01", 4, 0.5, "#1d4ed8", 1, 1, 0, 0, null).lastInsertRowid);
+      const layoutId = Number(insertTask.run(projectId, headerId, "Site layout", "2026-09-01", 1, 1, "#0f766e", 0, 2, 0, 0, categoryId).lastInsertRowid);
+      const excavationId = Number(insertTask.run(projectId, headerId, "Excavation", "2026-09-02", 2, 0.25, "#b45309", 0, 3, 1, 0, categoryId).lastInsertRowid);
+      insertTask.run(projectId, headerId, "Inspection", "2026-09-04", 1, 0.75, "#7c3aed", 0, 4, 0, 0, categoryId);
+      seed.prepare(`INSERT INTO task_link (project_id, source_task_id, target_task_id, link_type, lag_days) VALUES (?, ?, ?, 'fs', 0)`).run(projectId, layoutId, excavationId);
+      seed.prepare("INSERT INTO task_resource (task_id, resource_id) VALUES (?, ?)").run(excavationId, resourceId);
+    })();
+  } finally { seed.close(); }
+
   appServer = spawn(process.execPath, ["scripts/start-production.mjs"], {
     cwd: process.cwd(),
     env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory },
@@ -90,20 +130,45 @@ try {
 
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const registration = await login(baseUrl, adminEmail, password);
-  const adminCookie = sessionCookie(registration);
-  await addSession(adminContext, adminCookie);
+  const adminLogin = await login(baseUrl, adminEmail, password);
+  await addAuth(adminContext, adminLogin);
   const page = await adminContext.newPage();
 
-  await check("admin opens the Template Library with approved examples", async () => {
+  await check("admin opens an empty live company Template Library", async () => {
     await page.goto(`${baseUrl}/templates`);
     assert.equal(await page.title(), "Project Templates | Dialoggg");
     await page.getByRole("heading", { name: "Project Templates", exact: true }).waitFor();
-    const body = await page.locator("body").innerText();
-    assert.match(body, /UI preview/);
-    assert.match(body, /Backyard Court/);
-    assert.match(body, /Commercial Athletic Surface/);
-    assert.match(body, /Court Resurfacing/);
+    await page.getByRole("heading", { name: "No Templates saved yet" }).waitFor();
+    assert.doesNotMatch(await page.locator("body").innerText(), /UI preview/);
+  });
+
+  await check("save-from-Project validates and persists hierarchy, offsets, categories, and exact Resources", async () => {
+    await page.goto(`${baseUrl}/templates/new`);
+    await page.getByRole("button", { name: "Save Template" }).click();
+    await page.getByText("Choose the Project Plan to save.", { exact: true }).waitFor();
+    await page.getByText("Enter a Template name.", { exact: true }).waitFor();
+    await page.locator("#source-project").selectOption({ label: "Miller Residence" });
+    await page.locator("#new-template-name").fill("Backyard Court");
+    await page.getByLabel("Also save current Resource assignments").check();
+    await page.getByRole("button", { name: "Save Template" }).click();
+    await page.getByRole("heading", { name: "Template saved" }).waitFor();
+    const href = await page.getByRole("link", { name: "View saved Template" }).getAttribute("href");
+    templateId = Number(href?.split("/").pop());
+    assert.ok(templateId);
+    assert.match(await page.locator("body").innerText(), /4 Tasks/);
+  });
+
+  await check("saved Template survives refresh and a second Template can be created", async () => {
+    await page.goto(`${baseUrl}/templates`);
+    await page.reload();
+    await page.getByRole("button", { name: "Rename Backyard Court" }).waitFor();
+    await page.goto(`${baseUrl}/templates/new`);
+    await page.locator("#source-project").selectOption({ label: "Miller Residence" });
+    await page.locator("#new-template-name").fill("Court Resurfacing");
+    await page.getByRole("button", { name: "Save Template" }).click();
+    await page.getByRole("heading", { name: "Template saved" }).waitFor();
+    await page.goto(`${baseUrl}/templates`);
+    await page.getByRole("button", { name: "Delete Court Resurfacing" }).waitFor();
   });
 
   await check("Template search provides a recoverable no-results state", async () => {
@@ -113,7 +178,7 @@ try {
     await page.getByRole("button", { name: "Rename Backyard Court" }).waitFor();
   });
 
-  await check("rename validates duplicates and saves without changing Projects", async () => {
+  await check("rename validates duplicates and persists without changing Projects", async () => {
     await page.getByRole("button", { name: "Rename Backyard Court" }).click();
     let dialog = page.getByRole("dialog", { name: "Rename Template" });
     const input = dialog.locator("#template-name");
@@ -124,24 +189,25 @@ try {
     await input.fill("Residential Court");
     await dialog.getByRole("button", { name: "Save new name" }).click();
     await page.getByRole("button", { name: "Rename Residential Court" }).waitFor();
-    assert.match(await page.getByRole("status").innerText(), /Existing Projects were not changed/);
+    await page.reload();
+    await page.getByRole("button", { name: "Rename Residential Court" }).waitFor();
   });
 
   await check("changed rename protects against accidental dismissal", async () => {
-    await page.getByRole("button", { name: "Rename Commercial Athletic Surface" }).click();
+    await page.getByRole("button", { name: "Rename Residential Court" }).click();
     let dialog = page.getByRole("dialog", { name: "Rename Template" });
-    await dialog.locator("#template-name").fill("Temporary commercial name");
+    await dialog.locator("#template-name").fill("Temporary residential name");
     await dialog.getByRole("button", { name: "Cancel" }).click();
     let discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" });
     await discard.getByRole("button", { name: "Keep editing" }).click();
     dialog = page.getByRole("dialog", { name: "Rename Template" });
-    assert.equal(await dialog.locator("#template-name").inputValue(), "Temporary commercial name");
+    assert.equal(await dialog.locator("#template-name").inputValue(), "Temporary residential name");
     await dialog.getByRole("button", { name: "Cancel" }).click();
     discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" });
     await discard.getByRole("button", { name: "Discard changes" }).click();
   });
 
-  await check("Template deletion supports safe cancel and explicit confirmation", async () => {
+  await check("Template deletion supports safe cancel and persists after confirmation", async () => {
     await page.getByRole("button", { name: "Delete Court Resurfacing" }).click();
     let dialog = page.getByRole("alertdialog", { name: "Delete Template?" });
     assert.match(await dialog.innerText(), /Existing Projects created from it will not change/);
@@ -149,66 +215,97 @@ try {
     await page.getByRole("button", { name: "Delete Court Resurfacing" }).click();
     dialog = page.getByRole("alertdialog", { name: "Delete Template?" });
     await dialog.getByRole("button", { name: "Delete Template" }).click();
+    await page.reload();
     assert.equal(await page.getByRole("button", { name: "Delete Court Resurfacing" }).count(), 0);
   });
 
-  await check("Template detail route explains offsets and original Gantt boundary", async () => {
-    await page.goto(`${baseUrl}/templates/backyard-court`);
-    await page.getByRole("heading", { name: "Backyard Court", exact: true }).waitFor();
+  await check("Template detail renders the complete saved Plan and v1 editing boundary", async () => {
+    await page.goto(`${baseUrl}/templates/${templateId}`);
+    await page.getByRole("heading", { name: "Residential Court", exact: true }).waitFor();
     const body = await page.locator("body").innerText();
-    assert.match(body, /Project Plan preview/);
+    assert.match(body, /Saved Project Plan/);
     assert.match(body, /relative working-day offsets/);
     assert.match(body, /no separate Template schedule editor/);
+    assert.match(body, /Site layout/);
+    assert.match(body, /Employee/);
   });
 
-  await check("save-from-Project validates, reviews, and preserves the approved Resource choice", async () => {
-    await page.goto(`${baseUrl}/templates/new`);
-    await page.getByRole("button", { name: "Review Template" }).click();
-    await page.getByText("Choose the Project Plan to save.", { exact: true }).waitFor();
-    await page.getByText("Enter a Template name.", { exact: true }).waitFor();
-    await page.locator("#source-project").selectOption({ label: "Miller Residence" });
-    await page.locator("#new-template-name").fill("backyard court");
-    await page.getByRole("button", { name: "Review Template" }).click();
-    await page.getByText("A Template named “backyard court” already exists.", { exact: true }).waitFor();
-    await page.locator("#new-template-name").fill("Residential Pickleball Court");
-    await page.getByLabel("Also save current Resource assignments").check();
-    await page.getByRole("button", { name: "Review Template" }).click();
-    await page.getByRole("heading", { name: "Template preview complete" }).waitFor();
-    assert.match(await page.locator("body").innerText(), /no Template or Project record was created/);
-  });
-
-  await check("start-from-Template validates and shows an exact confirmation", async () => {
-    await page.goto(`${baseUrl}/templates/backyard-court/use`);
+  await check("start-from-Template validates, preserves fields on Escape, and creates a real Project", async () => {
+    await page.goto(`${baseUrl}/templates/${templateId}/use`);
     await page.getByRole("button", { name: "Review Project setup" }).click();
-    await page.getByText("Enter a Project name.", { exact: true }).waitFor();
+    await page.getByText("Enter a Project name of 100 characters or fewer.", { exact: true }).waitFor();
     await page.getByText("Choose exactly one Project Type.", { exact: true }).waitFor();
     await page.getByText("Choose the Project Start Date.", { exact: true }).waitFor();
     await page.locator("#template-project-name").fill("Johnson Residence");
-    await page.locator("#template-project-type").selectOption("Acrylic");
-    await page.locator("#template-start-date").fill("2026-10-05");
+    await page.locator("#template-project-type").selectOption({ label: "Residential Court" });
+    await page.locator("#template-start-date").fill("2026-10-02");
     await page.locator("#template-client-name").fill("Alex Johnson");
     await page.getByRole("button", { name: "Review Project setup" }).click();
     let dialog = page.getByRole("dialog", { name: "Confirm Project setup" });
-    const text = await dialog.innerText();
-    assert.match(text, /Johnson Residence/);
-    assert.match(text, /Acrylic/);
-    assert.match(text, /2026-10-05/);
-    assert.match(text, /18 at 0%/);
-    await dialog.getByRole("button", { name: "Back to edit" }).click();
+    assert.match(await dialog.innerText(), /4 at 0%/);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("#template-project-name").inputValue(), "Johnson Residence");
     await page.getByRole("button", { name: "Review Project setup" }).click();
     dialog = page.getByRole("dialog", { name: "Confirm Project setup" });
-    await dialog.getByRole("button", { name: "Confirm UI preview" }).click();
-    await page.getByRole("heading", { name: "Project setup preview confirmed" }).waitFor();
-    assert.match(await page.locator("body").innerText(), /existing original Project Plan\/Gantt chart/);
+    await dialog.getByRole("button", { name: "Create Project" }).click();
+    await page.getByRole("heading", { name: "Project created from Template" }).waitFor();
+    const href = await page.getByRole("link", { name: "Open Project Plan" }).getAttribute("href");
+    createdProjectId = Number(href?.match(/\/projects\/(\d+)/)?.[1]);
+    assert.ok(createdProjectId);
+    const tasks = await page.evaluate(async id => (await fetch(`/api/projects/${id}/tasks`)).json(), createdProjectId);
+    assert.equal(tasks.data.length, 4);
+    assert.ok(tasks.data.every(task => task.progress === 0));
   });
 
-  await check("Escape closes the Project setup confirmation without losing fields", async () => {
-    await page.getByRole("button", { name: "Review setup" }).click();
-    await page.getByRole("button", { name: "Review Project setup" }).click();
-    await page.getByRole("dialog", { name: "Confirm Project setup" }).waitFor();
-    await page.keyboard.press("Escape");
-    assert.equal(await page.getByRole("dialog", { name: "Confirm Project setup" }).count(), 0);
-    assert.equal(await page.locator("#template-project-name").inputValue(), "Johnson Residence");
+  await check("deleting a used Template leaves the created Project and original Gantt Plan intact", async () => {
+    await page.goto(`${baseUrl}/templates`);
+    await page.getByRole("button", { name: "Delete Residential Court" }).click();
+    await page.getByRole("alertdialog", { name: "Delete Template?" }).getByRole("button", { name: "Delete Template" }).click();
+    await page.goto(`${baseUrl}/projects/${createdProjectId}#plan`);
+    await page.getByRole("heading", { name: "Johnson Residence", exact: true }).waitFor();
+    assert.match(await page.locator("body").innerText(), /original Gantt remains the Project Plan/i);
+  });
+
+  await check("Owner can create and delete a Template with refresh persistence", async () => {
+    const ownerContext = await browser.newContext();
+    await addAuth(ownerContext, await login(baseUrl, ownerEmail, password));
+    const ownerPage = await ownerContext.newPage();
+    await ownerPage.goto(`${baseUrl}/templates/new`);
+    await ownerPage.locator("#source-project").selectOption({ label: "Miller Residence" });
+    await ownerPage.locator("#new-template-name").fill("Owner Template");
+    await ownerPage.getByRole("button", { name: "Save Template" }).click();
+    await ownerPage.getByRole("heading", { name: "Template saved" }).waitFor();
+    const href = await ownerPage.getByRole("link", { name: "View saved Template" }).getAttribute("href");
+    ownerTemplateId = Number(href?.split("/").pop());
+    await ownerPage.goto(`${baseUrl}/templates`);
+    await ownerPage.reload();
+    await ownerPage.getByRole("button", { name: "Delete Owner Template" }).click();
+    await ownerPage.getByRole("alertdialog", { name: "Delete Template?" }).getByRole("button", { name: "Delete Template" }).click();
+    await ownerPage.reload();
+    assert.equal(await ownerPage.getByRole("button", { name: "Delete Owner Template" }).count(), 0);
+    await ownerContext.close();
+  });
+
+  for (const [role, email] of [["Employee", employeeEmail], ["External/Client", externalEmail]]) {
+    await check(`${role} sees restriction without Template business data`, async () => {
+      const context = await browser.newContext();
+      await addAuth(context, await login(baseUrl, email, password));
+      const restricted = await context.newPage();
+      await restricted.goto(`${baseUrl}/templates/${ownerTemplateId || templateId}`);
+      await restricted.getByRole("heading", { name: "Project Templates are restricted" }).waitFor();
+      assert.doesNotMatch(await restricted.locator("body").innerText(), /Miller Residence|Site layout|Template Crew/);
+      assert.doesNotMatch(await restricted.title(), /Owner Template|Residential Court/);
+      await context.close();
+    });
+  }
+
+  await check("signed-out direct Template route returns to Login", async () => {
+    const anonymousContext = await browser.newContext();
+    const anonymousPage = await anonymousContext.newPage();
+    await anonymousPage.goto(`${baseUrl}/templates/${templateId}/use`);
+    await anonymousPage.waitForURL("**/login");
+    await anonymousPage.getByRole("heading", { name: /Log in to Dialoggg/i }).waitFor();
+    await anonymousContext.close();
   });
 
   await check("mobile Template Library has no horizontal page overflow", async () => {
@@ -217,27 +314,6 @@ try {
     await page.getByRole("heading", { name: "Project Templates", exact: true }).waitFor();
     const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
     assert.ok(dimensions.scrollWidth <= dimensions.width, `mobile page overflowed: ${JSON.stringify(dimensions)}`);
-  });
-
-  const viewerLogin = await login(baseUrl, viewerEmail, password);
-
-  await check("Employee sees restriction without Template business data", async () => {
-    const viewerContext = await browser.newContext();
-    await addSession(viewerContext, sessionCookie(viewerLogin));
-    const viewerPage = await viewerContext.newPage();
-    await viewerPage.goto(`${baseUrl}/templates/backyard-court`);
-    await viewerPage.getByRole("heading", { name: "Project Templates are restricted" }).waitFor();
-    assert.doesNotMatch(await viewerPage.locator("body").innerText(), /Miller Residence|Westfield Recreation Center/);
-    await viewerContext.close();
-  });
-
-  await check("signed-out direct Template route returns to Login", async () => {
-    const anonymousContext = await browser.newContext();
-    const anonymousPage = await anonymousContext.newPage();
-    await anonymousPage.goto(`${baseUrl}/templates/backyard-court/use`);
-    await anonymousPage.waitForURL("**/login");
-    await anonymousPage.getByRole("heading", { name: /Log in to Dialoggg/i }).waitFor();
-    await anonymousContext.close();
   });
 
   await adminContext.close();

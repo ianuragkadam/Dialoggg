@@ -18,9 +18,10 @@ Last verified: September 17, 2026
 - Every Project is backfilled and database-enforced to have exactly one active same-company type; Project create/update rejects null and cross-company types
 - Rename propagation, All Projects multi-select filtering, Master Calendar one-or-more filtering, exact affected-Project disclosure, reassign-then-delete, refresh persistence, responsive cards, and accessible dialogs
 - Project Types local checkpoint passed 23/23 unit, 126/126 scenario, and 149/149 live browser checks; Railway deployment is deferred in `docs/evidence/PENDING_DEPLOYMENT_LEDGER.md`
-- Project Templates UI at `/templates`, `/templates/new`, `/templates/[id]`, and `/templates/[id]/use`
-- Template Library, source-Project save workflow, read-only Plan detail, start-from-Template setup, exact confirmations, role restriction, and responsive states
-- The existing original Gantt remains unchanged and is the planned destination for instantiated Project Tasks
+- Persistent Project Templates at `/templates`, `/templates/new`, `/templates/[id]`, and `/templates/[id]/use`, backed by tenant-scoped CSRF-protected APIs and audit records
+- Owner/Admin can atomically snapshot hierarchy, Headers/leaves, durations, relative working-day offsets, all dependency types, colors, weekend rules, Categories, and optional exact Resources from a live company Project Plan
+- Instantiation is idempotent and transactional, requires a valid same-company Project Type and Start Date, resets progress to 0%, handles missing/inactive defaults with visible warnings, and creates ordinary independent Project Tasks in the unchanged original Gantt
+- Project Templates local checkpoint passed 24/24 unit, 133/133 scenario, 15/15 focused browser, and 152/152 complete browser checks; Railway deployment is deferred in `docs/evidence/PENDING_DEPLOYMENT_LEDGER.md`
 - Company Administration UI at `/platform/companies`, `/platform/companies/new`, and `/platform/companies/[id]`
 - Platform-only navigation, tenant-safe restricted states, company search/filtering, operational metadata, first-Owner provisioning review, and approved suspension/restore confirmations
 - Scott's approved `FUP-001`, `FUP-002`, `FUP-012`, and `FUP-015` choices are reflected in the platform boundary, lifecycle behavior, per-company role direction, and 72-hour invitation language
@@ -51,8 +52,8 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 - Live provider delivery for queued first-Owner invitations and Google synchronization workers/resume controls; Company Administration persistence, audit, authorization, suspension, and per-company pause state are implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
 - Resource persistence, fixed-Category enforcement, User linkage, Event assignment, and lifecycle enforcement; the complete UI review module is implemented
-- Project field/lifecycle persistence beyond the now-complete Project Type invariant, assignment wiring, External access enforcement across every API, Template instantiation, derived End Date, and working-day rebase; the complete UI review module is implemented
-- Project Templates persistence, APIs, live source-Project loading, and Template instantiation; the complete UI review module is implemented
+- Project field/lifecycle persistence beyond the now-complete Project Type and Template-instantiation paths, assignment wiring, External access enforcement across every API, derived End Date, and working-day rebase; the complete UI review module is implemented
+- Production deployment and live-volume verification of the locally complete Project Templates checkpoint
 - Complete weekend-aware Gantt persistence/cascade enforcement; the detailed UI review is complete and retains the original Gantt
 - Event persistence, recurrence calculations, assignments, authorization, and downstream calendar writes; the detailed Event/Calendar UI review is complete
 - Google OAuth, token protection, background synchronization, mapping/retry/reconciliation, and monitoring; the detailed Google Calendar UI review is complete

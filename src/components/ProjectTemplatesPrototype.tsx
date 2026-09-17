@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { PROJECT_TEMPLATE_UI_DATA, type ProjectTemplateUiItem } from "@/lib/project-templates-ui";
+import { authenticatedFetch } from "@/lib/client-fetch";
+import type { ProjectTemplateUiItem } from "@/lib/project-templates-ui";
+
+type ApiError = { error?: { message?: string; fields?: Record<string, string> } };
 
 function SearchIcon() {
   return (
@@ -14,8 +17,8 @@ function SearchIcon() {
   );
 }
 
-export default function ProjectTemplatesPrototype() {
-  const [items, setItems] = useState(PROJECT_TEMPLATE_UI_DATA);
+export default function ProjectTemplatesPrototype({ initialItems }: { initialItems: ProjectTemplateUiItem[] }) {
+  const [items, setItems] = useState(initialItems);
   const [query, setQuery] = useState("");
   const [renameTarget, setRenameTarget] = useState<ProjectTemplateUiItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTemplateUiItem | null>(null);
@@ -23,6 +26,8 @@ export default function ProjectTemplatesPrototype() {
   const [error, setError] = useState("");
   const [discardOpen, setDiscardOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [pageError, setPageError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -91,9 +96,9 @@ export default function ProjectTemplatesPrototype() {
     else closeRename();
   }
 
-  function saveRename(event: React.FormEvent) {
+  async function saveRename(event: React.FormEvent) {
     event.preventDefault();
-    if (!renameTarget) return;
+    if (!renameTarget || busy) return;
     const name = draftName.trim();
     if (!name) return setError("Enter a Template name.");
     if (name.length > 80) return setError("Use 80 characters or fewer.");
@@ -101,9 +106,20 @@ export default function ProjectTemplatesPrototype() {
       return setError(`A Template named “${name}” already exists.`);
     }
     const previousName = renameTarget.name;
-    setItems(current => current.map(item => item.id === renameTarget.id ? { ...item, name, updatedLabel: "Just now" } : item));
-    setToast(`${previousName} was renamed to ${name}. Existing Projects were not changed.`);
-    closeRename();
+    setBusy(true); setError(""); setPageError("");
+    try {
+      const response = await authenticatedFetch(`/api/v1/project-templates/${renameTarget.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+      const payload = await response.json() as { data?: { projectTemplate?: ProjectTemplateUiItem } } & ApiError;
+      if (!response.ok || !payload.data?.projectTemplate) {
+        setError(payload.error?.fields?.name || payload.error?.message || "The Project Template could not be renamed.");
+        return;
+      }
+      setItems(current => current.map(item => item.id === renameTarget.id ? payload.data!.projectTemplate! : item));
+      setToast(`${previousName} was renamed to ${name}. Existing Projects were not changed.`);
+      closeRename();
+    } catch {
+      setError("The Project Template could not be renamed. Check the connection and try again.");
+    } finally { setBusy(false); }
   }
 
   function openDelete(item: ProjectTemplateUiItem, event: React.MouseEvent<HTMLButtonElement>) {
@@ -116,13 +132,26 @@ export default function ProjectTemplatesPrototype() {
     restoreFocus();
   }
 
-  function confirmDelete() {
-    if (!deleteTarget) return;
-    const name = deleteTarget.name;
-    setItems(current => current.filter(item => item.id !== deleteTarget.id));
-    setDeleteTarget(null);
-    setToast(`${name} was deleted from this UI preview. Existing Projects were not changed.`);
-    restoreFocus();
+  async function confirmDelete() {
+    if (!deleteTarget || busy) return;
+    const target = deleteTarget;
+    setBusy(true); setPageError("");
+    try {
+      const response = await authenticatedFetch(`/api/v1/project-templates/${target.id}`, { method: "DELETE" });
+      const payload = await response.json() as ApiError;
+      if (!response.ok) {
+        setPageError(payload.error?.message || "The Project Template could not be deleted.");
+        setDeleteTarget(null);
+        return;
+      }
+      setItems(current => current.filter(item => item.id !== target.id));
+      setDeleteTarget(null);
+      setToast(`${target.name} was deleted. Existing Projects were not changed.`);
+      restoreFocus();
+    } catch {
+      setPageError("The Project Template could not be deleted. Check the connection and try again.");
+      setDeleteTarget(null);
+    } finally { setBusy(false); }
   }
 
   return (
@@ -143,10 +172,12 @@ export default function ProjectTemplatesPrototype() {
         </Link>
       </div>
 
-      <section aria-label="Prototype notice" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-        <p className="font-semibold">UI preview</p>
-        <p>These screens demonstrate the complete Template workflow. Changes last until refresh and never alter production Projects, Tasks, Resources, or Templates.</p>
+      <section aria-label="Template behavior" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
+        <p className="font-semibold">Company Template Library</p>
+        <p>Changes are saved for this company. Projects already created from a Template remain independent when the Template is renamed or deleted.</p>
       </section>
+
+      {pageError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{pageError}</p>}
 
       <section aria-label="Template summary" className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-sm font-medium text-slate-500">Company Templates</p><p className="mt-1 text-2xl font-bold text-slate-950">{items.length}</p></div>
@@ -167,9 +198,9 @@ export default function ProjectTemplatesPrototype() {
         {visibleItems.length === 0 ? (
           <div className="px-6 py-14 text-center">
             <div aria-hidden="true" className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-2xl">📋</div>
-            <h3 className="mt-4 font-bold text-slate-950">No matching Templates</h3>
-            <p className="mt-1 text-sm text-slate-500">No Template or source Project matches “{query.trim()}”.</p>
-            <button type="button" onClick={() => setQuery("")} className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2">Clear search</button>
+            <h3 className="mt-4 font-bold text-slate-950">{items.length ? "No matching Templates" : "No Templates saved yet"}</h3>
+            <p className="mt-1 text-sm text-slate-500">{items.length ? `No Template or source Project matches “${query.trim()}”.` : "Save a proven company Project Plan to build the reusable library."}</p>
+            {items.length ? <button type="button" onClick={() => setQuery("")} className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2">Clear search</button> : <Link href="/templates/new" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white">Save Project as Template</Link>}
           </div>
         ) : (
           <div className="grid gap-4 p-4 lg:grid-cols-2 xl:grid-cols-3">
@@ -218,7 +249,7 @@ export default function ProjectTemplatesPrototype() {
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-950">Projects previously created from this Template will keep their existing Plans and names.</div>
                 <div><label htmlFor="template-name" className="block text-sm font-bold text-slate-800">Template name <span aria-hidden="true" className="text-red-600">*</span></label><input ref={inputRef} id="template-name" value={draftName} onChange={event => { setDraftName(event.target.value); setError(""); }} aria-required="true" aria-invalid={!!error} aria-describedby={error ? "template-name-help template-name-error" : "template-name-help"} maxLength={81} className={`mt-1 min-h-11 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${error ? "border-red-500 focus:ring-red-100" : "border-slate-300 focus:border-blue-600 focus:ring-blue-200"}`} /><div className="mt-1 flex justify-between gap-3"><p id="template-name-help" className="text-xs text-slate-500">1–80 characters; unique within this company.</p><span className="text-xs text-slate-400">{draftName.length}/80</span></div>{error && <p id="template-name-error" role="alert" className="mt-2 text-sm font-semibold text-red-700">{error}</p>}</div>
               </div>
-              <div className="flex flex-col-reverse gap-2 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end"><button type="button" onClick={requestRenameClose} className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">Cancel</button><button type="submit" className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-blue-600">Save new name</button></div>
+              <div className="flex flex-col-reverse gap-2 rounded-b-2xl border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end"><button type="button" onClick={requestRenameClose} disabled={busy} className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-60">Cancel</button><button type="submit" disabled={busy} className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-60">{busy ? "Saving…" : "Save new name"}</button></div>
             </form>
           </div>
         </div>
@@ -229,7 +260,7 @@ export default function ProjectTemplatesPrototype() {
       )}
 
       {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={event => { if (event.target === event.currentTarget) closeDelete(); }}><div role="alertdialog" aria-modal="true" aria-labelledby="delete-template-title" aria-describedby="delete-template-description" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-xl text-red-700">!</div><h2 id="delete-template-title" className="mt-4 text-xl font-bold text-slate-950">Delete Template?</h2><p id="delete-template-description" className="mt-2 text-sm leading-6 text-slate-600"><strong className="text-slate-900">{deleteTarget.name}</strong> will be removed from the Template Library. Existing Projects created from it will not change. This cannot be undone.</p><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" autoFocus onClick={closeDelete} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">Cancel</button><button type="button" onClick={confirmDelete} className="min-h-11 rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-red-600">Delete Template</button></div></div></div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={event => { if (!busy && event.target === event.currentTarget) closeDelete(); }}><div role="alertdialog" aria-modal="true" aria-labelledby="delete-template-title" aria-describedby="delete-template-description" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full bg-red-100 text-xl text-red-700">!</div><h2 id="delete-template-title" className="mt-4 text-xl font-bold text-slate-950">Delete Template?</h2><p id="delete-template-description" className="mt-2 text-sm leading-6 text-slate-600"><strong className="text-slate-900">{deleteTarget.name}</strong> will be removed from the Template Library. Existing Projects created from it will not change. This cannot be undone.</p><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" autoFocus onClick={closeDelete} disabled={busy} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-60">Cancel</button><button type="button" onClick={confirmDelete} disabled={busy} className="min-h-11 rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-60">{busy ? "Deleting…" : "Delete Template"}</button></div></div></div>
       )}
     </div>
   );
