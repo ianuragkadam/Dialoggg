@@ -11,6 +11,7 @@ function addDays(iso: string, days: number) {
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (user.user_type === "external") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const resources = db.prepare(
     "SELECT id, name FROM resource WHERE company_id = ? ORDER BY name",

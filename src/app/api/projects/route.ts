@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 
 import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
+import { projectScopeSql, serializeProjectForActor, type InternalProjectDto } from "@/lib/authorization";
 import { requireCompanyRole } from "@/lib/guard";
 import { activeProjectTypeId } from "@/lib/project-types";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
 
 const PROJECT_SELECT = `
-  SELECT p.*, pt.name AS project_type
+  SELECT p.id, p.project_type_id, pt.name AS project_type, p.name, p.status,
+    p.client_name, p.client_email, p.address, p.city, p.state, p.zip, p.phone,
+    p.start_date, p.end_date, p.note, p.external_gantt_enabled
   FROM project p
   JOIN project_type pt ON pt.id = p.project_type_id AND pt.company_id = p.company_id
 `;
@@ -17,16 +20,9 @@ export async function GET() {
   const actor = await getCurrentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (actor.contextType !== "company" || !actor.companyId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const external = actor.companyRole === "external";
-  const rows = external
-    ? db.prepare(`${PROJECT_SELECT}
-        WHERE p.company_id = ? AND (
-          EXISTS (SELECT 1 FROM project_membership pm WHERE pm.project_id = p.id AND pm.company_membership_id = ?)
-          OR EXISTS (SELECT 1 FROM project_user pu WHERE pu.project_id = p.id AND pu.user_id = ?)
-        ) ORDER BY p.created_at DESC`
-      ).all(actor.companyId, actor.membershipId, actor.legacyUserId)
-    : db.prepare(`${PROJECT_SELECT} WHERE p.company_id = ? ORDER BY p.created_at DESC`).all(actor.companyId);
-  return NextResponse.json({ projects: rows }, { headers: { "cache-control": "no-store" } });
+  const scope = projectScopeSql(actor);
+  const rows = db.prepare(`${PROJECT_SELECT} WHERE ${scope.sql} ORDER BY p.created_at DESC`).all(...scope.args) as InternalProjectDto[];
+  return NextResponse.json({ projects: rows.map(row => serializeProjectForActor(actor, row)) }, { headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(request: NextRequest) {

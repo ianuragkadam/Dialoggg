@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
-import { requireAdmin } from "@/lib/guard";
+import { getCurrentActor } from "@/lib/auth";
+import { canViewProject } from "@/lib/authorization";
+import { requireCompanyRole } from "@/lib/guard";
+import { validateMutationRequest } from "@/lib/request-security";
 import { cascadeFrom, reconcileHeader } from "@/lib/gantt-cascade";
 
 const LINK_TYPE_MAP_OUT: Record<string, string> = { fs: "0", ss: "1", ff: "2", sf: "3" };
@@ -15,16 +17,16 @@ function ensureMembership(projectId: number, companyId: number | null) {
 // dhtmlx-gantt expects: { data: Task[], links: Link[] }
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const user = await getCurrentUser();
-  if (!user || !ensureMembership(Number(id), user.company_id)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const tasks = db.prepare(
-    "SELECT * FROM task WHERE project_id = ? ORDER BY sort_order, id",
-  ).all(Number(id)) as any[];
-  const links = db.prepare(
+  const actor = await getCurrentActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const projectId = Number(id);
+  if (!canViewProject(actor, projectId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const external = actor.companyRole === "external";
+  const tasks = db.prepare(`SELECT id, parent_id, name, start_date, duration, progress, color, is_header, sort_order
+    FROM task WHERE project_id = ? ${external ? "AND external_visible = 1" : ""} ORDER BY sort_order, id`).all(projectId) as any[];
+  const links = external ? [] : db.prepare(
     "SELECT * FROM task_link WHERE project_id = ?",
-  ).all(Number(id)) as any[];
+  ).all(projectId) as any[];
 
   const data = tasks.map(t => ({
     id: t.id,
@@ -50,10 +52,11 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const g = await requireAdmin();
+  const g = await requireCompanyRole(["owner", "admin"]);
   if ("error" in g) return g.error;
-  const user = g.user;
-  if (!ensureMembership(Number(id), user.company_id)) {
+  const actor = g.actor;
+  if (await validateMutationRequest(req, actor)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!ensureMembership(Number(id), actor.companyId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json();
@@ -68,12 +71,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const parent = body.parent && Number(body.parent) > 0 ? Number(body.parent) : null;
   const sortRow = db.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS s FROM task WHERE project_id = ?").get(Number(id)) as { s: number };
   const r = db.prepare(
-    `INSERT INTO task (project_id, parent_id, name, start_date, duration, progress, color, is_header, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO task (project_id, parent_id, name, start_date, duration, progress, color, is_header, sort_order, external_visible)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     Number(id), parent, body.text,
     body.start_date, duration, Number(body.progress) || 0,
-    body.color || "#5599dd", isHeader, sortRow.s,
+    body.color || "#5599dd", isHeader, sortRow.s, body.external_visible === true ? 1 : 0,
   );
   const newId = r.lastInsertRowid as number;
   if (parent) reconcileHeader(parent);

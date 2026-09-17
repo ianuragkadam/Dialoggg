@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
-import { requireAdmin } from "@/lib/guard";
+import { getCurrentActor } from "@/lib/auth";
+import { requireCompanyRole } from "@/lib/guard";
+import { validateMutationRequest } from "@/lib/request-security";
 
 function taskBelongsToCompany(projectId: number, taskId: number, companyId: number | null) {
   return !!db.prepare(`
@@ -14,9 +15,10 @@ function taskBelongsToCompany(projectId: number, taskId: number, companyId: numb
 // Get + set which resources are assigned to a task.
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
   const { id, taskId } = await params;
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (!taskBelongsToCompany(Number(id), Number(taskId), user.company_id)) {
+  const actor = await getCurrentActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (actor.companyRole === "external") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!taskBelongsToCompany(Number(id), Number(taskId), actor.companyId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const rows = db.prepare(
@@ -27,10 +29,11 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
   const { id, taskId } = await params;
-  const g = await requireAdmin();
+  const g = await requireCompanyRole(["owner", "admin"]);
   if ("error" in g) return g.error;
-  const user = g.user;
-  if (!taskBelongsToCompany(Number(id), Number(taskId), user.company_id)) {
+  const actor = g.actor;
+  if (await validateMutationRequest(req, actor)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!taskBelongsToCompany(Number(id), Number(taskId), actor.companyId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json();
@@ -38,7 +41,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   for (const resourceId of ids) {
     const resource = db.prepare(
       "SELECT id FROM resource WHERE id = ? AND company_id = ?",
-    ).get(resourceId, user.company_id);
+    ).get(resourceId, actor.companyId);
     if (!resource) return NextResponse.json({ error: "Resource not found" }, { status: 404 });
   }
 

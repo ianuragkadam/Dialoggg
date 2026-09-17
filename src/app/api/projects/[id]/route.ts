@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
+import { canViewProject, serializeProjectForActor, type InternalProjectDto } from "@/lib/authorization";
 import { requireCompanyRole } from "@/lib/guard";
 import { activeProjectTypeId } from "@/lib/project-types";
 import { validateMutationRequest } from "@/lib/request-security";
@@ -17,18 +18,16 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (actor.contextType !== "company" || !actor.companyId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const projectId = idFrom((await params).id);
-  const project = projectId ? db.prepare(`
-    SELECT p.*, pt.name AS project_type
+  if (!projectId || !canViewProject(actor, projectId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const project = db.prepare(`
+    SELECT p.id, p.project_type_id, pt.name AS project_type, p.name, p.status,
+      p.client_name, p.client_email, p.address, p.city, p.state, p.zip, p.phone,
+      p.start_date, p.end_date, p.note, p.external_gantt_enabled
     FROM project p JOIN project_type pt ON pt.id = p.project_type_id AND pt.company_id = p.company_id
     WHERE p.id = ? AND p.company_id = ?
-      AND (? <> 'external' OR EXISTS (
-        SELECT 1 FROM project_membership pm WHERE pm.project_id = p.id AND pm.company_membership_id = ?
-      ) OR EXISTS (
-        SELECT 1 FROM project_user pu WHERE pu.project_id = p.id AND pu.user_id = ?
-      ))
-  `).get(projectId, actor.companyId, actor.companyRole, actor.membershipId, actor.legacyUserId) : null;
+  `).get(projectId, actor.companyId) as InternalProjectDto | undefined;
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ project }, { headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ project: serializeProjectForActor(actor, project) }, { headers: { "cache-control": "no-store" } });
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

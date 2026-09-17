@@ -83,6 +83,12 @@ export async function POST(request: NextRequest) {
       UPDATE company_membership SET status = 'active', legacy_user_id = COALESCE(legacy_user_id, ?),
         accepted_at = CURRENT_TIMESTAMP, deactivated_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `).run(membershipLegacyUserId, invitation.membership_id);
+    if (membershipLegacyUserId) {
+      db.prepare(`
+        INSERT OR IGNORE INTO project_user (project_id, user_id)
+        SELECT project_id, ? FROM project_membership WHERE company_membership_id = ?
+      `).run(membershipLegacyUserId, invitation.membership_id);
+    }
     db.prepare(`
       UPDATE invitation_token SET revoked_at = CURRENT_TIMESTAMP
       WHERE membership_id = ? AND id <> ? AND used_at IS NULL AND revoked_at IS NULL

@@ -251,6 +251,7 @@ try {
   let adminBMembershipId;
   let platformUserId;
   let viewerAId;
+  let viewerAMembershipId;
   let projectAId;
   let projectBId;
   let projectTypeAId;
@@ -945,16 +946,16 @@ try {
 
   await check("Admin opens every User management UI route", async () => {
     const expectations = [
-      ["/users", /Company User directory/],
+      ["/users", /Manage the company directory/],
       ["/users/new", /Review invitation/],
-      ["/users/jamie-morgan", /Company membership/],
-      ["/users/jamie-morgan/projects", /Assignment impact/],
+      [`/users/${invitedMembershipId}`, /Company membership/],
+      [`/users/${invitedMembershipId}/projects`, /Employee assignment semantics/],
     ];
     for (const [route, pattern] of expectations) {
       const response = await adminA.request(route);
       assert.equal(response.status, 200, route);
       assert.match(response.text, pattern);
-      assert.match(response.text, /UI preview/);
+      assert.doesNotMatch(response.text, /UI preview/);
     }
   });
 
@@ -1216,6 +1217,7 @@ try {
       role: "employee",
     });
     viewerAId = created.legacyUserId;
+    viewerAMembershipId = created.membershipId;
     assert.ok(viewerAId);
   });
 
@@ -1299,7 +1301,28 @@ try {
   await check("Admin user list contains the Employee", async () => {
     const response = await adminA.request("/api/users");
     assert.equal(response.status, 200);
-    assert.ok(response.data.users.some(user => user.id === viewerAId && user.user_type === "employee"));
+    assert.ok(response.data.users.some(user => user.id === viewerAMembershipId && user.role === "employee"));
+  });
+
+  await check("company Admin cannot replace a global login email", async () => {
+    const response = await adminA.request(`/api/v1/memberships/${viewerAMembershipId}`, {
+      method: "PUT",
+      body: { firstName: "Viewer", lastName: "A", email: `changed-${viewerAEmail}`, role: "employee" },
+    });
+    assert.equal(response.status, 409);
+    assert.equal(response.data.error.code, "VERIFIED_EMAIL_CHANGE_REQUIRED");
+  });
+
+  await check("Project assignment changes are persistent and revoke stale User sessions", async () => {
+    const response = await adminA.request(`/api/v1/memberships/${viewerAMembershipId}/projects`, {
+      method: "PUT",
+      body: { projectIds: [projectAId] },
+    });
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.ok(response.data.data.projects.some(project => project.id === projectAId && project.assigned));
+    assert.equal((await viewerA.request("/api/me")).status, 401);
+    const relogin = await viewerA.request("/api/auth/login", { method: "POST", body: { email: viewerAEmail, password: viewerPassword } });
+    assert.equal(relogin.status, 200);
   });
 
   await check("signed-in Employee displays the approved role name", async () => {
@@ -1314,7 +1337,7 @@ try {
       method: "PUT",
       body: { role: "viewer" },
     });
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 403);
   });
 
   await check("admin creates a categorized resource", async () => {
@@ -1841,10 +1864,23 @@ try {
   });
 
   await check("admin can delete another company user and revoke their sessions", async () => {
-    const response = await adminA.request(`/api/users/${viewerAId}`, { method: "DELETE" });
+    const response = await adminA.request(`/api/users/${viewerAMembershipId}`, { method: "DELETE" });
     assert.equal(response.status, 200);
     const revoked = await viewerA.request("/api/me");
     assert.equal(revoked.status, 401);
+  });
+
+  await check("deactivated memberships cannot be silently reinvited or newly assigned", async () => {
+    const reinvite = await adminA.request("/api/v1/memberships", {
+      method: "POST",
+      body: { firstName: "Viewer", lastName: "A", email: viewerAEmail, role: "employee", projectIds: [] },
+    });
+    assert.equal(reinvite.status, 409);
+    const assign = await adminA.request(`/api/v1/memberships/${viewerAMembershipId}/projects`, {
+      method: "PUT",
+      body: { projectIds: [projectAId] },
+    });
+    assert.equal(assign.status, 403);
   });
 } finally {
   if (server && server.exitCode === null) {

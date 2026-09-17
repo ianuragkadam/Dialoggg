@@ -163,18 +163,19 @@ test("Users, Roles, Invitations, and Project Access UI covers the approved fixed
   for (const role of ["Owner", "Admin", "Employee (Internal)", "External/Client"]) {
     assert.match(`${data}\n${list}`, new RegExp(role.replace(/[()]/g, "\\$&")));
   }
-  assert.match(list, /Owner required/);
-  assert.match(list, /Existing sessions are revoked/);
+  assert.match(detail, /Owner approval required/);
+  assert.match(list, /revoke stale sessions/i);
   assert.match(invite, /72-hour/);
   assert.match(invite, /Also add as a Resource/);
   assert.match(invite, /Assign an External\/Client to at least one Project/);
   assert.match(invite, /Confirm User invitation/);
   assert.match(detail, /Change company Role\?/);
   assert.match(detail, /Cancel invitation\?/);
-  assert.match(access, /External\/Client boundary/);
-  assert.match(access, /Employee \(Internal\) behavior/);
+  assert.match(access, /External\/Client isolation/);
+  assert.match(access, /Employee assignment semantics/);
   assert.match(access, /Confirm Project access changes/);
-  assert.match(`${list}\n${invite}\n${detail}\n${access}`, /UI preview/);
+  assert.match(`${list}\n${invite}\n${detail}\n${access}`, /authenticatedFetch/);
+  assert.doesNotMatch(`${list}\n${invite}\n${detail}\n${access}`, /UI preview/);
 });
 
 test("Resources UI covers fixed Categories, one-to-one links, lifecycle, and conflict warning", async () => {

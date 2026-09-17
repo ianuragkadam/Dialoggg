@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentActor } from "@/lib/auth";
+import { canViewProject } from "@/lib/authorization";
 
 function addDays(iso: string, days: number) {
   const d = new Date(iso);
@@ -10,12 +11,11 @@ function addDays(iso: string, days: number) {
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const project = db.prepare(
-    "SELECT id FROM project WHERE id = ? AND company_id = ?",
-  ).get(Number(id), user.company_id);
-  if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const actor = await getCurrentActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const projectId = Number(id);
+  if (!canViewProject(actor, projectId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (actor.companyRole === "external") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   // Resources used on this project (or all company resources if none assigned)
   const resources = db.prepare(`
@@ -24,7 +24,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     LEFT JOIN task t ON t.id = tr.task_id AND t.project_id = ?
     WHERE r.company_id = ?
     ORDER BY r.name
-  `).all(Number(id), user.company_id) as any[];
+  `).all(projectId, actor.companyId) as any[];
 
   // Tasks with their resources
   const events = db.prepare(`
@@ -32,7 +32,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     FROM task t
     JOIN task_resource tr ON tr.task_id = t.id
     WHERE t.project_id = ? AND t.is_header = 0
-  `).all(Number(id)) as any[];
+  `).all(projectId) as any[];
 
   return NextResponse.json({
     resources: resources.map(r => ({ id: String(r.id), title: r.name })),

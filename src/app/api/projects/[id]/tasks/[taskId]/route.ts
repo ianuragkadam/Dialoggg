@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
-import { requireAdmin } from "@/lib/guard";
+import { requireCompanyRole } from "@/lib/guard";
+import { validateMutationRequest } from "@/lib/request-security";
 import { cascadeFrom, reconcileHeader } from "@/lib/gantt-cascade";
 
 function ensureMembership(projectId: number, companyId: number | null) {
@@ -11,10 +11,11 @@ function ensureMembership(projectId: number, companyId: number | null) {
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
   const { id, taskId } = await params;
-  const g = await requireAdmin();
+  const g = await requireCompanyRole(["owner", "admin"]);
   if ("error" in g) return g.error;
-  const user = g.user;
-  if (!ensureMembership(Number(id), user.company_id)) {
+  const actor = g.actor;
+  if (await validateMutationRequest(req, actor)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!ensureMembership(Number(id), actor.companyId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json();
@@ -25,7 +26,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   db.prepare(
-    `UPDATE task SET name = ?, start_date = ?, duration = ?, progress = ?, color = ?, parent_id = ?
+    `UPDATE task SET name = ?, start_date = ?, duration = ?, progress = ?, color = ?, parent_id = ?, external_visible = ?
      WHERE id = ?`,
   ).run(
     body.text ?? current.name,
@@ -34,6 +35,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     Number(body.progress ?? current.progress ?? 0),
     body.color ?? current.color,
     body.parent && Number(body.parent) > 0 ? Number(body.parent) : null,
+    body.external_visible === undefined ? current.external_visible : body.external_visible === true ? 1 : 0,
     tid,
   );
 
@@ -45,12 +47,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
   const { id, taskId } = await params;
-  const g = await requireAdmin();
+  const g = await requireCompanyRole(["owner", "admin"]);
   if ("error" in g) return g.error;
-  const user = g.user;
-  if (!ensureMembership(Number(id), user.company_id)) {
+  const actor = g.actor;
+  if (await validateMutationRequest(request, actor)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!ensureMembership(Number(id), actor.companyId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const tid = Number(taskId);

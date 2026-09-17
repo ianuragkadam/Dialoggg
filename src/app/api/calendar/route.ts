@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentActor } from "@/lib/auth";
+import { canViewProject } from "@/lib/authorization";
 
 function addDays(iso: string, days: number) {
   const d = new Date(iso);
@@ -9,13 +10,17 @@ function addDays(iso: string, days: number) {
 }
 
 export async function GET(req: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const actor = await getCurrentActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (actor.contextType !== "company" || !actor.companyId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const projectFilter = req.nextUrl.searchParams.get("project_id");
   const projectId = projectFilter ? Number(projectFilter) : null;
   if (projectFilter && (!Number.isInteger(projectId) || Number(projectId) <= 0)) {
     return NextResponse.json({ error: "Invalid project_id" }, { status: 400 });
+  }
+  if (actor.companyRole === "external" && (!projectId || !canViewProject(actor, projectId))) {
+    return NextResponse.json({ error: projectId ? "Not found" : "Company-wide calendars are unavailable." }, { status: projectId ? 404 : 403 });
   }
   const suppliedTypeIds = req.nextUrl.searchParams.getAll("project_type_id");
   const parsedTypeIds = suppliedTypeIds.map(Number);
@@ -25,11 +30,11 @@ export async function GET(req: NextRequest) {
   }
   if (projectTypeIds.length) {
     const placeholders = projectTypeIds.map(() => "?").join(",");
-    const found = db.prepare(`SELECT COUNT(*) AS count FROM project_type WHERE company_id = ? AND status = 'active' AND id IN (${placeholders})`).get(user.company_id, ...projectTypeIds) as { count: number };
+    const found = db.prepare(`SELECT COUNT(*) AS count FROM project_type WHERE company_id = ? AND status = 'active' AND id IN (${placeholders})`).get(actor.companyId, ...projectTypeIds) as { count: number };
     if (found.count !== projectTypeIds.length) return NextResponse.json({ error: "Invalid project_type_id" }, { status: 400 });
   }
   const conditions = ["p.company_id = ?"];
-  const args: Array<number | null> = [user.company_id];
+  const args: Array<number | null> = [actor.companyId];
   if (projectId) { conditions.push("p.id = ?"); args.push(projectId); }
   if (projectTypeIds.length) {
     conditions.push(`p.project_type_id IN (${projectTypeIds.map(() => "?").join(",")})`);
@@ -38,15 +43,15 @@ export async function GET(req: NextRequest) {
   const where = conditions.join(" AND ");
 
   const events = db.prepare(`
-    SELECT e.*, p.name AS project_name FROM event e
+    SELECT e.id, e.title, e.start_date, e.end_date, e.color, p.name AS project_name FROM event e
     JOIN project p ON p.id = e.project_id
-    WHERE ${where}
+    WHERE ${where} ${actor.companyRole === "external" ? "AND e.external_visible = 1" : ""}
   `).all(...args) as any[];
 
   const tasks = db.prepare(`
-    SELECT t.*, p.name AS project_name FROM task t
+    SELECT t.id, t.name, t.start_date, t.duration, t.color, p.name AS project_name FROM task t
     JOIN project p ON p.id = t.project_id
-    WHERE ${where} AND t.is_header = 0
+    WHERE ${where} AND t.is_header = 0 ${actor.companyRole === "external" ? "AND t.external_visible = 1" : ""}
   `).all(...args) as any[];
 
   return NextResponse.json({

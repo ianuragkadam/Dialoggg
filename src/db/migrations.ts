@@ -874,7 +874,126 @@ const migration006: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006];
+const migration007: Migration = {
+  version: 7,
+  name: "membership_access_invariants",
+  signature: "last-owner + membership/project/resource tenant scope + external assignment minimum + external visibility v1",
+  up(database) {
+    addColumn(database, "identity", "last_active_at", "last_active_at TEXT");
+    addColumn(database, "task", "external_visible", "external_visible INTEGER NOT NULL DEFAULT 0 CHECK (external_visible IN (0,1))");
+    addColumn(database, "event", "external_visible", "external_visible INTEGER NOT NULL DEFAULT 0 CHECK (external_visible IN (0,1))");
+
+    database.exec(`
+      CREATE INDEX IF NOT EXISTS idx_identity_status_name
+        ON identity(status, first_name, last_name, normalized_email);
+      CREATE INDEX IF NOT EXISTS idx_project_membership_project_member
+        ON project_membership(project_id, company_membership_id);
+
+      CREATE TRIGGER IF NOT EXISTS trg_membership_final_owner_update
+      BEFORE UPDATE OF role, status ON company_membership
+      WHEN OLD.role = 'owner' AND OLD.status = 'active'
+        AND (NEW.role <> 'owner' OR NEW.status <> 'active')
+        AND (SELECT COUNT(*) FROM company_membership
+             WHERE company_id = OLD.company_id AND role = 'owner' AND status = 'active') <= 1
+      BEGIN
+        SELECT RAISE(ABORT, 'FINAL_ACTIVE_OWNER_REQUIRED');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_membership_final_owner_delete
+      BEFORE DELETE ON company_membership
+      WHEN OLD.role = 'owner' AND OLD.status = 'active'
+        AND (SELECT COUNT(*) FROM company_membership
+             WHERE company_id = OLD.company_id AND role = 'owner' AND status = 'active') <= 1
+      BEGIN
+        SELECT RAISE(ABORT, 'FINAL_ACTIVE_OWNER_REQUIRED');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_project_membership_scope_insert
+      BEFORE INSERT ON project_membership
+      WHEN NOT EXISTS (
+        SELECT 1 FROM project p
+        JOIN company_membership cm ON cm.id = NEW.company_membership_id
+        WHERE p.id = NEW.project_id AND p.company_id = cm.company_id
+          AND cm.status IN ('pending','active')
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_MEMBERSHIP_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_project_membership_scope_update
+      BEFORE UPDATE OF project_id, company_membership_id ON project_membership
+      WHEN NOT EXISTS (
+        SELECT 1 FROM project p
+        JOIN company_membership cm ON cm.id = NEW.company_membership_id
+        WHERE p.id = NEW.project_id AND p.company_id = cm.company_id
+          AND cm.status IN ('pending','active')
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_MEMBERSHIP_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_external_last_project_delete
+      BEFORE DELETE ON project_membership
+      WHEN EXISTS (
+        SELECT 1 FROM company_membership cm
+        WHERE cm.id = OLD.company_membership_id
+          AND cm.role = 'external' AND cm.status = 'active'
+      )
+        AND (SELECT COUNT(*) FROM project_membership
+             WHERE company_membership_id = OLD.company_membership_id) <= 1
+      BEGIN
+        SELECT RAISE(ABORT, 'EXTERNAL_PROJECT_REQUIRED');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_external_assignment_on_activation
+      BEFORE UPDATE OF role, status ON company_membership
+      WHEN NEW.role = 'external' AND NEW.status = 'active'
+        AND NOT EXISTS (
+          SELECT 1 FROM project_membership pm
+          WHERE pm.company_membership_id = NEW.id
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'EXTERNAL_PROJECT_REQUIRED');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_external_assignment_on_invitation
+      BEFORE INSERT ON invitation_token
+      WHEN EXISTS (
+        SELECT 1 FROM company_membership cm
+        WHERE cm.id = NEW.membership_id AND cm.role = 'external'
+      )
+        AND NOT EXISTS (
+          SELECT 1 FROM project_membership pm
+          WHERE pm.company_membership_id = NEW.membership_id
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'EXTERNAL_PROJECT_REQUIRED');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_resource_membership_scope_insert
+      BEFORE INSERT ON resource
+      WHEN NEW.linked_membership_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM company_membership cm
+        WHERE cm.id = NEW.linked_membership_id AND cm.company_id = NEW.company_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'RESOURCE_MEMBERSHIP_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_resource_membership_scope_update
+      BEFORE UPDATE OF company_id, linked_membership_id ON resource
+      WHEN NEW.linked_membership_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM company_membership cm
+        WHERE cm.id = NEW.linked_membership_id AND cm.company_id = NEW.company_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'RESOURCE_MEMBERSHIP_SCOPE_INVALID');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

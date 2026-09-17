@@ -1,20 +1,22 @@
 import Link from "next/link";
 import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentActor } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { statusLabel } from "@/lib/product-language";
 
 type Project = { id: number; name: string; status: string; client_name: string | null; start_date: string };
 
 export default async function MyProjectsPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  const actor = await getCurrentActor();
+  if (!actor || actor.contextType !== "company" || !actor.companyId || !actor.membershipId) redirect("/login");
   const projects = db.prepare(`
-    SELECT DISTINCT p.* FROM project p
-    JOIN project_user pu ON pu.project_id = p.id
-    WHERE pu.user_id = ? AND p.company_id = ?
+    SELECT DISTINCT p.id, p.name, p.status,
+      CASE WHEN ? = 'external' THEN NULL ELSE p.client_name END AS client_name,
+      p.start_date FROM project p
+    JOIN project_membership pm ON pm.project_id = p.id
+    WHERE pm.company_membership_id = ? AND p.company_id = ?
     ORDER BY p.created_at DESC
-  `).all(user.id, user.company_id) as Project[];
+  `).all(actor.companyRole, actor.membershipId, actor.companyId) as Project[];
 
   return (
     <div className="space-y-4">

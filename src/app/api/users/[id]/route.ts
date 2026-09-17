@@ -1,136 +1,134 @@
-import { NextRequest, NextResponse } from "next/server";
-import db from "@/db";
+import { NextRequest } from "next/server";
+
+import { apiError, apiSuccess } from "@/lib/api-response";
 import { revokeIdentitySessions, type CompanyRole } from "@/lib/auth";
+import { canManageMembership, canSetMembershipRole } from "@/lib/authorization";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
+import {
+  getCompanyUser,
+  normalizePersonName,
+  setMembershipLifecycle,
+  targetMembership,
+  updateMembershipRole,
+  updateUserProfile,
+  validateProfile,
+} from "@/lib/user-management";
 
-type TargetMembership = {
-  id: number;
-  identity_id: number;
-  legacy_user_id: number | null;
-  role: CompanyRole;
-  status: string;
-};
-
-function targetMembership(targetId: number, companyId: number) {
-  return db.prepare(`
-    SELECT id, identity_id, legacy_user_id, role, status
-    FROM company_membership
-    WHERE company_id = ? AND (id = ? OR legacy_user_id = ?)
-    ORDER BY CASE WHEN legacy_user_id = ? THEN 0 ELSE 1 END
-    LIMIT 1
-  `).get(companyId, targetId, targetId, targetId) as TargetMembership | undefined;
+function idFrom(value: string) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
-function requestedRole(value: unknown): CompanyRole | null {
-  if (value === "owner" || value === "admin" || value === "employee" || value === "external") return value;
-  if (value === "viewer" || value === "internal") return "employee";
-  return null;
+function roleFrom(value: unknown): CompanyRole | null {
+  return value === "owner" || value === "admin" || value === "employee" || value === "external" ? value : null;
 }
 
-function legacyRole(role: CompanyRole) {
-  return role === "employee" ? "internal" : role;
+async function manager(request: NextRequest, traceId: string) {
+  const auth = await requireCompanyRole(["owner", "admin"]);
+  if ("error" in auth) return auth;
+  if (!["GET", "HEAD"].includes(request.method) && await validateMutationRequest(request, auth.actor)) {
+    return { error: apiError(403, "ACTION_FORBIDDEN", "The request could not be verified.", traceId) } as const;
+  }
+  return auth;
 }
 
-function lastOwnerWouldBeRemoved(companyId: number, target: TargetMembership, nextRole?: CompanyRole) {
-  if (target.role !== "owner" || (nextRole && nextRole === "owner")) return false;
-  const owners = db.prepare(`
-    SELECT COUNT(*) AS count FROM company_membership
-    WHERE company_id = ? AND role = 'owner' AND status = 'active'
-  `).get(companyId) as { count: number };
-  return owners.count <= 1;
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const traceId = requestId(request);
+  const auth = await manager(request, traceId);
+  if ("error" in auth) return auth.error;
+  const membershipId = idFrom((await params).id);
+  const user = membershipId ? getCompanyUser(auth.actor, membershipId) : null;
+  if (!user) return apiError(404, "RESOURCE_NOT_FOUND", "User not found.", traceId);
+  return apiSuccess({ user }, traceId);
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const traceId = requestId(request);
-  const auth = await requireCompanyRole(["owner", "admin"]);
+  const auth = await manager(request, traceId);
   if ("error" in auth) return auth.error;
   const actor = auth.actor;
-  if (await validateMutationRequest(request, actor)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: { "x-request-id": traceId } });
+  const membershipId = idFrom((await params).id);
+  const target = membershipId ? targetMembership(actor, membershipId) : null;
+  if (!target) return apiError(404, "RESOURCE_NOT_FOUND", "User not found.", traceId);
+  if (!canManageMembership(actor, { membershipId: target.id, role: target.role, status: target.status })) {
+    return apiError(403, "ACTION_FORBIDDEN", "You cannot manage this membership.", traceId);
   }
-  const { id } = await params;
-  const target = targetMembership(Number(id), actor.companyId!);
-  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404, headers: { "x-request-id": traceId } });
-  const body = await request.json().catch(() => ({}));
-  const role = requestedRole(body.role);
-  if (!role) return NextResponse.json({ error: "Invalid role" }, { status: 400, headers: { "x-request-id": traceId } });
-
-  if (target.id === actor.membershipId && role !== target.role) {
-    return NextResponse.json({ error: "You cannot change your own active role." }, { status: 400, headers: { "x-request-id": traceId } });
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return apiError(400, "VALIDATION_FAILED", "Enter valid User details.", traceId);
+  if (Object.hasOwn(body, "email") && String(body.email).trim().toLowerCase() !== target.normalized_email.toLowerCase()) {
+    return apiError(409, "VERIFIED_EMAIL_CHANGE_REQUIRED", "Login Email cannot be changed by a company administrator. The User must complete a verified email-change flow.", traceId, { email: "A verified self-service email change is required." });
   }
-  if (actor.companyRole !== "owner" && (target.role === "owner" || target.role === "admin" || role === "owner" || role === "admin")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: { "x-request-id": traceId } });
+  const firstName = normalizePersonName(body.firstName ?? target.first_name);
+  const lastName = normalizePersonName(body.lastName ?? target.last_name);
+  const phone = typeof body.phone === "string" ? body.phone.trim() : target.phone ?? "";
+  const fields = validateProfile(firstName, lastName, phone);
+  if (Object.keys(fields).length) return apiError(400, "VALIDATION_FAILED", "Check the highlighted fields.", traceId, fields);
+  const nextRole = Object.hasOwn(body, "role") ? roleFrom(body.role) : target.role;
+  if (!nextRole) return apiError(400, "VALIDATION_FAILED", "Choose a valid Role.", traceId, { role: "Choose Owner, Admin, Employee (Internal), or External/Client." });
+  if (!canSetMembershipRole(actor, { membershipId: target.id, role: target.role, status: target.status }, nextRole)) {
+    return apiError(403, "ACTION_FORBIDDEN", "Only an Owner can manage Owner or Admin Roles.", traceId);
   }
-  if (lastOwnerWouldBeRemoved(actor.companyId!, target, role)) {
-    return NextResponse.json({ error: "The final active Owner cannot be demoted." }, { status: 409, headers: { "x-request-id": traceId } });
+  if (nextRole === "external") {
+    const current = getCompanyUser(actor, target.id)!;
+    if (!current.projects.some(project => project.assigned)) {
+      return apiError(409, "EXTERNAL_PROJECT_REQUIRED", "Assign at least one Project before changing this membership to External/Client.", traceId);
+    }
   }
-
-  db.transaction(() => {
-    db.prepare("UPDATE company_membership SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(role, target.id);
-    if (target.legacy_user_id) db.prepare("UPDATE user SET user_type = ? WHERE id = ?").run(legacyRole(role), target.legacy_user_id);
-    revokeIdentitySessions(target.identity_id, "membership_role_changed");
-    recordAudit({
-      actorIdentityId: actor.identityId,
-      actorMembershipId: actor.membershipId,
-      companyId: actor.companyId,
-      requestId: traceId,
-      action: "membership.role.change",
-      targetType: "company_membership",
-      targetId: target.id,
-      result: "success",
-      metadata: { fromRole: target.role, toRole: role },
-    });
-  })();
-  return NextResponse.json({ ok: true }, { headers: { "x-request-id": traceId } });
+  try {
+    updateUserProfile(actor, target.id, { firstName, lastName, phone });
+    if (nextRole !== target.role) updateMembershipRole(actor, target.id, nextRole);
+    revokeIdentitySessions(target.identity_id, nextRole !== target.role ? "membership_role_changed" : "membership_profile_changed");
+    const user = getCompanyUser(actor, target.id)!;
+    recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: "membership.update", targetType: "company_membership", targetId: target.id, result: "success", metadata: { roleFrom: target.role, roleTo: nextRole, emailChanged: false } });
+    return apiSuccess({ user }, traceId);
+  } catch (error) {
+    if (error instanceof Error && /FINAL_ACTIVE_OWNER_REQUIRED/.test(error.message)) return apiError(409, "FINAL_OWNER_REQUIRED", "Add another active Owner before changing the final Owner.", traceId);
+    return apiError(503, "MEMBERSHIP_UPDATE_FAILED", "The User could not be updated.", traceId);
+  }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+async function lifecycle(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+  suppliedAction?: "deactivate" | "restore" | "cancel_invitation",
+) {
   const traceId = requestId(request);
-  const auth = await requireCompanyRole(["owner", "admin"]);
+  const auth = await manager(request, traceId);
   if ("error" in auth) return auth.error;
   const actor = auth.actor;
-  if (await validateMutationRequest(request, actor)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: { "x-request-id": traceId } });
+  const membershipId = idFrom((await context.params).id);
+  const target = membershipId ? targetMembership(actor, membershipId) : null;
+  if (!target) return apiError(404, "RESOURCE_NOT_FOUND", "User not found.", traceId);
+  if (!canManageMembership(actor, { membershipId: target.id, role: target.role, status: target.status })) {
+    return apiError(403, "ACTION_FORBIDDEN", "You cannot manage this membership.", traceId);
   }
-  const { id } = await params;
-  const target = targetMembership(Number(id), actor.companyId!);
-  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404, headers: { "x-request-id": traceId } });
-  if (target.id === actor.membershipId) {
-    return NextResponse.json({ error: "You cannot deactivate your own active membership." }, { status: 400, headers: { "x-request-id": traceId } });
+  const body = suppliedAction ? null : await request.json().catch(() => null) as { action?: unknown } | null;
+  const action = suppliedAction ?? body?.action;
+  if (action !== "deactivate" && action !== "restore" && action !== "cancel_invitation") {
+    return apiError(400, "VALIDATION_FAILED", "Choose a valid lifecycle action.", traceId);
   }
-  if (actor.companyRole !== "owner" && (target.role === "owner" || target.role === "admin")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: { "x-request-id": traceId } });
+  try {
+    const user = setMembershipLifecycle(actor, target.id, action);
+    if (!user) return apiError(403, "ACTION_FORBIDDEN", "You cannot manage this membership.", traceId);
+    revokeIdentitySessions(target.identity_id, `membership_${action}`);
+    recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: `membership.${action}`, targetType: "company_membership", targetId: target.id, result: "success" });
+    return apiSuccess({ user }, traceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "SELF_LIFECYCLE_FORBIDDEN") return apiError(409, "SELF_LIFECYCLE_FORBIDDEN", "You cannot deactivate your current membership.", traceId);
+    if (message.includes("FINAL_ACTIVE_OWNER_REQUIRED")) return apiError(409, "FINAL_OWNER_REQUIRED", "Add another active Owner before deactivating the final Owner.", traceId);
+    if (message === "EXTERNAL_PROJECT_REQUIRED") return apiError(409, "EXTERNAL_PROJECT_REQUIRED", "Assign at least one Project before restoring this External/Client.", traceId);
+    if (message === "MEMBERSHIP_STATE_INVALID") return apiError(409, "MEMBERSHIP_STATE_INVALID", "That action is not available for the current membership state.", traceId);
+    return apiError(503, "MEMBERSHIP_LIFECYCLE_FAILED", "The membership could not be updated.", traceId);
   }
-  if (lastOwnerWouldBeRemoved(actor.companyId!, target)) {
-    return NextResponse.json({ error: "The final active Owner cannot be deactivated." }, { status: 409, headers: { "x-request-id": traceId } });
-  }
+}
 
-  db.transaction(() => {
-    db.prepare(`
-      UPDATE company_membership
-      SET status = 'deactivated', deactivated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(target.id);
-    revokeIdentitySessions(target.identity_id, "membership_deactivated");
-    const remaining = db.prepare(`
-      SELECT COUNT(*) AS count FROM company_membership WHERE identity_id = ? AND status = 'active'
-    `).get(target.identity_id) as { count: number };
-    const platform = db.prepare("SELECT is_platform_admin FROM identity WHERE id = ?").get(target.identity_id) as { is_platform_admin: number };
-    if (remaining.count === 0 && platform.is_platform_admin !== 1) {
-      db.prepare("UPDATE identity SET status = 'deactivated', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(target.identity_id);
-    }
-    recordAudit({
-      actorIdentityId: actor.identityId,
-      actorMembershipId: actor.membershipId,
-      companyId: actor.companyId,
-      requestId: traceId,
-      action: "membership.deactivate",
-      targetType: "company_membership",
-      targetId: target.id,
-      result: "success",
-    });
-  })();
-  return NextResponse.json({ ok: true }, { headers: { "x-request-id": traceId } });
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  return lifecycle(request, context);
+}
+
+export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  return lifecycle(request, context, "deactivate");
 }

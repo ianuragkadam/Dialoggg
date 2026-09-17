@@ -6,6 +6,7 @@ import { hashPassword, type CompanyRole } from "@/lib/auth";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
 import { normalizeEmail, recordAudit, requestId } from "@/lib/security";
+import { listCompanyUsers } from "@/lib/user-management";
 
 function parseRole(value: unknown): CompanyRole | null {
   return value === "owner" || value === "admin" || value === "employee" || value === "external" ? value : null;
@@ -32,15 +33,7 @@ function parseProjectIds(value: unknown) {
 export async function GET() {
   const auth = await requireCompanyRole(["owner", "admin"]);
   if ("error" in auth) return auth.error;
-  const users = db.prepare(`
-    SELECT COALESCE(cm.legacy_user_id, cm.id) AS id, cm.id AS membership_id,
-      i.normalized_email AS email, trim(i.first_name || ' ' || i.last_name) AS full_name,
-      cm.role AS user_type, cm.status, cm.invited_at, cm.accepted_at
-    FROM company_membership cm
-    JOIN identity i ON i.id = cm.identity_id
-    WHERE cm.company_id = ?
-    ORDER BY lower(i.first_name), lower(i.last_name), lower(i.normalized_email)
-  `).all(auth.actor.companyId);
+  const users = listCompanyUsers(auth.actor);
   return NextResponse.json({ users }, { headers: { "cache-control": "no-store" } });
 }
 
@@ -97,6 +90,7 @@ export async function POST(request: NextRequest) {
         SELECT id, status FROM company_membership WHERE identity_id = ? AND company_id = ?
       `).get(identity!.id, actor.companyId) as { id: number; status: string } | undefined;
       if (existing?.status === "active") throw new Error("MEMBERSHIP_EXISTS");
+      if (existing?.status === "deactivated") throw new Error("MEMBERSHIP_RESTORE_REQUIRED");
       let membershipId: number;
       if (existing) {
         membershipId = existing.id;
@@ -120,9 +114,12 @@ export async function POST(request: NextRequest) {
         `).get(actor.companyId) as { id: number } | undefined;
         if (!employeeCategory) throw new Error("EMPLOYEE_CATEGORY_MISSING");
         db.prepare(`
-          INSERT INTO resource (company_id, category_id, name, email, linked_membership_id)
+          INSERT OR IGNORE INTO resource (company_id, category_id, name, email, linked_membership_id)
           VALUES (?, ?, ?, ?, ?)
         `).run(actor.companyId, employeeCategory.id, `${firstName} ${lastName}`, email, membershipId);
+        db.prepare(`UPDATE resource SET name = ?, email = ?
+          WHERE company_id = ? AND linked_membership_id = ?`)
+          .run(`${firstName} ${lastName}`, email, actor.companyId, membershipId);
       }
       issueInvitation({
         membershipId,
@@ -146,6 +143,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && error.message === "MEMBERSHIP_EXISTS") {
       return NextResponse.json({ error: "This person already has an active company membership." }, { status: 409 });
+    }
+    if (error instanceof Error && error.message === "MEMBERSHIP_RESTORE_REQUIRED") {
+      return NextResponse.json({ error: "Restore the deactivated membership before creating new invitations or assignments." }, { status: 409 });
     }
     recordAudit({
       requestId: traceId,

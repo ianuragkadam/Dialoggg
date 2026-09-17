@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 6/);
+    assert.match(second.stdout, /version 7/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -80,6 +80,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 4, name: "company_lifecycle_and_unique_name" },
           { version: 5, name: "project_type_invariants" },
           { version: 6, name: "project_template_invariants" },
+          { version: 7, name: "membership_access_invariants" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -102,6 +103,43 @@ test("versioned migration backfills identity/membership data and is idempotent",
       );
     } finally {
       migrated.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("membership access migration enforces Owner, tenant, linked Resource, and External assignment invariants", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-membership-invariants-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const companyOne = Number(database.prepare("INSERT INTO company (name) VALUES ('Access One')").run().lastInsertRowid);
+      const companyTwo = Number(database.prepare("INSERT INTO company (name) VALUES ('Access Two')").run().lastInsertRowid);
+      const typeOne = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type One', 'type one')").run(companyOne).lastInsertRowid);
+      const typeTwo = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type Two', 'type two')").run(companyTwo).lastInsertRowid);
+      const projectOne = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Project One', '2026-09-17')").run(companyOne, typeOne).lastInsertRowid);
+      const projectTwo = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Project Two', '2026-09-17')").run(companyTwo, typeTwo).lastInsertRowid);
+      const ownerIdentity = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('owner@one.test', 'hash', 'Owner', 'active')").run().lastInsertRowid);
+      const ownerMembership = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'owner', 'active')").run(ownerIdentity, companyOne).lastInsertRowid);
+      const externalIdentity = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('external@one.test', 'hash', 'External', 'active')").run().lastInsertRowid);
+      const externalMembership = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'external', 'pending')").run(externalIdentity, companyOne).lastInsertRowid);
+
+      assert.throws(() => database.prepare("UPDATE company_membership SET role = 'admin' WHERE id = ?").run(ownerMembership), /FINAL_ACTIVE_OWNER_REQUIRED/);
+      assert.throws(() => database.prepare("UPDATE company_membership SET status = 'deactivated' WHERE id = ?").run(ownerMembership), /FINAL_ACTIVE_OWNER_REQUIRED/);
+      assert.throws(() => database.prepare("INSERT INTO project_membership (project_id, company_membership_id) VALUES (?, ?)").run(projectTwo, externalMembership), /PROJECT_MEMBERSHIP_SCOPE_INVALID/);
+      assert.throws(() => database.prepare("INSERT INTO invitation_token (membership_id, token_hash, expires_at) VALUES (?, 'missing-project', datetime('now', '+1 day'))").run(externalMembership), /EXTERNAL_PROJECT_REQUIRED/);
+      database.prepare("INSERT INTO project_membership (project_id, company_membership_id) VALUES (?, ?)").run(projectOne, externalMembership);
+      database.prepare("UPDATE company_membership SET status = 'active' WHERE id = ?").run(externalMembership);
+      assert.throws(() => database.prepare("DELETE FROM project_membership WHERE company_membership_id = ?").run(externalMembership), /EXTERNAL_PROJECT_REQUIRED/);
+      const category = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(companyTwo).lastInsertRowid);
+      assert.throws(() => database.prepare("INSERT INTO resource (company_id, category_id, name, linked_membership_id) VALUES (?, ?, 'Cross linked', ?)").run(companyTwo, category, externalMembership), /RESOURCE_MEMBERSHIP_SCOPE_INVALID/);
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+      database.close();
     }
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });

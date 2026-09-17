@@ -245,6 +245,7 @@ export function actorForSessionToken(token: string): Actor | null {
 
   if (Date.now() - Date.parse(row.last_seen_at) > 15 * 60_000) {
     db.prepare("UPDATE auth_session SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?").run(row.session_id);
+    db.prepare("UPDATE identity SET last_active_at = CURRENT_TIMESTAMP WHERE id = ?").run(row.identity_id);
   }
 
   return {

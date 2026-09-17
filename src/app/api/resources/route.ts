@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/guard";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (user.user_type === "external") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const categories = db.prepare(
     "SELECT id, name FROM resource_category WHERE company_id = ? ORDER BY name",
