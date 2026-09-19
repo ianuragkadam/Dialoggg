@@ -36,7 +36,9 @@ Last verified: September 19, 2026
 - Owner/Admin manage, Employee reads, and External/Client is denied across the server pages and v1 APIs; legacy Resource/User paths use the same fixed-Category and normalization rules
 - Verification passed 28/28 unit/foundation/migration checks, 136/136 scenarios, 14/14 focused Resource browser checks, and 155/155 browser checks across all eleven suites; production/full dependency audits report zero vulnerabilities
 - Projects, role-based Project views, and lifecycle UI at `/projects`, `/projects/new`, `/projects/[id]`, and `/projects/[id]/edit`
-- Complete required-field review, derived End Date rule, Template/blank Plan choice, User assignments, Start Date rebase, Complete/Reopen, Archive/Restore, Owner-only permanent deletion, Employee visibility, and External/Client safe view
+- Projects and lifecycle are now persistent locally: complete required fields, derived End Date rule, real Template/blank Plan choice, tenant-safe User assignments, optimistic versions, explicit date-only/shift-unfinished Start Date handling, Complete/Reopen, Archive/Restore, durable audits, and Owner-only exact-name deletion
+- Migration 10 enforces approved lifecycle transitions and Archive-before-delete at the database boundary; Employee remains company-wide read-only and External/Client remains assigned-only with safe serialization
+- Verification passed 29/29 unit/foundation/migration checks, 142/142 scenarios, 16/16 focused Projects browser checks, and 156/156 browser checks across all eleven suites; production/full dependency audits report zero vulnerabilities
 - The existing original Gantt remains the internal Project Plan; automated and human-click QA fixed External navigation leakage and direct Completed/Archived edit access
 - Project Plan/Gantt workflow UI above the unchanged original Gantt, including complete Task fields, Header/root rules, all dependency types, multiple predecessors, lag, working-day examples, cascade/drag behavior, and safe deletion
 - Project, Master, and Resource Calendar UI with Day/Week/Month states, Task/Event distinction, full Event editor, recurrence/end/scope choices, Event drag confirmation, conflicts, history, and Project Plan routing
@@ -54,7 +56,7 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 - Live provider delivery for queued first-Owner invitations and Google synchronization workers/resume controls; Company Administration persistence, audit, authorization, suspension, and per-company pause state are implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
 - Production deployment and live-volume verification of the locally complete Resource Management schema-v9 checkpoint; broader Event editing/recurrence and Google delivery remain separate checkpoints
-- Project field/lifecycle persistence beyond the now-complete Project Type and Template-instantiation paths, assignment wiring, External access enforcement across every API, derived End Date, and working-day rebase; the complete UI review module is implemented
+- Production deployment and live-volume verification of the locally complete Projects/lifecycle schema-v10 checkpoint; the later complete Gantt cascade engine remains a separate dependency checkpoint
 - Production deployment and live-volume verification of the locally complete Project Templates checkpoint
 - Complete weekend-aware Gantt persistence/cascade enforcement; the detailed UI review is complete and retains the original Gantt
 - Event persistence, recurrence calculations, assignments, authorization, and downstream calendar writes; the detailed Event/Calendar UI review is complete

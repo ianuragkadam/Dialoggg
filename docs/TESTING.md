@@ -86,7 +86,7 @@ The script creates isolated local Admin, Employee, External, and second-company 
 
 ## Projects UI Playwright check
 
-The Projects UI has a focused browser script at `scripts/test-projects-ui.mjs`. It verifies directory filters, all required setup fields, Template/blank Plan choice, exact User/detail review, keyboard Escape, non-persistent completion, original Project Plan presence, every lifecycle confirmation, Start Date date-only/shift choice, completed-history protection, Owner-only permanent-delete friction, Completed/Archived direct-edit guards, Employee company visibility, External assigned-only/safe-view boundaries, signed-out routing, and phone-width overflow.
+The Projects UI has a focused browser script at `scripts/test-projects-ui.mjs`. It verifies directory filters, all required setup fields, real Template and User choices, keyboard Escape, persisted create/reload, original Project Plan presence, persisted complete/reopen/archive/restore, date-only Task preservation, unfinished-Task working-day shifts, completed-history protection, Owner-only exact-name deletion, Completed/Archived direct-edit guards, Employee company visibility, External assigned-only/safe-view boundaries, signed-out routing, and phone-width overflow.
 
 With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
 
@@ -94,4 +94,4 @@ With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
 node scripts/test-projects-ui.mjs
 ```
 
-The script creates isolated local Admin, Owner, Employee, and External/Client identities plus temporary Projects/Tasks, then removes its database. It never mutates production Projects, Tasks, calendars, Google items, Microsoft links, Users, or assignments.
+The script creates isolated local Admin, Owner, Employee, and External/Client identities plus temporary Projects/Tasks, performs real writes only in that temporary database, and removes it afterward. It never mutates production Projects, Tasks, calendars, Google items, Microsoft links, Users, or assignments. The September 19 checkpoint passed 16/16 focused checks and 156/156 checks across all eleven UI suites.

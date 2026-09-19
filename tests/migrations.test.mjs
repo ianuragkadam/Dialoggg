@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 9/);
+    assert.match(second.stdout, /version 10/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -83,6 +83,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 7, name: "membership_access_invariants" },
           { version: 8, name: "secure_integration_setup_workshop" },
           { version: 9, name: "resource_management_invariants" },
+          { version: 10, name: "project_lifecycle_invariants" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -273,6 +274,42 @@ test("Resource migration enforces fixed categories, tenant scope, one-to-one Use
       assert.equal(database.prepare("SELECT COUNT(*) AS count FROM event_resource WHERE resource_id = ?").get(resourceOne).count, 1);
       assert.throws(() => database.prepare("INSERT INTO task_resource (task_id, resource_id) VALUES (?, ?)").run(taskOneLater, resourceOne), /TASK_RESOURCE_SCOPE_OR_STATUS_INVALID/);
       assert.throws(() => database.prepare("INSERT INTO event_resource (series_id, resource_id) VALUES (?, ?)").run(eventOne, resourceTwo), /EVENT_RESOURCE_SCOPE_OR_STATUS_INVALID/);
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+      database.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Project lifecycle migration enforces approved transitions and archived-only deletion", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-lifecycle-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const companyId = Number(database.prepare("INSERT INTO company (name) VALUES ('Lifecycle Company')").run().lastInsertRowid);
+      const projectTypeId = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Lifecycle', 'lifecycle')").run(companyId).lastInsertRowid);
+      assert.throws(
+        () => database.prepare("INSERT INTO project (company_id, project_type_id, name, status, start_date) VALUES (?, ?, 'Invalid initial state', 'completed', '2026-09-19')").run(companyId, projectTypeId),
+        /PROJECT_LIFECYCLE_INVALID/,
+      );
+      const projectId = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Lifecycle Project', '2026-09-19')").run(companyId, projectTypeId).lastInsertRowid);
+      assert.throws(() => database.prepare("DELETE FROM project WHERE id = ?").run(projectId), /PROJECT_ARCHIVE_REQUIRED/);
+      database.prepare("UPDATE project SET status = 'completed' WHERE id = ?").run(projectId);
+      database.prepare("UPDATE project SET status = 'active' WHERE id = ?").run(projectId);
+      database.prepare("UPDATE project SET status = 'archived' WHERE id = ?").run(projectId);
+      assert.throws(() => database.prepare("UPDATE project SET status = 'completed' WHERE id = ?").run(projectId), /PROJECT_LIFECYCLE_INVALID/);
+      database.prepare("UPDATE project SET status = 'active' WHERE id = ?").run(projectId);
+      database.prepare("UPDATE project SET status = 'completed' WHERE id = ?").run(projectId);
+      database.prepare("UPDATE project SET status = 'archived' WHERE id = ?").run(projectId);
+      database.prepare("INSERT INTO audit_event(project_id,action,target_type,target_id,result) VALUES(?,'project.archive','project',?,'success')").run(projectId, String(projectId));
+      assert.equal(database.prepare("DELETE FROM project WHERE id = ?").run(projectId).changes, 1);
+      assert.deepEqual(database.prepare("SELECT project_id,target_id FROM audit_event WHERE action='project.archive'").get(), { project_id: null, target_id: String(projectId) });
+      assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_project_company_status_updated'").get());
     } finally {
       assert.equal(database.pragma("foreign_key_check").length, 0);
       database.close();

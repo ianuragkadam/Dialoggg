@@ -57,4 +57,4 @@ npm run db:backup -- data/backups/pre-change.db
 npm run db:migrate
 ```
 
-Exercise `npm run db:restore -- <backup.db> --confirm` only against an explicitly isolated data directory during routine verification. Production restore is an incident/change-controlled operation. Schema v9 adds the Resource Management invariants documented in [Resource Management checkpoint evidence](evidence/RESOURCE_MANAGEMENT_CHECKPOINT_2026-09-19.md).
+Exercise `npm run db:restore -- <backup.db> --confirm` only against an explicitly isolated data directory during routine verification. Production restore is an incident/change-controlled operation. Schema v9 adds the [Resource Management invariants](evidence/RESOURCE_MANAGEMENT_CHECKPOINT_2026-09-19.md). Schema v10 adds the [Project lifecycle invariants](evidence/PROJECTS_LIFECYCLE_CHECKPOINT_2026-09-19.md), including durable audit history through permanent deletion.

@@ -225,6 +225,7 @@ try {
   const anonymous = new Client(baseUrl);
   const adminA = new Client(baseUrl);
   const adminB = new Client(baseUrl);
+  const ownerA = new Client(baseUrl);
   const platform = new Client(baseUrl);
   const viewerA = new Client(baseUrl);
   const oldPasswordClient = new Client(baseUrl);
@@ -234,11 +235,13 @@ try {
   const suffix = Date.now().toString(36);
   const adminAEmail = `admin-a-${suffix}@example.test`;
   const adminBEmail = `admin-b-${suffix}@example.test`;
+  const ownerAEmail = `owner-a-${suffix}@example.test`;
   const platformEmail = `platform-${suffix}@example.test`;
   const viewerAEmail = `viewer-a-${suffix}@example.test`;
   const passwordA = "Scenario-A-Password-1!";
   const changedPasswordA = "Scenario-A-Password-2!";
   const passwordB = "Scenario-B-Password-1!";
+  const ownerPassword = "Scenario-Owner-Password-1!";
   const platformPassword = "Scenario-Platform-Password-1!";
   const viewerPassword = "Scenario-Viewer-Password-1!";
 
@@ -249,11 +252,13 @@ try {
   let adminAMembershipId;
   let adminBId;
   let adminBMembershipId;
+  let ownerAMembershipId;
   let platformUserId;
   let viewerAId;
   let viewerAMembershipId;
   let projectAId;
   let projectBId;
+  let lifecycleProjectId;
   let projectTypeAId;
   let projectTypeASecondaryId;
   let projectTypeBId;
@@ -452,6 +457,14 @@ try {
     assert.equal(response.data.user.id, adminAId);
     assert.equal(response.data.user.company_id, companyAId);
     assert.equal(response.data.user.user_type, "admin");
+  });
+
+  await check("company Owner can create a separate authorized session", async () => {
+    const created = bootstrapAccount(dataDirectory, { companyId: companyAId, fullName: "Owner A", email: ownerAEmail, password: ownerPassword, role: "owner" });
+    ownerAMembershipId = created.membershipId;
+    const response = await ownerA.request("/api/auth/login", { method: "POST", body: { email: ownerAEmail, password: ownerPassword } });
+    assert.equal(response.status, 200, JSON.stringify(response.data));
+    assert.ok(ownerAMembershipId);
   });
 
   await check("global identity email is unique case-insensitively", async () => {
@@ -1112,6 +1125,11 @@ try {
         project_type_id: managedProjectTypeAId,
         client_name: "Client A",
         client_email: "client-a@example.test",
+        address: "100 Scenario Way",
+        city: "Reading",
+        state: "PA",
+        zip: "19601",
+        phone: "717-555-0100",
         start_date: "2026-01-01",
         end_date: "2026-02-01",
         note: "Automated isolated scenario",
@@ -1125,11 +1143,75 @@ try {
   await check("company B admin creates its own project", async () => {
     const response = await adminB.request("/api/projects", {
       method: "POST",
-      body: { name: "Scenario Project B", project_type_id: projectTypeBId, start_date: "2026-03-01" },
+      body: { name: "Scenario Project B", project_type_id: projectTypeBId, client_name: "Client B", client_email: "client-b@example.test", address: "200 Scenario Way", city: "Lancaster", state: "PA", zip: "17601", phone: "717-555-0200", start_date: "2026-03-01" },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
     projectBId = response.data.id;
     assert.ok(projectBId);
+  });
+
+  await check("Project v1 create enforces CSRF and every required field", async () => {
+    const cookie = [...adminA.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
+    const missingCsrf = await fetch(`${baseUrl}/api/v1/projects`, { method: "POST", headers: { "content-type": "application/json", cookie, origin: baseUrl }, body: "{}" });
+    assert.equal(missingCsrf.status, 403);
+    const incomplete = await adminA.request("/api/v1/projects", { method: "POST", body: { name: "Incomplete" } });
+    assert.equal(incomplete.status, 400);
+    assert.equal(incomplete.data.error.code, "VALIDATION_FAILED");
+    assert.ok(incomplete.data.error.fields.clientName);
+    assert.ok(incomplete.data.error.fields.startDate);
+  });
+
+  await check("Project v1 create persists tenant-safe assignments", async () => {
+    const crossTenant = await adminA.request("/api/v1/projects", { method: "POST", body: { name: "Cross Assignment", projectTypeId: projectTypeAId, clientName: "Cross", clientEmail: "cross@example.test", address: "1 Cross Way", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0300", startDate: "2026-04-01", assignmentIds: [adminBMembershipId] } });
+    assert.equal(crossTenant.status, 400);
+    assert.ok(crossTenant.data.error.fields.assignments);
+    const created = await adminA.request("/api/v1/projects", { method: "POST", body: { name: "Lifecycle Project", projectTypeId: projectTypeAId, clientName: "Lifecycle Client", clientEmail: "lifecycle@example.test", address: "300 Lifecycle Lane", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0301", startDate: "2026-04-06", note: "Lifecycle evidence", assignmentIds: [adminAMembershipId, ownerAMembershipId] } });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    lifecycleProjectId = created.data.data.project.id;
+    assert.equal(created.data.data.project.status, "active");
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try { assert.equal(database.prepare("SELECT COUNT(1) count FROM project_membership WHERE project_id = ?").get(lifecycleProjectId).count, 2); } finally { database.close(); }
+  });
+
+  await check("Project v1 update uses optimistic versions and persists fields", async () => {
+    const current = await adminA.request(`/api/projects/${lifecycleProjectId}`);
+    const body = { name: "Lifecycle Project Updated", projectTypeId: projectTypeAId, clientName: "Lifecycle Client", clientEmail: "lifecycle@example.test", address: "301 Lifecycle Lane", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0301", startDate: "2026-04-06", note: "Updated lifecycle evidence", assignmentIds: [adminAMembershipId, ownerAMembershipId], version: current.data.project.version, rebaseMode: "date-only" };
+    const updated = await adminA.request(`/api/v1/projects/${lifecycleProjectId}`, { method: "PUT", body });
+    assert.equal(updated.status, 200, JSON.stringify(updated.data));
+    assert.equal(updated.data.data.project.address, "301 Lifecycle Lane");
+    const stale = await adminA.request(`/api/v1/projects/${lifecycleProjectId}`, { method: "PUT", body });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.data.error.code, "PROJECT_VERSION_CONFLICT");
+  });
+
+  await check("Project lifecycle transitions persist and reject stale or cross-tenant changes", async () => {
+    let current = (await adminA.request(`/api/projects/${lifecycleProjectId}`)).data.project;
+    const crossTenant = await adminB.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action: "archive", version: current.version } });
+    assert.equal(crossTenant.status, 404);
+    for (const [action, expected] of [["complete", "completed"], ["reopen", "active"], ["archive", "archived"], ["restore", "active"], ["archive", "archived"]]) {
+      const changed = await adminA.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action, version: current.version } });
+      assert.equal(changed.status, 200, `${action}: ${JSON.stringify(changed.data)}`);
+      current = changed.data.data.project;
+      assert.equal(current.status, expected);
+      if (action === "complete") {
+        const stale = await adminA.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action: "complete", version: current.version } });
+        assert.equal(stale.status, 409);
+      }
+    }
+  });
+
+  await check("only Owner can permanently delete the exact named archived Project", async () => {
+    const adminDelete = await adminA.request(`/api/v1/projects/${lifecycleProjectId}`, { method: "DELETE", body: { name: "Lifecycle Project Updated", acknowledged: true } });
+    assert.equal(adminDelete.status, 403);
+    const wrongName = await ownerA.request(`/api/v1/projects/${lifecycleProjectId}`, { method: "DELETE", body: { name: "Wrong name", acknowledged: true } });
+    assert.equal(wrongName.status, 409);
+    const deleted = await ownerA.request(`/api/v1/projects/${lifecycleProjectId}`, { method: "DELETE", body: { name: "Lifecycle Project Updated", acknowledged: true } });
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.data));
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(database.prepare("SELECT COUNT(1) count FROM project WHERE id = ?").get(lifecycleProjectId).count, 0);
+      assert.ok(database.prepare("SELECT COUNT(1) count FROM audit_event WHERE target_id = ? AND action = 'project.delete'").get(String(lifecycleProjectId)).count >= 1);
+    } finally { database.close(); }
   });
 
   await check("project lists are isolated by company", async () => {
@@ -1163,9 +1245,10 @@ try {
   });
 
   await check("Owner or Admin can reassign a Project and then delete the old Project Type", async () => {
-    const updated = await adminA.request(`/api/projects/${projectAId}`, {
+    const current = await adminA.request(`/api/projects/${projectAId}`);
+    const updated = await adminA.request(`/api/v1/projects/${projectAId}`, {
       method: "PUT",
-      body: { name: "Scenario Project A", project_type_id: projectTypeAId, start_date: "2026-01-01", status: "active" },
+      body: { name: "Scenario Project A", projectTypeId: projectTypeAId, clientName: "Client A", clientEmail: "client-a@example.test", address: "100 Scenario Way", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0100", startDate: "2026-01-01", note: "Automated isolated scenario", assignmentIds: [adminAMembershipId], version: current.data.project.version, rebaseMode: "date-only" },
     });
     assert.equal(updated.status, 200, JSON.stringify(updated.data));
     const project = await adminA.request(`/api/projects/${projectAId}`);
@@ -1198,7 +1281,7 @@ try {
   });
 
   await check("Admin opens every Project UI route", async () => {
-    for (const [route, pattern] of [["/projects", /Project directory/], ["/projects/new", /Project Plan starting point/], [`/projects/${projectAId}`, /Owner\/Admin UI preview/], [`/projects/${projectAId}/edit`, /How should the schedule respond|Edit Scenario Project A/]]) {
+    for (const [route, pattern] of [["/projects", /Project directory/], ["/projects/new", /Project Plan starting point/], [`/projects/${projectAId}`, /Owner\/Admin Project management/], [`/projects/${projectAId}/edit`, /How should the schedule respond|Edit Scenario Project A/]]) {
       const response = await adminA.request(route);
       assert.equal(response.status, 200, route);
       assert.match(response.text, pattern, route);
@@ -1289,11 +1372,13 @@ try {
   });
 
   await check("viewer cannot create projects", async () => {
-    const response = await viewerA.request("/api/projects", {
+    const response = await viewerA.request("/api/v1/projects", {
       method: "POST",
-      body: { name: "Forbidden Project", start_date: "2026-01-01" },
+      body: { name: "Forbidden Project", projectTypeId: projectTypeAId, clientName: "Forbidden", clientEmail: "forbidden@example.test", address: "1 Denied Way", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0999", startDate: "2026-01-01" },
     });
     assert.equal(response.status, 403);
+    const lifecycle = await viewerA.request(`/api/v1/projects/${projectAId}/lifecycle`, { method: "PATCH", body: { action: "archive", version: 1 } });
+    assert.equal(lifecycle.status, 403);
   });
 
   await check("viewer cannot list user administration data", async () => {
@@ -1857,10 +1942,11 @@ try {
   });
 
   await check("cross-company project update cannot alter data", async () => {
-    await adminB.request(`/api/projects/${projectAId}`, {
+    const attempt = await adminB.request(`/api/v1/projects/${projectAId}`, {
       method: "PUT",
-      body: { name: "Cross-tenant project overwrite", project_type_id: projectTypeBId, start_date: "2027-01-01" },
+      body: { name: "Cross-tenant project overwrite", projectTypeId: projectTypeBId, clientName: "Cross Tenant", clientEmail: "cross@example.test", address: "1 Escape Lane", city: "Nowhere", state: "PA", zip: "00000", phone: "000-000-0000", startDate: "2027-01-01", assignmentIds: [adminBMembershipId], version: 1, rebaseMode: "date-only" },
     });
+    assert.equal(attempt.status, 404);
     const response = await adminA.request(`/api/projects/${projectAId}`);
     assert.equal(response.status, 200);
     assert.equal(response.data.project.name, "Scenario Project A");

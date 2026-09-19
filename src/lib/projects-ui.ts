@@ -20,13 +20,12 @@ export type ProjectUiRecord = {
   derived_end_date?: string | null;
   task_count?: number;
   completed_task_count?: number;
+  version: number;
+  assignments?: ProjectUserOptionUi[];
 };
 
-export const PROJECT_ASSIGNMENT_USERS = [
-  { id: "jamie-morgan", name: "Jamie Morgan", role: "Employee (Internal)" },
-  { id: "priya-shah", name: "Priya Shah", role: "Employee (Internal)" },
-  { id: "alex-rivera", name: "Alex Rivera", role: "External/Client" },
-] as const;
+export type ProjectUserOptionUi = { id: number; name: string; email: string; role: "owner" | "admin" | "employee" | "external"; assigned: boolean };
+export type ProjectTemplateOptionUi = { id: number; name: string };
 
 export function projectTypeFor(project: ProjectUiRecord): string {
   return project.project_type || "Unavailable";

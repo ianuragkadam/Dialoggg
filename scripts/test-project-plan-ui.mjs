@@ -26,7 +26,7 @@ try {
 
   const registration = await login(baseUrl, adminEmail, password);
   const adminCookie = sessionCookie(registration); const auth = authenticatedHeaders(registration, baseUrl);
-  const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Reading Residence Court", project_type_id: admin.defaultProjectTypeId, start_date: "2026-09-15" }) });
+  const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Reading Residence Court", project_type_id: admin.defaultProjectTypeId, client_name: "Morgan Family", client_email: "client@example.test", address: "1499 Reading Road", city: "Mohnton", state: "PA", zip: "19540", phone: "717-555-0100", start_date: "2026-09-15" }) });
   assert.equal(projectResult.response.status, 200); const projectId = projectResult.data.id;
   for (const task of [{ text: "Concrete base", start_date: "2026-09-16", duration: 2 }, { text: "Court surfacing", start_date: "2026-09-18", duration: 3 }]) {
     const taskResult = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { method: "POST", headers: auth, body: JSON.stringify(task) }); assert.equal(taskResult.response.status, 200);

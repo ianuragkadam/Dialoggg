@@ -12,12 +12,12 @@ export default async function ProjectsPage() {
   const external = actor.companyRole === "external";
   const canManage = actor.companyRole === "owner" || actor.companyRole === "admin";
   const baseSelect = external
-    ? `SELECT p.id, p.project_type_id, p.name, p.status, NULL AS client_name, NULL AS client_email,
+    ? `SELECT p.id, p.project_type_id, p.name, p.status, p.version, NULL AS client_name, NULL AS client_email,
         NULL AS address, NULL AS city, NULL AS state, NULL AS zip, NULL AS phone,
         p.start_date, p.end_date, NULL AS note, pt.name AS project_type,
         (SELECT MAX(date(t.start_date, '+' || MAX(t.duration - 1, 0) || ' day')) FROM task t WHERE t.project_id = p.id AND t.is_header = 0 AND t.external_visible = 1) AS derived_end_date
        FROM project p JOIN project_type pt ON pt.id = p.project_type_id AND pt.company_id = p.company_id`
-    : `SELECT p.id, p.project_type_id, p.name, p.status, p.client_name, p.client_email,
+    : `SELECT p.id, p.project_type_id, p.name, p.status, p.version, p.client_name, p.client_email,
         p.address, p.city, p.state, p.zip, p.phone, p.start_date, p.end_date, p.note,
         pt.name AS project_type,
         (SELECT MAX(date(t.start_date, '+' || MAX(t.duration - 1, 0) || ' day')) FROM task t WHERE t.project_id = p.id AND t.is_header = 0) AS derived_end_date

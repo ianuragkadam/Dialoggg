@@ -211,7 +211,8 @@ test("Projects UI covers complete fields, lifecycle, rebase, and External bounda
   assert.match(detail, /Archive Project\?/);
   assert.match(detail, /Permanently delete Project\?/);
   assert.match(detail, /Simple read-only Gantt/);
-  assert.match(`${list}\n${form}\n${detail}`, /UI preview/);
+  assert.match(`${form}\n${detail}`, /authenticatedFetch/);
+  assert.doesNotMatch(`${list}\n${form}\n${detail}`, /UI preview|no production data changed|non-persistent/);
 });
 
 test("Project Plan workflow UI covers approved scheduling rules without replacing the original Gantt", async () => {

@@ -14,6 +14,7 @@ Apply checkpoints only in this dependency order:
 | 4 | Users, Roles, Invitations, and Project Access (`3638b03`) | v7 `membership_access_invariants` | 25/25 unit, 136/136 scenarios, 142/142 browser, TypeScript/build/package; schema-v6 rollback copy verified | Pending; requires lead-controlled deployment and live role smoke test |
 | 5 | Secure Integration Setup Workshop (checkpoint commit containing this row) | v8 `secure_integration_setup_workshop` | 27/27 unit, 136/136 scenarios, 158/158 browser, TypeScript/build/standalone/package audits; schema-v7 rollback copy verified | Pending behind order 4; requires controlled deployment, access-boundary smoke test, then private link issuance |
 | 6 | Resource Management (checkpoint commit containing this row) | v9 `resource_management_invariants` | 28/28 unit, 136/136 scenarios, 155/155 browser, TypeScript/build/standalone, production/full audits; schema-v8 rollback and isolated restore verified | Pending behind orders 4 and 5; requires controlled deployment plus live role, persistence, assignment, and lifecycle smoke tests |
+| 7 | Projects and Project lifecycle (checkpoint commit containing this row) | v10 `project_lifecycle_invariants` | 29/29 unit, 142/142 scenarios, 156/156 browser, TypeScript/build/standalone, production/full audits; schema-v9 rollback and isolated restore verified | Pending behind orders 4–6; requires controlled deployment plus live create/edit/rebase/lifecycle/delete, audit, and role smoke tests |
 
 For each future deployment:
 

@@ -84,6 +84,7 @@ export type InternalProjectDto = {
   project_type: string;
   name: string;
   status: string;
+  version: number;
   client_name: string | null;
   client_email: string | null;
   address: string | null;

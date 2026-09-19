@@ -1330,7 +1330,88 @@ const migration009: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009];
+const migration010: Migration = {
+  version: 10,
+  name: "project_lifecycle_invariants",
+  signature: "project lifecycle transitions + archived-only deletion + durable audit history + tenant-safe assignment cleanup v2",
+  up(database) {
+    addColumn(database, "project", "updated_at", "updated_at TEXT");
+    database.exec(`
+      UPDATE project SET status = CASE WHEN status IN ('active','completed','archived') THEN status ELSE 'active' END,
+        completed_at = CASE WHEN status = 'completed' THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE NULL END,
+        archived_at = CASE WHEN status = 'archived' THEN COALESCE(archived_at, CURRENT_TIMESTAMP) ELSE NULL END,
+        updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP);
+
+      DELETE FROM project_membership
+      WHERE NOT EXISTS (
+        SELECT 1 FROM project p JOIN company_membership cm ON cm.id = project_membership.company_membership_id
+        WHERE p.id = project_membership.project_id AND p.company_id = cm.company_id
+      );
+
+      DROP INDEX IF EXISTS idx_audit_company_time;
+      ALTER TABLE audit_event RENAME TO audit_event_project_lifecycle_old;
+      CREATE TABLE audit_event (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        request_id TEXT,
+        actor_identity_id INTEGER,
+        actor_membership_id INTEGER,
+        company_id INTEGER,
+        project_id INTEGER,
+        action TEXT NOT NULL,
+        target_type TEXT,
+        target_id TEXT,
+        result TEXT NOT NULL CHECK (result IN ('success','denied','failure')),
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        FOREIGN KEY (actor_identity_id) REFERENCES identity(id),
+        FOREIGN KEY (actor_membership_id) REFERENCES company_membership(id),
+        FOREIGN KEY (company_id) REFERENCES company(id),
+        FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE SET NULL
+      );
+      INSERT INTO audit_event (
+        id, occurred_at, request_id, actor_identity_id, actor_membership_id, company_id,
+        project_id, action, target_type, target_id, result, metadata_json
+      )
+      SELECT id, occurred_at, request_id, actor_identity_id, actor_membership_id, company_id,
+        project_id, action, target_type, target_id, result, metadata_json
+      FROM audit_event_project_lifecycle_old;
+      DROP TABLE audit_event_project_lifecycle_old;
+      CREATE INDEX idx_audit_company_time ON audit_event(company_id, occurred_at);
+
+      CREATE INDEX IF NOT EXISTS idx_project_company_status_updated
+        ON project(company_id, status, updated_at, id);
+
+      CREATE TRIGGER trg_project_lifecycle_insert
+      BEFORE INSERT ON project
+      WHEN NEW.status <> 'active'
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_LIFECYCLE_INVALID');
+      END;
+
+      CREATE TRIGGER trg_project_lifecycle_update
+      BEFORE UPDATE OF status ON project
+      WHEN NEW.status NOT IN ('active','completed','archived')
+        OR NOT (
+          NEW.status = OLD.status
+          OR (OLD.status = 'active' AND NEW.status IN ('completed','archived'))
+          OR (OLD.status = 'completed' AND NEW.status IN ('active','archived'))
+          OR (OLD.status = 'archived' AND NEW.status = 'active')
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_LIFECYCLE_INVALID');
+      END;
+
+      CREATE TRIGGER trg_project_delete_archived
+      BEFORE DELETE ON project
+      WHEN OLD.status <> 'archived'
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_ARCHIVE_REQUIRED');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

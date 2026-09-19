@@ -15,6 +15,8 @@
 - Integration mutations enforce same-origin plus double-submit CSRF checks, rate limits, scoped provider authorization, safe error codes, and payload-free audit metadata. OAuth uses PKCE and one-time hashed state.
 - Resource mutations enforce same-origin plus double-submit CSRF, Owner/Admin authorization, structured errors, optimistic versions, and payload-minimal audit records. Employee is read-only; External/Client and cross-tenant access fail closed.
 - Schema-v9 triggers enforce fixed Resource Categories, same-company Category/User links, unique normalized names, and active same-company Task/Event assignments even if an application path is bypassed.
+- Project mutations enforce same-origin plus double-submit CSRF, Owner/Admin authorization, tenant-safe Project Type/User assignment checks, structured errors, and optimistic versions. Employee/External writes are denied; cross-company records return not found.
+- Schema-v10 triggers enforce Active initial state, only approved Active/Completed/Archived transitions, and Archive-before-delete. Permanent deletion is Owner-only with exact-name acknowledgement; audit history survives through a nullable Project reference plus immutable target ID.
 
 ## Known gaps before final release
 

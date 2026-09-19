@@ -4,12 +4,12 @@ import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { projectScopeSql, serializeProjectForActor, type InternalProjectDto } from "@/lib/authorization";
 import { requireCompanyRole } from "@/lib/guard";
-import { activeProjectTypeId } from "@/lib/project-types";
+import { createProjectRecord, ProjectValidationError } from "@/lib/projects";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
 
 const PROJECT_SELECT = `
-  SELECT p.id, p.project_type_id, pt.name AS project_type, p.name, p.status,
+  SELECT p.id, p.project_type_id, pt.name AS project_type, p.name, p.status, p.version,
     p.client_name, p.client_email, p.address, p.city, p.state, p.zip, p.phone,
     p.start_date, p.end_date, p.note, p.external_gantt_enabled
   FROM project p
@@ -35,33 +35,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "The request could not be verified." }, { status: 403 });
   }
   const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  const name = String(body?.name ?? "").trim();
-  const startDate = String(body?.start_date ?? "").trim();
-  const projectTypeId = activeProjectTypeId(body?.project_type_id, actor.companyId!);
-  if (!name || !startDate || !projectTypeId) {
-    return NextResponse.json({ error: "Name, start_date, and a valid company project_type_id are required" }, { status: 400 });
-  }
+  if (!body) return NextResponse.json({ error: "Check the required Project fields." }, { status: 400 });
   try {
-    const projectId = db.transaction(() => {
-      const result = db.prepare(`
-        INSERT INTO project (
-          company_id, project_type_id, name, client_name, client_email, address,
-          city, state, zip, phone, start_date, end_date, note, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        actor.companyId, projectTypeId, name,
-        body?.client_name || null, body?.client_email || null, body?.address || null,
-        body?.city || null, body?.state || null, body?.zip || null, body?.phone || null,
-        startDate, body?.end_date || null, body?.note || null, actor.legacyUserId,
-      );
-      const id = Number(result.lastInsertRowid);
-      if (actor.membershipId) db.prepare("INSERT OR IGNORE INTO project_membership (project_id, company_membership_id) VALUES (?, ?)").run(id, actor.membershipId);
-      if (actor.legacyUserId) db.prepare("INSERT OR IGNORE INTO project_user (project_id, user_id) VALUES (?, ?)").run(id, actor.legacyUserId);
-      return id;
-    })();
+    const project = createProjectRecord(actor, {
+      name: body.name, clientName: body.client_name, clientEmail: body.client_email,
+      address: body.address, city: body.city, state: body.state, zip: body.zip,
+      phone: body.phone, startDate: body.start_date, note: body.note,
+      projectTypeId: body.project_type_id, assignmentIds: body.assignment_ids,
+    });
+    const projectId = project.id;
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "project.create", targetType: "project", targetId: projectId, result: "success" });
     return NextResponse.json({ id: projectId });
-  } catch {
+  } catch (error) {
+    if (error instanceof ProjectValidationError) return NextResponse.json({ error: "Check the required Project fields.", fields: error.fields }, { status: 400 });
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: "project.create", result: "failure" });
     return NextResponse.json({ error: "The Project could not be created." }, { status: 503 });
   }
