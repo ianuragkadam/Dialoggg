@@ -95,3 +95,15 @@ node scripts/test-projects-ui.mjs
 ```
 
 The script creates isolated local Admin, Owner, Employee, and External/Client identities plus temporary Projects/Tasks, performs real writes only in that temporary database, and removes it afterward. It never mutates production Projects, Tasks, calendars, Google items, Microsoft links, Users, or assignments. The September 19 checkpoint passed 16/16 focused checks and 156/156 checks across all eleven UI suites.
+
+## Persistent Project Plan / Gantt checks
+
+`tests/gantt-engine.test.mjs` runs `scripts/test-gantt-engine.mts` against a migrated temporary database. It covers inclusive working days, independent weekends, FS/SS/FF/SF constraints, non-negative lag, multiple-predecessor latest constraint, earlier/later cascade, cycle rejection, linked drag, root/Header roll-ups, protected deletion, atomic Resource assignment, Project End Date, and stale Plan/Task versions. `tests/migrations.test.mjs` separately proves the schema-v11 root, hierarchy, dependency, Resource, and completed-history triggers.
+
+`scripts/test-project-plan-ui.mjs` performs a real Task write through the retained DHTMLX Gantt, reloads the page, and queries the isolated database to prove persistence. It also covers the scheduling-reference states, Employee read-only access, phone layout, and signed-out routing. Run it with Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set:
+
+```powershell
+node scripts/test-project-plan-ui.mjs
+```
+
+The production-like scenario suite also verifies CSRF/Role/tenant boundaries, Plan and Task concurrency, cascade/cycle behavior, External DTO reduction, and weekend-aware dates shared by Project/Master Calendar responses. The September 20 checkpoint passes 143/143 scenarios, 14/14 focused Project Plan browser checks, and 157/157 browser checks across all eleven UI suites.

@@ -9,6 +9,7 @@ import {
   type WorkingDayRules,
 } from "@/lib/dates";
 import { activeProjectTypeId } from "@/lib/project-types";
+import { recalculateProjectPlan } from "@/lib/gantt-cascade";
 
 export type ProjectTemplateTaskRecord = {
   id: number;
@@ -250,7 +251,7 @@ export function listTemplateSourceProjects(companyId: number) {
       SELECT t.*, rc.name AS resource_category_name
       FROM task t
       LEFT JOIN resource_category rc ON rc.id = t.resource_category_id AND rc.company_id = ?
-      WHERE t.project_id = ?
+      WHERE t.project_id = ? AND COALESCE(t.is_root, 0) = 0
       ORDER BY t.sort_order, t.id
     `).all(companyId, project.id) as SourceTaskRow[];
     const duration = tasks.reduce((maximum, task) => {
@@ -321,10 +322,11 @@ export function saveProjectAsTemplate(input: {
       )) AS resource_category_name
       FROM task t
       LEFT JOIN resource_category rc ON rc.id = t.resource_category_id AND rc.company_id = ?
-      WHERE t.project_id = ?
+      WHERE t.project_id = ? AND COALESCE(t.is_root, 0) = 0
       ORDER BY t.sort_order, t.id
     `).all(input.companyId, input.companyId, source.id) as SourceTaskRow[];
 
+    const sourceRoot = db.prepare("SELECT id FROM task WHERE project_id = ? AND is_root = 1").get(source.id) as { id: number } | undefined;
     const sourceLinks = db.prepare(`
       SELECT tl.source_task_id, tl.target_task_id, tl.link_type, tl.lag_days
       FROM task_link tl
@@ -376,12 +378,15 @@ export function saveProjectAsTemplate(input: {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const task of sourceTasks) {
-      if (task.parent_id && !taskIds.has(task.parent_id)) {
+      if (task.parent_id && task.parent_id !== sourceRoot?.id && !taskIds.has(task.parent_id)) {
         throw new ProjectTemplateDomainError("TEMPLATE_SOURCE_PLAN_INVALID", `${task.name}: parent Task is outside the source Project.`);
       }
       let offset: number;
       try {
-        offset = workingDayOffset(source.start_date, task.start_date, {
+        offset = workingDayOffset(source.start_date, task.start_date, task.is_header ? {
+          allowSaturday: true,
+          allowSunday: true,
+        } : {
           allowSaturday: !!task.allow_saturday,
           allowSunday: !!task.allow_sunday,
         });
@@ -592,6 +597,8 @@ export function instantiateProjectTemplate(input: {
       input.legacyUserId,
     );
     const projectId = Number(projectResult.lastInsertRowid);
+    const rootTask = db.prepare("SELECT id FROM task WHERE project_id = ? AND is_root = 1").get(projectId) as { id: number } | undefined;
+    if (!rootTask) throw new ProjectTemplateDomainError("TEMPLATE_HIERARCHY_INVALID", "The protected Project root could not be created.");
     db.prepare("INSERT OR IGNORE INTO project_membership (project_id, company_membership_id) VALUES (?, ?)").run(projectId, input.membershipId);
     if (input.legacyUserId) db.prepare("INSERT OR IGNORE INTO project_user (project_id, user_id) VALUES (?, ?)").run(projectId, input.legacyUserId);
 
@@ -603,7 +610,7 @@ export function instantiateProjectTemplate(input: {
       INSERT INTO task (
         project_id, parent_id, name, start_date, duration, progress, color, is_header,
         start_by_mode, sort_order, allow_saturday, allow_sunday, resource_category_id
-      ) VALUES (?, NULL, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const task of taskRows) {
       const schedule = scheduled.get(task.template_ref)!;
@@ -615,6 +622,7 @@ export function instantiateProjectTemplate(input: {
       }
       const result = insertTask.run(
         projectId,
+        rootTask.id,
         task.name,
         schedule.startDate,
         task.duration_workdays,
@@ -666,6 +674,8 @@ export function instantiateProjectTemplate(input: {
         }
       }
     }
+
+    recalculateProjectPlan(projectId);
 
     db.prepare(`
       INSERT INTO project_template_instantiation (

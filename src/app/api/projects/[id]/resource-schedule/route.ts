@@ -2,12 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { canViewProject } from "@/lib/authorization";
-
-function addDays(iso: string, days: number) {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+import { addDays, workingDayEnd } from "@/lib/dates";
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -28,7 +23,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
   // Tasks with their resources
   const events = db.prepare(`
-    SELECT t.id AS task_id, t.name, t.start_date, t.duration, t.color, tr.resource_id
+    SELECT t.id AS task_id, t.name, t.start_date, t.duration, t.color,
+      t.allow_saturday, t.allow_sunday, tr.resource_id
     FROM task t
     JOIN task_resource tr ON tr.task_id = t.id
     WHERE t.project_id = ? AND t.is_header = 0
@@ -41,7 +37,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
       resourceId: String(e.resource_id),
       title: e.name,
       start: e.start_date,
-      end: addDays(e.start_date, e.duration),
+      end: addDays(workingDayEnd(e.start_date, e.duration, { allowSaturday: !!e.allow_saturday, allowSunday: !!e.allow_sunday }), 1),
       color: e.color,
     })),
   });

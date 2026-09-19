@@ -2,12 +2,7 @@ import { NextResponse } from "next/server";
 
 import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
-
-function addDays(iso: string, days: number) {
-  const date = new Date(`${iso}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
+import { addDays, workingDayEnd } from "@/lib/dates";
 
 type ScheduleItem = {
   id: string;
@@ -30,14 +25,14 @@ export async function GET() {
   const resources = db.prepare("SELECT id, name FROM resource WHERE company_id = ? ORDER BY lower(name), id")
     .all(actor.companyId) as Array<{ id: number; name: string }>;
   const taskRows = db.prepare(`
-    SELECT t.id, t.name, t.start_date, t.duration, t.color,
+    SELECT t.id, t.name, t.start_date, t.duration, t.color, t.allow_saturday, t.allow_sunday,
       tr.resource_id, p.id AS project_id, p.name AS project_name
     FROM task t
     JOIN task_resource tr ON tr.task_id = t.id
     JOIN project p ON p.id = t.project_id
     JOIN resource r ON r.id = tr.resource_id AND r.company_id = p.company_id
     WHERE p.company_id = ? AND t.is_header = 0
-  `).all(actor.companyId) as Array<{ id: number; name: string; start_date: string; duration: number; color: string; resource_id: number; project_id: number; project_name: string }>;
+  `).all(actor.companyId) as Array<{ id: number; name: string; start_date: string; duration: number; color: string; allow_saturday: number; allow_sunday: number; resource_id: number; project_id: number; project_name: string }>;
   const eventRows = db.prepare(`
     SELECT es.id, es.title, es.timing_mode, es.start_date, es.end_date, es.start_at, es.end_at, es.color,
       er.resource_id, es.project_id, COALESCE(p.name, 'Company calendar') AS project_name
@@ -57,7 +52,7 @@ export async function GET() {
       resourceId: row.resource_id,
       title: `${row.name} (${row.project_name})`,
       start: row.start_date,
-      end: addDays(row.start_date, row.duration),
+      end: addDays(workingDayEnd(row.start_date, row.duration, { allowSaturday: !!row.allow_saturday, allowSunday: !!row.allow_sunday }), 1),
       color: row.color,
       projectId: row.project_id,
       kind: "Task" as const,

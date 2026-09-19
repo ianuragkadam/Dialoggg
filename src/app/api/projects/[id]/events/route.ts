@@ -4,6 +4,7 @@ import { getCurrentActor } from "@/lib/auth";
 import { canViewProject } from "@/lib/authorization";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
+import { addDays, workingDayEnd } from "@/lib/dates";
 
 function ensureMembership(projectId: number, companyId: number | null) {
   const p = db.prepare("SELECT id FROM project WHERE id = ? AND company_id = ?").get(projectId, companyId);
@@ -19,7 +20,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const external = actor.companyRole === "external";
 
   const events = db.prepare(`SELECT id, title, start_date, end_date, color${external ? "" : ", description"} FROM event WHERE project_id = ? ${external ? "AND external_visible = 1" : ""}`).all(projectId) as any[];
-  const tasks = db.prepare(`SELECT id, name, start_date, duration, color FROM task WHERE project_id = ? AND is_header = 0 ${external ? "AND external_visible = 1" : ""}`).all(projectId) as any[];
+  const tasks = db.prepare(`SELECT id, name, start_date, duration, color, allow_saturday, allow_sunday FROM task WHERE project_id = ? AND is_header = 0 ${external ? "AND external_visible = 1" : ""}`).all(projectId) as any[];
 
   // Build a FullCalendar-friendly list
   const cal = [
@@ -31,18 +32,13 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     })),
     ...tasks.map(t => ({
       id: `t${t.id}`, title: t.name,
-      start: t.start_date, end: addDays(t.start_date, t.duration),
+      start: t.start_date,
+      end: addDays(workingDayEnd(t.start_date, t.duration, { allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday }), 1),
       color: t.color, classNames: ["fc-event-task"],
       extendedProps: { kind: "task" },
     })),
   ];
   return NextResponse.json({ events: cal });
-}
-
-function addDays(iso: string, days: number) {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

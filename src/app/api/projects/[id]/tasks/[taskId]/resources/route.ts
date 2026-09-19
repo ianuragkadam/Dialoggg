@@ -13,6 +13,11 @@ function taskBelongsToCompany(projectId: number, taskId: number, companyId: numb
   `).get(taskId, projectId, companyId);
 }
 
+function taskIsWritable(projectId: number, taskId: number, companyId: number | null) {
+  return !!db.prepare(`SELECT t.id FROM task t JOIN project p ON p.id=t.project_id
+    WHERE t.id=? AND t.project_id=? AND p.company_id=? AND p.status='active' AND t.is_header=0`).get(taskId, projectId, companyId);
+}
+
 // Get + set which resources are assigned to a task.
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
   const { id, taskId } = await params;
@@ -35,7 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   if ("error" in g) return g.error;
   const actor = g.actor;
   if (await validateMutationRequest(req, actor)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  if (!taskBelongsToCompany(Number(id), Number(taskId), actor.companyId)) {
+  if (!taskIsWritable(Number(id), Number(taskId), actor.companyId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json();

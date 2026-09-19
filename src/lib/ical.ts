@@ -1,5 +1,6 @@
 import db from "@/db";
 import { randomBytes } from "node:crypto";
+import { addDays, workingDayEnd } from "@/lib/dates";
 
 // Return (creating if needed) the iCal token for a company's master feed.
 export function getCompanyToken(companyId: number): string {
@@ -32,12 +33,6 @@ type FeedItem = {
   uid: string; title: string; start: string; end: string; // end is exclusive (DTEND)
   description?: string;
 };
-
-function addDays(iso: string, days: number) {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 function fold(line: string): string {
   // iCal lines should be <=75 octets; fold long ones.
@@ -92,7 +87,8 @@ export function projectFeedItems(projectId: number): FeedItem[] {
   return [
     ...tasks.map(t => ({
       uid: `task-${t.id}`, title: t.name,
-      start: t.start_date, end: addDays(t.start_date, t.duration),
+      start: t.start_date,
+      end: addDays(workingDayEnd(t.start_date, t.duration, { allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday }), 1),
       description: "Dialoggg task",
     })),
     ...events.map(e => ({
@@ -114,7 +110,8 @@ export function resourceFeedItems(resourceId: number): FeedItem[] {
   return tasks.map(t => ({
     uid: `task-${t.id}-r${resourceId}`,
     title: `${t.name} (${t.project_name})`,
-    start: t.start_date, end: addDays(t.start_date, t.duration),
+    start: t.start_date,
+    end: addDays(workingDayEnd(t.start_date, t.duration, { allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday }), 1),
     description: t.project_name,
   }));
 }
@@ -128,7 +125,8 @@ export function companyFeedItems(companyId: number): FeedItem[] {
     const events = db.prepare("SELECT * FROM event WHERE project_id = ?").all(p.id) as any[];
     for (const t of tasks) items.push({
       uid: `task-${t.id}`, title: `${t.name} (${p.name})`,
-      start: t.start_date, end: addDays(t.start_date, t.duration), description: p.name,
+      start: t.start_date,
+      end: addDays(workingDayEnd(t.start_date, t.duration, { allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday }), 1), description: p.name,
     });
     for (const e of events) items.push({
       uid: `event-${e.id}`, title: `${e.title} (${p.name})`,

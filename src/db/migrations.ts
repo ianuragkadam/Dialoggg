@@ -1411,7 +1411,210 @@ const migration010: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010];
+const migration011: Migration = {
+  version: 11,
+  name: "gantt_plan_invariants",
+  signature: "working-day plan versions + protected root/header hierarchy + tenant-safe dependency graph v2",
+  up(database) {
+    addColumn(database, "project", "plan_version", "plan_version INTEGER NOT NULL DEFAULT 1");
+    addColumn(database, "task", "is_root", "is_root INTEGER NOT NULL DEFAULT 0 CHECK (is_root IN (0,1))");
+    addColumn(database, "task", "manual_start_date", "manual_start_date TEXT");
+    addColumn(database, "task", "updated_at", "updated_at TEXT");
+
+    database.exec(`
+      UPDATE task SET
+        duration = CASE WHEN CAST(duration AS INTEGER) >= 1 THEN CAST(duration AS INTEGER) ELSE 1 END,
+        progress = CASE WHEN progress < 0 THEN 0 WHEN progress > 1 THEN 1 ELSE COALESCE(progress, 0) END,
+        allow_saturday = CASE WHEN allow_saturday = 1 THEN 1 ELSE 0 END,
+        allow_sunday = CASE WHEN allow_sunday = 1 THEN 1 ELSE 0 END,
+        manual_start_date = COALESCE(manual_start_date, start_date),
+        updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP),
+        version = CASE WHEN version >= 1 THEN version ELSE 1 END;
+
+      DELETE FROM task_link
+      WHERE source_task_id = target_task_id
+        OR NOT EXISTS (
+          SELECT 1 FROM task source JOIN task target ON target.id = task_link.target_task_id
+          WHERE source.id = task_link.source_task_id
+            AND source.project_id = task_link.project_id
+            AND target.project_id = task_link.project_id
+            AND source.is_header = 0 AND target.is_header = 0
+        );
+      DELETE FROM task_link
+      WHERE id NOT IN (
+        SELECT MIN(id) FROM task_link GROUP BY project_id, source_task_id, target_task_id
+      );
+      UPDATE task_link SET
+        link_type = CASE WHEN link_type IN ('fs','ss','ff','sf') THEN link_type ELSE 'fs' END,
+        lag_days = CASE WHEN CAST(lag_days AS INTEGER) >= 0 THEN CAST(lag_days AS INTEGER) ELSE 0 END;
+
+      INSERT INTO task (
+        project_id, parent_id, name, start_date, duration, progress, color,
+        is_header, start_by_mode, sort_order, allow_saturday, allow_sunday,
+        version, external_visible, is_root, manual_start_date, updated_at
+      )
+      SELECT p.id, NULL, p.name, p.start_date, 1, 0, '#2e75b6',
+        1, 'time_period', -1, 0, 0, 1, 0, 1, p.start_date, CURRENT_TIMESTAMP
+      FROM project p
+      WHERE NOT EXISTS (SELECT 1 FROM task root WHERE root.project_id = p.id AND root.is_root = 1);
+
+      UPDATE task
+      SET parent_id = (
+        SELECT root.id FROM task root WHERE root.project_id = task.project_id AND root.is_root = 1
+      )
+      WHERE is_root = 0 AND parent_id IS NULL;
+
+      UPDATE task SET start_by_mode = CASE
+        WHEN is_root = 1 OR is_header = 1 THEN 'time_period'
+        WHEN EXISTS (SELECT 1 FROM task_link link WHERE link.target_task_id = task.id) THEN 'linked'
+        ELSE 'time_period'
+      END;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_task_project_root
+        ON task(project_id) WHERE is_root = 1;
+      CREATE INDEX IF NOT EXISTS idx_task_project_parent_order
+        ON task(project_id, parent_id, sort_order, id);
+      CREATE INDEX IF NOT EXISTS idx_task_link_target
+        ON task_link(project_id, target_task_id, id);
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_task_link_pair
+        ON task_link(project_id, source_task_id, target_task_id);
+
+      CREATE TRIGGER trg_project_create_root
+      AFTER INSERT ON project
+      BEGIN
+        INSERT INTO task (
+          project_id, parent_id, name, start_date, duration, progress, color,
+          is_header, start_by_mode, sort_order, allow_saturday, allow_sunday,
+          version, external_visible, is_root, manual_start_date, updated_at
+        ) VALUES (
+          NEW.id, NULL, NEW.name, NEW.start_date, 1, 0, '#2e75b6',
+          1, 'time_period', -1, 0, 0, 1, 0, 1, NEW.start_date, CURRENT_TIMESTAMP
+        );
+      END;
+
+      CREATE TRIGGER trg_gantt_task_scope_insert
+      BEFORE INSERT ON task
+      WHEN NOT EXISTS (SELECT 1 FROM project p WHERE p.id = NEW.project_id)
+        OR NEW.duration < 1 OR NEW.duration <> CAST(NEW.duration AS INTEGER)
+        OR NEW.progress < 0 OR NEW.progress > 1
+        OR NEW.allow_saturday NOT IN (0,1) OR NEW.allow_sunday NOT IN (0,1)
+        OR NEW.is_header NOT IN (0,1) OR NEW.is_root NOT IN (0,1)
+        OR (NEW.is_root = 1 AND (NEW.parent_id IS NOT NULL OR NEW.is_header <> 1))
+        OR (NEW.is_root = 0 AND NEW.parent_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM task parent
+          WHERE parent.id = NEW.parent_id AND parent.project_id = NEW.project_id AND parent.is_header = 1
+        ))
+        OR (NEW.is_header = 1 AND NEW.resource_category_id IS NOT NULL)
+        OR (NEW.resource_category_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM resource_category rc JOIN project p ON p.company_id = rc.company_id
+          WHERE rc.id = NEW.resource_category_id AND p.id = NEW.project_id
+        ))
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_TASK_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER trg_gantt_task_default_root
+      AFTER INSERT ON task
+      WHEN NEW.is_root = 0 AND NEW.parent_id IS NULL
+      BEGIN
+        UPDATE task SET parent_id = (
+          SELECT id FROM task root WHERE root.project_id = NEW.project_id AND root.is_root = 1
+        ) WHERE id = NEW.id;
+      END;
+
+      CREATE TRIGGER trg_gantt_task_scope_update
+      BEFORE UPDATE OF project_id, parent_id, duration, progress, allow_saturday, allow_sunday, is_header, is_root, resource_category_id ON task
+      WHEN NEW.project_id <> OLD.project_id OR NEW.is_root <> OLD.is_root
+        OR NEW.duration < 1 OR NEW.duration <> CAST(NEW.duration AS INTEGER)
+        OR NEW.progress < 0 OR NEW.progress > 1
+        OR NEW.allow_saturday NOT IN (0,1) OR NEW.allow_sunday NOT IN (0,1)
+        OR NEW.is_header NOT IN (0,1) OR NEW.is_root NOT IN (0,1)
+        OR (NEW.is_root = 1 AND (NEW.parent_id IS NOT NULL OR NEW.is_header <> 1))
+        OR (NEW.is_root = 0 AND (NEW.parent_id = NEW.id OR NOT EXISTS (
+          SELECT 1 FROM task parent
+          WHERE parent.id = NEW.parent_id AND parent.project_id = NEW.project_id AND parent.is_header = 1
+        )))
+        OR (NEW.is_header = 1 AND NEW.resource_category_id IS NOT NULL)
+        OR (NEW.resource_category_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM resource_category rc JOIN project p ON p.company_id = rc.company_id
+          WHERE rc.id = NEW.resource_category_id AND p.id = NEW.project_id
+        ))
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_TASK_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER trg_gantt_root_delete
+      BEFORE DELETE ON task
+      WHEN OLD.is_root = 1 AND EXISTS (SELECT 1 FROM project WHERE id = OLD.project_id)
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_ROOT_PROTECTED');
+      END;
+
+      CREATE TRIGGER trg_gantt_header_delete
+      BEFORE DELETE ON task
+      WHEN OLD.is_header = 1 AND OLD.is_root = 0
+        AND EXISTS (SELECT 1 FROM project WHERE id = OLD.project_id)
+        AND EXISTS (SELECT 1 FROM task child WHERE child.parent_id = OLD.id)
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_HEADER_NOT_EMPTY');
+      END;
+
+      CREATE TRIGGER trg_gantt_completed_task_delete
+      BEFORE DELETE ON task
+      WHEN OLD.is_header = 0 AND OLD.progress >= 1
+        AND EXISTS (SELECT 1 FROM project WHERE id = OLD.project_id)
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_COMPLETED_HISTORY_PROTECTED');
+      END;
+
+      CREATE TRIGGER trg_gantt_link_scope_insert
+      BEFORE INSERT ON task_link
+      WHEN NEW.source_task_id = NEW.target_task_id
+        OR NEW.link_type NOT IN ('fs','ss','ff','sf')
+        OR NEW.lag_days < 0 OR NEW.lag_days <> CAST(NEW.lag_days AS INTEGER)
+        OR NOT EXISTS (
+          SELECT 1 FROM task source JOIN task target ON target.id = NEW.target_task_id
+          WHERE source.id = NEW.source_task_id
+            AND source.project_id = NEW.project_id AND target.project_id = NEW.project_id
+            AND source.is_header = 0 AND target.is_header = 0
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_LINK_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER trg_gantt_link_scope_update
+      BEFORE UPDATE OF project_id, source_task_id, target_task_id, link_type, lag_days ON task_link
+      WHEN NEW.source_task_id = NEW.target_task_id
+        OR NEW.link_type NOT IN ('fs','ss','ff','sf')
+        OR NEW.lag_days < 0 OR NEW.lag_days <> CAST(NEW.lag_days AS INTEGER)
+        OR NOT EXISTS (
+          SELECT 1 FROM task source JOIN task target ON target.id = NEW.target_task_id
+          WHERE source.id = NEW.source_task_id
+            AND source.project_id = NEW.project_id AND target.project_id = NEW.project_id
+            AND source.is_header = 0 AND target.is_header = 0
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_LINK_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER trg_gantt_task_resource_leaf_insert
+      BEFORE INSERT ON task_resource
+      WHEN EXISTS (SELECT 1 FROM task WHERE id = NEW.task_id AND is_header = 1)
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_HEADER_RESOURCE_FORBIDDEN');
+      END;
+
+      CREATE TRIGGER trg_gantt_task_resource_leaf_update
+      BEFORE UPDATE OF task_id ON task_resource
+      WHEN EXISTS (SELECT 1 FROM task WHERE id = NEW.task_id AND is_header = 1)
+      BEGIN
+        SELECT RAISE(ABORT, 'GANTT_HEADER_RESOURCE_FORBIDDEN');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

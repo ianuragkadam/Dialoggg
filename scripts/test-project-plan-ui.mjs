@@ -12,7 +12,8 @@ async function check(name, operation) { try { await operation(); results.push({ 
 async function freePort() { const listener = createServer(); await new Promise((resolve, reject) => { listener.once("error", reject); listener.listen(0, "127.0.0.1", resolve); }); const address = listener.address(); const port = typeof address === "object" && address ? address.port : 0; await new Promise(resolve => listener.close(resolve)); return port; }
 async function loadPlaywright() { const supplied = process.env.DIALOGGG_PLAYWRIGHT_PATH; if (supplied) return import(pathToFileURL(path.join(supplied, "index.mjs")).href); try { return await import("playwright"); } catch { throw new Error("Playwright unavailable; set DIALOGGG_PLAYWRIGHT_PATH."); } }
 function sessionCookie(response) { const value = response.headers.get("set-cookie")?.match(/dialoggg_session=([^;]+)/)?.[1]; assert.ok(value); return value; }
-async function addSession(context, value) { await context.addCookies([{ name: "dialoggg_session", value, domain: "127.0.0.1", path: "/", httpOnly: true, secure: false, sameSite: "Lax" }]); }
+function csrfCookie(response) { const value = response.headers.get("set-cookie")?.match(/dialoggg_csrf=([^;]+)/)?.[1]; assert.ok(value); return value; }
+async function addSession(context, value, csrf) { await context.addCookies([{ name: "dialoggg_session", value, domain: "127.0.0.1", path: "/", httpOnly: true, secure: false, sameSite: "Lax" }, { name: "dialoggg_csrf", value: csrf, domain: "127.0.0.1", path: "/", httpOnly: false, secure: false, sameSite: "Lax" }]); }
 async function json(url, options = {}) { const response = await fetch(url, { ...options, headers: { "content-type": "application/json", ...(options.headers || {}) } }); return { response, data: await response.json() }; }
 
 const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-plan-ui-"));
@@ -25,22 +26,49 @@ try {
   const started = Date.now(); while (true) { if (appServer.exitCode !== null) throw new Error(`Server exited.\n${appOutput}`); try { if ((await fetch(`${baseUrl}/login`)).status === 200) break; } catch {} if (Date.now() - started > 25_000) throw new Error(`Server timeout.\n${appOutput}`); await new Promise(resolve => setTimeout(resolve, 200)); }
 
   const registration = await login(baseUrl, adminEmail, password);
-  const adminCookie = sessionCookie(registration); const auth = authenticatedHeaders(registration, baseUrl);
+  const adminCookie = sessionCookie(registration); const adminCsrf = csrfCookie(registration); const auth = authenticatedHeaders(registration, baseUrl);
   const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Reading Residence Court", project_type_id: admin.defaultProjectTypeId, client_name: "Morgan Family", client_email: "client@example.test", address: "1499 Reading Road", city: "Mohnton", state: "PA", zip: "19540", phone: "717-555-0100", start_date: "2026-09-15" }) });
   assert.equal(projectResult.response.status, 200); const projectId = projectResult.data.id;
+  let planVersion = (await json(`${baseUrl}/api/projects/${projectId}/tasks`, { headers: auth })).data.planVersion;
   for (const task of [{ text: "Concrete base", start_date: "2026-09-16", duration: 2 }, { text: "Court surfacing", start_date: "2026-09-18", duration: 3 }]) {
-    const taskResult = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { method: "POST", headers: auth, body: JSON.stringify(task) }); assert.equal(taskResult.response.status, 200);
+    const taskResult = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { method: "POST", headers: auth, body: JSON.stringify({ ...task, planVersion, resourceIds: [] }) }); assert.equal(taskResult.response.status, 201, JSON.stringify(taskResult.data)); planVersion = taskResult.data.planVersion;
   }
-  const employeeLogin = await login(baseUrl, employeeEmail, password); const employeeCookie = sessionCookie(employeeLogin);
+  const employeeLogin = await login(baseUrl, employeeEmail, password); const employeeCookie = sessionCookie(employeeLogin); const employeeCsrf = csrfCookie(employeeLogin);
 
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });
-  const adminContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); await addSession(adminContext, adminCookie); const page = await adminContext.newPage();
+  const adminContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); await addSession(adminContext, adminCookie, adminCsrf); const page = await adminContext.newPage();
 
   await check("Project Plan keeps original Gantt below the workflow review", async () => {
     await page.goto(`${baseUrl}/projects/${projectId}#plan`); await page.getByRole("heading", { name: "Project Plan controls" }).waitFor();
     assert.equal(await page.getByText("Original Gantt retained", { exact: true }).isVisible(), true);
     assert.equal(await page.getByRole("heading", { name: "Original Project Plan / Gantt" }).isVisible(), true);
     await page.getByText("Concrete base", { exact: true }).last().waitFor();
+  });
+
+  await check("original Gantt persists a complete working-day Task and reloads it", async () => {
+    const gantt = page.getByTestId("persistent-gantt");
+    await gantt.getByRole("button", { name: "+ Add Task" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add Task" });
+    await dialog.getByLabel("Task Name").fill("Persistent QA Task");
+    await dialog.getByLabel("Start Date").fill("2026-09-18");
+    await dialog.getByLabel("Duration (days)").fill("2");
+    assert.equal(await dialog.getByLabel("Start Date").inputValue(), "2026-09-18");
+    assert.equal(await dialog.getByLabel("Duration (days)").inputValue(), "2");
+    await dialog.getByLabel("Allow work on Saturday").check();
+    await dialog.getByLabel("Resource Category").selectOption({ label: "Employee" });
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("status").filter({ hasText: "Persistent QA Task was saved" }).waitFor();
+    await page.reload();
+    await page.getByTestId("persistent-gantt").getByText("Persistent QA Task", { exact: true }).first().waitFor();
+    const taskRow = page.getByTestId("persistent-gantt").locator(".gantt_row").filter({ hasText: "Persistent QA Task" });
+    assert.match((await taskRow.innerText()).replace(/\s+/g, " "), /Persistent QA Task 2026-09-18 2/);
+    const persisted = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { headers: auth });
+    const task = persisted.data.data.find(item => item.text === "Persistent QA Task");
+    assert.ok(task);
+    assert.equal(task.start_date, "2026-09-18");
+    assert.equal(task.end_date, "2026-09-19");
+    assert.equal(task.allow_saturday, true);
+    assert.equal(persisted.data.data.filter(item => item.is_root).length, 1);
   });
 
   await check("Leaf Task editor exposes every approved scheduling field", async () => {
@@ -89,7 +117,7 @@ try {
   });
 
   await check("Employee gets read-only controls while original Project Plan remains visible", async () => {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }); await addSession(context, employeeCookie); const employee = await context.newPage(); await employee.goto(`${baseUrl}/projects/${projectId}#plan`); await employee.getByText("Read-only Project Plan", { exact: true }).waitFor(); assert.equal(await employee.locator('[data-original-gantt-boundary="preserved"]').getByRole("button", { name: "+ Add Task" }).count(), 0); await employee.getByText("Concrete base", { exact: true }).last().waitFor(); await context.close();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }); await addSession(context, employeeCookie, employeeCsrf); const employee = await context.newPage(); await employee.goto(`${baseUrl}/projects/${projectId}#plan`); await employee.getByText("Read-only Project Plan", { exact: true }).waitFor(); assert.equal(await employee.locator('[data-original-gantt-boundary="preserved"]').getByRole("button", { name: "+ Add Task" }).count(), 0); await employee.getByText("Concrete base", { exact: true }).last().waitFor(); await context.close();
   });
 
   await check("Phone Project Plan avoids page-level horizontal overflow", async () => {

@@ -271,6 +271,11 @@ try {
   let categoryAId;
   let predecessorId;
   let successorId;
+  let predecessorVersion;
+  let successorVersion;
+  let dependencyId;
+  let planVersion;
+  let projectBPlanVersion;
   let overlapId;
   let provisionedCompanyId;
   let provisionedOwnerMembershipId;
@@ -1473,9 +1478,11 @@ try {
   });
 
   await check("task creation rejects a missing start date", async () => {
+    const plan = await adminA.request(`/api/projects/${projectAId}/tasks`);
+    planVersion = plan.data.planVersion;
     const response = await adminA.request(`/api/projects/${projectAId}/tasks`, {
       method: "POST",
-      body: { text: "Invalid Task" },
+      body: { text: "Invalid Task", planVersion },
     });
     assert.equal(response.status, 400);
   });
@@ -1483,14 +1490,16 @@ try {
   await check("admin creates predecessor and successor tasks", async () => {
     const predecessor = await adminA.request(`/api/projects/${projectAId}/tasks`, {
       method: "POST",
-      body: { text: "Foundation", start_date: "2026-01-01", duration: 2, progress: 0 },
+      body: { text: "Foundation", start_date: "2026-01-01", duration: 2, progress: 0, planVersion, resourceIds: [] },
     });
+    planVersion = predecessor.data.planVersion;
     const successor = await adminA.request(`/api/projects/${projectAId}/tasks`, {
       method: "POST",
-      body: { text: "Framing", start_date: "2026-01-01", duration: 1, progress: 0 },
+      body: { text: "Framing", start_date: "2026-01-01", duration: 1, progress: 0, planVersion, resourceIds: [] },
     });
-    assert.equal(predecessor.status, 200, JSON.stringify(predecessor.data));
-    assert.equal(successor.status, 200, JSON.stringify(successor.data));
+    assert.equal(predecessor.status, 201, JSON.stringify(predecessor.data));
+    assert.equal(successor.status, 201, JSON.stringify(successor.data));
+    planVersion = successor.data.planVersion;
     predecessorId = predecessor.data.id;
     successorId = successor.data.id;
   });
@@ -1498,31 +1507,38 @@ try {
   await check("finish-to-start link cascades the successor date", async () => {
     const link = await adminA.request(`/api/projects/${projectAId}/links`, {
       method: "POST",
-      body: { source: predecessorId, target: successorId, type: "0", lag: 0 },
+      body: { source: predecessorId, target: successorId, type: "0", lag: 0, planVersion },
     });
-    assert.equal(link.status, 200, JSON.stringify(link.data));
+    assert.equal(link.status, 201, JSON.stringify(link.data));
+    planVersion = link.data.planVersion;
+    dependencyId = link.data.id;
     const tasks = await adminA.request(`/api/projects/${projectAId}/tasks`);
     const successor = tasks.data.data.find(task => task.id === successorId);
-    assert.equal(successor.start_date, "2026-01-03");
+    predecessorVersion = tasks.data.data.find(task => task.id === predecessorId).version;
+    successorVersion = successor.version;
+    assert.equal(successor.start_date, "2026-01-05");
   });
 
   await check("reverse dependency cycle is rejected", async () => {
     const response = await adminA.request(`/api/projects/${projectAId}/links`, {
       method: "POST",
-      body: { source: successorId, target: predecessorId, type: "0", lag: 0 },
+      body: { source: successorId, target: predecessorId, type: "0", lag: 0, planVersion },
     });
-    assert.equal(response.status, 400);
-    assert.equal(response.data.error, "Cycle");
+    assert.equal(response.status, 409);
+    assert.equal(response.data.error.code, "DEPENDENCY_CYCLE");
   });
 
   await check("updating a predecessor cascades its successor", async () => {
     const update = await adminA.request(`/api/projects/${projectAId}/tasks/${predecessorId}`, {
       method: "PUT",
-      body: { start_date: "2026-01-05", duration: 2 },
+      body: { start_date: "2026-01-05", duration: 2, version: predecessorVersion, planVersion, resourceIds: [] },
     });
     assert.equal(update.status, 200);
+    planVersion = update.data.planVersion;
     const tasks = await adminA.request(`/api/projects/${projectAId}/tasks`);
     const successor = tasks.data.data.find(task => task.id === successorId);
+    predecessorVersion = tasks.data.data.find(task => task.id === predecessorId).version;
+    successorVersion = successor.version;
     assert.equal(successor.start_date, "2026-01-07");
   });
 
@@ -1553,9 +1569,10 @@ try {
   await check("resource schedule detects overlapping assignments", async () => {
     const task = await adminA.request(`/api/projects/${projectAId}/tasks`, {
       method: "POST",
-      body: { text: "Overlapping Work", start_date: "2026-01-06", duration: 3 },
+      body: { text: "Overlapping Work", start_date: "2026-01-06", duration: 3, planVersion, resourceIds: [resourceAId] },
     });
-    assert.equal(task.status, 200, JSON.stringify(task.data));
+    assert.equal(task.status, 201, JSON.stringify(task.data));
+    planVersion = task.data.planVersion;
     overlapId = task.data.id;
     const assignment = await adminA.request(`/api/projects/${projectAId}/tasks/${overlapId}/resources`, {
       method: "PUT",
@@ -1785,6 +1802,23 @@ try {
     assert.ok(response.data.id);
   });
 
+  await check("downstream calendars use the shared weekend-aware Task result", async () => {
+    const task = await adminA.request(`/api/projects/${projectAId}/tasks`, {
+      method: "POST",
+      body: { text: "Weekend-spanning schedule", start_date: "2026-01-09", duration: 2, planVersion, resourceIds: [] },
+    });
+    assert.equal(task.status, 201, JSON.stringify(task.data));
+    planVersion = task.data.planVersion;
+    const [projectCalendar, masterCalendar] = await Promise.all([
+      adminA.request(`/api/projects/${projectAId}/events`),
+      adminA.request("/api/calendar"),
+    ]);
+    const projectTask = projectCalendar.data.events.find(event => event.title === "Weekend-spanning schedule");
+    const masterTask = masterCalendar.data.events.find(event => event.title.includes("Weekend-spanning schedule"));
+    assert.deepEqual({ start: projectTask?.start, end: projectTask?.end }, { start: "2026-01-09", end: "2026-01-13" });
+    assert.deepEqual({ start: masterTask?.start, end: masterTask?.end }, { start: "2026-01-09", end: "2026-01-13" });
+  });
+
   await check("project and master calendars include tasks and events", async () => {
     const [projectCalendar, masterCalendar] = await Promise.all([
       adminA.request(`/api/projects/${projectAId}/events`),
@@ -1892,11 +1926,14 @@ try {
   });
 
   await check("cross-project task link creation is rejected", async () => {
+    const plan = await adminB.request(`/api/projects/${projectBId}/tasks`);
+    projectBPlanVersion = plan.data.planVersion;
     const response = await adminB.request(`/api/projects/${projectBId}/links`, {
       method: "POST",
-      body: { source: predecessorId, target: successorId, type: "0", lag: 0 },
+      body: { source: predecessorId, target: successorId, type: "0", lag: 0, planVersion: projectBPlanVersion },
     });
-    oneOf(response.status, [401, 403, 404], "cross-project task link");
+    assert.equal(response.status, 400);
+    assert.equal(response.data.error.code, "DEPENDENCY_INVALID");
   });
 
   await check("task assignment rejects another company's resource", async () => {
@@ -1910,7 +1947,7 @@ try {
   await check("cross-company task update is rejected", async () => {
     const response = await adminB.request(`/api/projects/${projectBId}/tasks/${predecessorId}`, {
       method: "PUT",
-      body: { text: "Cross-tenant overwrite attempt" },
+      body: { text: "Cross-tenant overwrite attempt", planVersion: projectBPlanVersion, version: 1 },
     });
     oneOf(response.status, [401, 403, 404], "cross-company task update");
   });

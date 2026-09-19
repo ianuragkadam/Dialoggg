@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { authenticatedFetch } from "@/lib/client-fetch";
 
 declare global {
   interface Window { gantt: any; }
@@ -18,6 +19,14 @@ type TaskModal = {
   color: string;
   parent: any;
   resourceIds: number[];
+  version: number;
+  isHeader: boolean;
+  isRoot: boolean;
+  allowSaturday: boolean;
+  allowSunday: boolean;
+  progress: number;
+  categoryId: number | null;
+  externalVisible: boolean;
   isTemp: boolean;        // true while a freshly-created task hasn't been saved
 };
 
@@ -48,25 +57,47 @@ function isoFromDate(gantt: any, d: Date): string {
   return gantt.date.date_to_str("%Y-%m-%d")(d);
 }
 
+function workingDuration(start: Date, endExclusive: Date, allowSaturday: boolean, allowSunday: boolean) {
+  const cursor = new Date(start);
+  let count = 0;
+  while (cursor < endExclusive) {
+    const day = cursor.getDay();
+    if ((day !== 6 || allowSaturday) && (day !== 0 || allowSunday)) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return Math.max(1, count);
+}
+
 export default function GanttChart({ projectId, canEdit = true }: { projectId: number; canEdit?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const ganttRef = useRef<any>(null);
   const syncingRef = useRef(false);
+  const planVersionRef = useRef(1);
+  const dragModeRef = useRef<string | null>(null);
 
   const [ready, setReady] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [taskModal, setTaskModal] = useState<TaskModal | null>(null);
   const [linkModal, setLinkModal] = useState<LinkModal | null>(null);
+  const [message, setMessage] = useState("");
+  const [planTasks, setPlanTasks] = useState<any[]>([]);
 
   // ---- server reload (suppresses sync events while parsing) ----
   const reload = useCallback(async () => {
     const gantt = ganttRef.current;
-    const data = await fetch(`/api/projects/${projectId}/tasks`).then(r => r.json());
+    const response = await fetch(`/api/projects/${projectId}/tasks`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data?.error?.message || "The Project Plan could not be loaded.");
+    planVersionRef.current = Number(data.planVersion) || 1;
+    setPlanTasks(data.data || []);
     syncingRef.current = true;
     try {
       gantt.clearAll();
-      gantt.parse(data);
+      gantt.parse({
+        ...data,
+        data: (data.data || []).map((task: any) => ({ ...task, working_duration: task.duration })),
+      });
     } finally {
       setTimeout(() => { syncingRef.current = false; }, 50);
     }
@@ -115,7 +146,8 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       gantt.config.columns = [
         { name: "text",       label: "Task Name", tree: true, width: 190, resize: true },
         { name: "start_date", label: "Start",     align: "center", width: 95 },
-        { name: "duration",   label: "Days",      align: "center", width: 55 },
+        { name: "duration",   label: "Days",      align: "center", width: 70,
+          template: (task: any) => task.type === "project" ? "Derived" : String(task.working_duration ?? task.duration) },
         { name: "add",        label: "",          width: 40 },
       ];
       gantt.config.scales = [
@@ -140,7 +172,9 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         setTaskModal({
           mode: "add", id: null, text: "", start_date: startIso,
           duration: 1, color: COLORS[0], parent: task.parent || 0,
-          resourceIds: [], isTemp: false,
+          resourceIds: [], version: 1, isHeader: false, isRoot: false,
+          allowSaturday: false, allowSunday: false, progress: 0,
+          categoryId: null, externalVisible: false, isTemp: false,
         });
         return false; // block default add; we add on Save
       });
@@ -153,6 +187,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       });
 
       async function openEditModal(id: any, t: any) {
+        if (t.is_root) { setMessage("The Project root is protected and derives its schedule from descendant Tasks."); return; }
         let resourceIds: number[] = [];
         try {
           const j = await fetch(`/api/projects/${projectId}/tasks/${id}/resources`).then(r => r.json());
@@ -161,29 +196,49 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         setTaskModal({
           mode: "edit", id,
           text: t.text, start_date: isoFromDate(gantt, t.start_date),
-          duration: t.duration, color: t.color || COLORS[0],
+          duration: Number(t.working_duration ?? t.duration), color: t.color || COLORS[0],
           parent: t.parent || 0, resourceIds, isTemp: false,
+          version: Number(t.version) || 1, isHeader: t.type === "project", isRoot: !!t.is_root,
+          allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday,
+          progress: Number(t.progress) || 0, categoryId: t.resource_category_id ?? null,
+          externalVisible: !!t.external_visible,
         });
       }
 
       // ===== Task drag / resize → persist + cascade =====
+      gantt.attachEvent("onBeforeTaskDrag", (_id: any, mode: string) => {
+        dragModeRef.current = String(mode);
+        return true;
+      });
+
       gantt.attachEvent("onAfterTaskUpdate", async (id: any) => {
         if (syncingRef.current) return;
         const fresh = gantt.getTask(id);
-        await fetch(`/api/projects/${projectId}/tasks/${id}`, {
+        const resize = dragModeRef.current === String(gantt.config.drag_mode.resize);
+        dragModeRef.current = null;
+        const duration = resize
+          ? workingDuration(fresh.start_date, fresh.end_date, !!fresh.allow_saturday, !!fresh.allow_sunday)
+          : Number(fresh.working_duration ?? fresh.duration);
+        const response = await authenticatedFetch(`/api/projects/${projectId}/tasks/${id}`, {
           method: "PUT", headers: { "content-type": "application/json" },
           body: JSON.stringify({
             text: fresh.text, start_date: isoFromDate(gantt, fresh.start_date),
-            duration: fresh.duration, progress: fresh.progress,
-            color: fresh.color, parent: fresh.parent,
+            duration, progress: fresh.progress,
+            color: fresh.color, parent: fresh.parent, version: fresh.version,
+            allow_saturday: !!fresh.allow_saturday, allow_sunday: !!fresh.allow_sunday,
+            resource_category_id: fresh.resource_category_id,
+            external_visible: !!fresh.external_visible,
+            planVersion: planVersionRef.current,
           }),
         });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) setMessage(payload?.error?.message || "The Task change was not saved.");
         await reload();
       });
 
-      gantt.attachEvent("onAfterTaskDelete", async (id: any) => {
-        if (syncingRef.current) return;
-        await fetch(`/api/projects/${projectId}/tasks/${id}`, { method: "DELETE" });
+      gantt.attachEvent("onBeforeTaskDelete", () => {
+        setMessage("Open the Task editor and use Delete so the schedule impact can be confirmed.");
+        return false;
       });
 
       // ===== Link drawn → open the "how to link" popup =====
@@ -203,7 +258,13 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
 
       gantt.attachEvent("onAfterLinkDelete", async (id: any) => {
         if (syncingRef.current) return;
-        await fetch(`/api/projects/${projectId}/links/${id}`, { method: "DELETE" });
+        const response = await authenticatedFetch(`/api/projects/${projectId}/links/${id}`, {
+          method: "DELETE", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ planVersion: planVersionRef.current }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) setMessage(payload?.error?.message || "The dependency was not removed.");
+        await reload();
       });
 
       await reload();
@@ -221,62 +282,82 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
   // ---- Save handler for the Task popup ----
   async function saveTask() {
     if (!taskModal) return;
-    const gantt = ganttRef.current;
+    setMessage("");
+    if (!taskModal.text.trim()) { setMessage("Enter the Task Name."); return; }
+    if (!taskModal.isHeader && (!Number.isInteger(taskModal.duration) || taskModal.duration < 1)) { setMessage("Duration must be a whole number of at least 1 working day."); return; }
     const payload = {
-      text: taskModal.text || "Untitled Task",
+      text: taskModal.text.trim(),
       start_date: taskModal.start_date,
-      duration: Number(taskModal.duration) || 1,
+      duration: Number(taskModal.duration),
       color: taskModal.color,
       parent: taskModal.parent,
-      progress: 0,
-      type: "task",
+      progress: taskModal.progress,
+      type: taskModal.isHeader ? "project" : "task",
+      isHeader: taskModal.isHeader,
+      allowSaturday: taskModal.allowSaturday,
+      allowSunday: taskModal.allowSunday,
+      resourceCategoryId: taskModal.categoryId,
+      externalVisible: taskModal.externalVisible,
+      version: taskModal.version,
+      planVersion: planVersionRef.current,
+      resourceIds: taskModal.resourceIds,
     };
 
     let taskId = taskModal.id;
+    let response: Response;
     if (taskModal.mode === "add") {
-      const r = await fetch(`/api/projects/${projectId}/tasks`, {
+      response = await authenticatedFetch(`/api/projects/${projectId}/tasks`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const j = await r.json();
+      const j = await response.json().catch(() => ({}));
+      if (!response.ok) { setMessage(j?.error?.message || "The Task was not created."); return; }
       taskId = j.id;
     } else {
-      await fetch(`/api/projects/${projectId}/tasks/${taskId}`, {
+      response = await authenticatedFetch(`/api/projects/${projectId}/tasks/${taskId}`, {
         method: "PUT", headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
+      const j = await response.json().catch(() => ({}));
+      if (!response.ok) { setMessage(j?.error?.message || "The Task was not saved."); return; }
     }
-    // Save resource assignments
-    await fetch(`/api/projects/${projectId}/tasks/${taskId}/resources`, {
-      method: "PUT", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ resource_ids: taskModal.resourceIds }),
-    });
     setTaskModal(null);
+    setMessage(`${taskModal.text.trim()} was saved and the Project Plan was recalculated.`);
     await reload();
   }
 
   async function deleteTask() {
     if (!taskModal || taskModal.mode !== "edit") { setTaskModal(null); return; }
-    await fetch(`/api/projects/${projectId}/tasks/${taskModal.id}`, { method: "DELETE" });
+    const response = await authenticatedFetch(`/api/projects/${projectId}/tasks/${taskModal.id}`, {
+      method: "DELETE", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ planVersion: planVersionRef.current, version: taskModal.version }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) { setMessage(payload?.error?.message || "The Task was not deleted."); return; }
     setTaskModal(null);
+    setMessage(`${taskModal.text} and its dependency links were deleted. The remaining Plan was recalculated.`);
     await reload();
   }
 
   // ---- Save handler for the Link popup ----
   async function saveLink() {
     if (!linkModal) return;
-    const r = await fetch(`/api/projects/${projectId}/links`, {
+    setMessage("");
+    const r = await authenticatedFetch(`/api/projects/${projectId}/links`, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({
         source: linkModal.sourceId, target: linkModal.targetId,
         type: LINK_TYPE_TO_DHTMLX[linkModal.linkType], lag: Number(linkModal.lag) || 0,
+        planVersion: planVersionRef.current,
       }),
     });
-    setLinkModal(null);
+    const payload = await r.json().catch(() => ({}));
     if (r.ok) {
+      setLinkModal(null);
+      setMessage("The dependency was saved and every affected Task was recalculated.");
       await reload();
     } else {
-      alert("Cannot create this link — it would make the tasks depend on each other in a circle.");
+      setMessage(payload?.error?.message || "The dependency could not be created.");
     }
   }
 
@@ -285,9 +366,13 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
     members: resources.filter(r => r.category_id === c.id),
   }));
   const uncategorized = resources.filter(r => !r.category_id);
+  const headerOptions = planTasks.filter(task => task.type === "project" && !task.is_root);
+  const updateTaskModal = (patch: Partial<TaskModal>) => {
+    setTaskModal(current => current ? { ...current, ...patch } : current);
+  };
 
   return (
-    <div className="bg-white border rounded shadow-sm">
+    <div className="bg-white border rounded shadow-sm" data-testid="persistent-gantt">
       <div className="px-4 py-2 border-b flex items-center justify-between bg-gray-50">
         <div className="flex items-center gap-3">
           <h2 className="font-semibold">Project Plan</h2>
@@ -299,7 +384,9 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                 setTaskModal({
                   mode: "add", id: null, text: "", start_date: todayIso,
                   duration: 1, color: COLORS[0], parent: 0,
-                  resourceIds: [], isTemp: false,
+                  resourceIds: [], version: 1, isHeader: false, isRoot: false,
+                  allowSaturday: false, allowSunday: false, progress: 0,
+                  categoryId: null, externalVisible: false, isTemp: false,
                 });
               }}
               className="bg-blue-700 text-white text-sm px-3 py-1 rounded font-semibold hover:bg-blue-800"
@@ -314,6 +401,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
             : "View only. Ask an Admin for edit access to change the schedule."}
         </div>
       </div>
+      {message && <div role="status" className="m-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">{message}</div>}
       <div ref={containerRef} style={{ width: "100%", height: 580 }} />
 
       {/* ============ TASK POPUP ============ */}
@@ -321,32 +409,72 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         <Modal onClose={() => setTaskModal(null)} title={taskModal.mode === "add" ? "Add Task" : "Edit Task"}>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Task Name</label>
+              <label htmlFor="gantt-task-name" className="block text-sm font-medium mb-1">Task Name</label>
               <input
+                id="gantt-task-name"
                 autoFocus value={taskModal.text}
-                onChange={e => setTaskModal({ ...taskModal, text: e.target.value })}
+                onChange={e => updateTaskModal({ text: e.target.value })}
                 className="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="e.g. Concrete Pour"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Start Date</label>
-                <input
-                  type="date" value={taskModal.start_date}
-                  onChange={e => setTaskModal({ ...taskModal, start_date: e.target.value })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Duration (days)</label>
-                <input
-                  type="number" min={1} value={taskModal.duration}
-                  onChange={e => setTaskModal({ ...taskModal, duration: Number(e.target.value) })}
-                  className="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={taskModal.isHeader}
+                disabled={taskModal.mode === "edit"}
+                onChange={event => updateTaskModal({ isHeader: event.target.checked, resourceIds: [], categoryId: null })}
+              />
+              Header Task (dates and progress are derived from descendant leaf Tasks)
+            </label>
+            <div>
+              <label htmlFor="gantt-task-parent" className="block text-sm font-medium mb-1">Parent Header</label>
+              <select
+                id="gantt-task-parent"
+                value={taskModal.parent || 0}
+                onChange={event => updateTaskModal({ parent: Number(event.target.value) })}
+                className="w-full px-3 py-2 border rounded text-sm"
+              >
+                <option value={0}>Project root</option>
+                {headerOptions.filter(option => option.id !== taskModal.id).map(option => <option key={option.id} value={option.id}>{option.text}</option>)}
+              </select>
             </div>
+            {!taskModal.isHeader && <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="gantt-task-start" className="block text-sm font-medium mb-1">Start Date</label>
+                <input
+                  id="gantt-task-start"
+                  type="date" value={taskModal.start_date}
+                  onChange={e => updateTaskModal({ start_date: e.target.value })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="gantt-task-duration" className="block text-sm font-medium mb-1">Duration (days)</label>
+                <input
+                  id="gantt-task-duration"
+                  type="number" min={1} value={taskModal.duration}
+                  onChange={e => updateTaskModal({ duration: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+            </div>}
+
+            {!taskModal.isHeader && <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskModal.allowSaturday} onChange={event => updateTaskModal({ allowSaturday: event.target.checked })} />Allow work on Saturday</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskModal.allowSunday} onChange={event => updateTaskModal({ allowSunday: event.target.checked })} />Allow work on Sunday</label>
+              <label className="text-sm">Task Progress
+                <input aria-label="Task Progress" type="number" min={0} max={100} value={Math.round(taskModal.progress * 100)} onChange={event => updateTaskModal({ progress: Math.max(0, Math.min(100, Number(event.target.value))) / 100 })} className="mt-1 w-full rounded border px-3 py-2" />
+              </label>
+              <label className="text-sm">Resource Category
+                <select aria-label="Resource Category" value={taskModal.categoryId ?? ""} onChange={event => updateTaskModal({ categoryId: event.target.value ? Number(event.target.value) : null })} className="mt-1 w-full rounded border px-3 py-2">
+                  <option value="">Choose Category</option>
+                  {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
+              </label>
+            </div>}
+
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskModal.externalVisible} onChange={event => updateTaskModal({ externalVisible: event.target.checked })} />Visible in assigned External/Client Project view</label>
 
             <div>
               <label className="block text-sm font-medium mb-1">Color</label>
@@ -354,7 +482,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                 {COLORS.map(c => (
                   <button
                     key={c} type="button"
-                    onClick={() => setTaskModal({ ...taskModal, color: c })}
+                    onClick={() => updateTaskModal({ color: c })}
                     className={`w-7 h-7 rounded-full border-2 ${taskModal.color === c ? "border-gray-800 scale-110" : "border-white"}`}
                     style={{ background: c }}
                     aria-label={c}
@@ -363,7 +491,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
               </div>
             </div>
 
-            <div>
+            {!taskModal.isHeader && <div>
               <label className="block text-sm font-medium mb-1">Assign Resources</label>
               {resources.length === 0 ? (
                 <p className="text-xs text-gray-500 bg-gray-50 border rounded p-2">
@@ -380,10 +508,11 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                             type="checkbox"
                             checked={taskModal.resourceIds.includes(m.id)}
                             onChange={e => {
-                              const ids = e.target.checked
-                                ? [...taskModal.resourceIds, m.id]
-                                : taskModal.resourceIds.filter(x => x !== m.id);
-                              setTaskModal({ ...taskModal, resourceIds: ids });
+                              const checked = e.target.checked;
+                              setTaskModal(current => current ? {
+                                ...current,
+                                resourceIds: checked ? [...current.resourceIds, m.id] : current.resourceIds.filter(x => x !== m.id),
+                              } : current);
                             }}
                           />
                           {m.name}
@@ -397,10 +526,11 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                         type="checkbox"
                         checked={taskModal.resourceIds.includes(m.id)}
                         onChange={e => {
-                          const ids = e.target.checked
-                            ? [...taskModal.resourceIds, m.id]
-                            : taskModal.resourceIds.filter(x => x !== m.id);
-                          setTaskModal({ ...taskModal, resourceIds: ids });
+                          const checked = e.target.checked;
+                          setTaskModal(current => current ? {
+                            ...current,
+                            resourceIds: checked ? [...current.resourceIds, m.id] : current.resourceIds.filter(x => x !== m.id),
+                          } : current);
                         }}
                       />
                       {m.name}
@@ -408,12 +538,12 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
 
-            <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded p-2">
+            {!taskModal.isHeader && <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded p-2">
               💡 To make this task depend on another, save it, then drag a link from one bar's edge
               circle to this one on the chart.
-            </p>
+            </p>}
           </div>
 
           <div className="flex justify-between pt-4 mt-2 border-t">
@@ -506,12 +636,15 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b bg-blue-800 text-white rounded-t-lg">
           <h3 className="font-semibold">{title}</h3>
-          <button onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">×</button>
+          <button aria-label={`Close ${title}`} onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">×</button>
         </div>
         <div className="p-5">{children}</div>
       </div>

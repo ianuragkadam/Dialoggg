@@ -1,64 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/db";
+import { deletePlanTask, PlanDomainError, updatePlanTask } from "@/lib/gantt-cascade";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
-import { cascadeFrom, reconcileHeader } from "@/lib/gantt-cascade";
+import { recordAudit, requestId } from "@/lib/security";
 
-function ensureMembership(projectId: number, companyId: number | null) {
-  const p = db.prepare("SELECT id FROM project WHERE id = ? AND company_id = ?").get(projectId, companyId);
-  return !!p;
+const idFrom = (value: string) => { const id = Number(value); return Number.isInteger(id) && id > 0 ? id : null; };
+const noStore = { "cache-control": "no-store" };
+function failure(error: unknown) {
+  if (error instanceof PlanDomainError) return NextResponse.json({ error: { code: error.code, message: error.message, fields: error.fields } }, { status: error.status, headers: noStore });
+  return NextResponse.json({ error: { code: "PLAN_WRITE_FAILED", message: "The Project Plan could not be saved." } }, { status: 503, headers: noStore });
 }
 
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
-  const { id, taskId } = await params;
-  const g = await requireCompanyRole(["owner", "admin"]);
-  if ("error" in g) return g.error;
-  const actor = g.actor;
-  if (await validateMutationRequest(req, actor)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  if (!ensureMembership(Number(id), actor.companyId)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  const body = await req.json();
-  const tid = Number(taskId);
-  const current = db.prepare(
-    "SELECT * FROM task WHERE id = ? AND project_id = ?",
-  ).get(tid, Number(id)) as any;
-  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+async function context(request: NextRequest, params: Promise<{ id: string; taskId: string }>) {
+  const guarded = await requireCompanyRole(["owner", "admin"]);
+  if ("error" in guarded) return { response: guarded.error };
+  if (await validateMutationRequest(request, guarded.actor)) return { response: NextResponse.json({ error: { code: "ACTION_FORBIDDEN", message: "The request could not be verified." } }, { status: 403, headers: noStore }) };
+  const values = await params;
+  const projectId = idFrom(values.id);
+  const taskId = idFrom(values.taskId);
+  if (!projectId || !taskId || !guarded.actor.companyId) return { response: NextResponse.json({ error: { code: "TASK_NOT_FOUND", message: "Task not found." } }, { status: 404, headers: noStore }) };
+  return { actor: guarded.actor, projectId, taskId };
+}
 
-  db.prepare(
-    `UPDATE task SET name = ?, start_date = ?, duration = ?, progress = ?, color = ?, parent_id = ?, external_visible = ?
-     WHERE id = ?`,
-  ).run(
-    body.text ?? current.name,
-    body.start_date ?? current.start_date,
-    Number(body.duration ?? current.duration),
-    Number(body.progress ?? current.progress ?? 0),
-    body.color ?? current.color,
-    body.parent && Number(body.parent) > 0 ? Number(body.parent) : null,
-    body.external_visible === undefined ? current.external_visible : body.external_visible === true ? 1 : 0,
-    tid,
-  );
-
-  cascadeFrom(tid);
-  if (current.parent_id) reconcileHeader(current.parent_id);
-  if (body.parent && Number(body.parent) > 0 && body.parent !== current.parent_id) {
-    reconcileHeader(Number(body.parent));
-  }
-  return NextResponse.json({ ok: true });
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
+  const trace = requestId(request);
+  const scoped = await context(request, params);
+  if ("response" in scoped) return scoped.response;
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return NextResponse.json({ error: { code: "VALIDATION_FAILED", message: "Check the highlighted fields." } }, { status: 400, headers: noStore });
+  try {
+    const plan = updatePlanTask(scoped.projectId, scoped.taskId, scoped.actor.companyId!, body);
+    recordAudit({ requestId: trace, actorIdentityId: scoped.actor.identityId, actorMembershipId: scoped.actor.membershipId, companyId: scoped.actor.companyId!, projectId: scoped.projectId, action: "task.update", targetType: "task", targetId: scoped.taskId, result: "success" });
+    return NextResponse.json({ ok: true, planVersion: plan?.project.planVersion }, { headers: noStore });
+  } catch (error) { return failure(error); }
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
-  const { id, taskId } = await params;
-  const g = await requireCompanyRole(["owner", "admin"]);
-  if ("error" in g) return g.error;
-  const actor = g.actor;
-  if (await validateMutationRequest(request, actor)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  if (!ensureMembership(Number(id), actor.companyId)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  const tid = Number(taskId);
-  const parent = (db.prepare("SELECT parent_id FROM task WHERE id = ?").get(tid) as any)?.parent_id;
-  db.prepare("DELETE FROM task WHERE id = ?").run(tid);
-  if (parent) reconcileHeader(parent);
-  return NextResponse.json({ ok: true });
+  const trace = requestId(request);
+  const scoped = await context(request, params);
+  if ("response" in scoped) return scoped.response;
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return NextResponse.json({ error: { code: "DELETE_CONFIRMATION_REQUIRED", message: "Refresh the Plan and confirm Task deletion." } }, { status: 400, headers: noStore });
+  try {
+    const plan = deletePlanTask(scoped.projectId, scoped.taskId, scoped.actor.companyId!, Number(body.planVersion), Number(body.version));
+    recordAudit({ requestId: trace, actorIdentityId: scoped.actor.identityId, actorMembershipId: scoped.actor.membershipId, companyId: scoped.actor.companyId!, projectId: scoped.projectId, action: "task.delete", targetType: "task", targetId: scoped.taskId, result: "success" });
+    return NextResponse.json({ ok: true, planVersion: plan?.project.planVersion }, { headers: noStore });
+  } catch (error) { return failure(error); }
 }

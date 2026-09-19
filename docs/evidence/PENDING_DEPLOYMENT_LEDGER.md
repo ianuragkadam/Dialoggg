@@ -1,6 +1,6 @@
 # Pending Deployment Ledger
 
-Last updated: 19 September 2026
+Last updated: 20 September 2026
 
 The user resumed deployment on 17 September 2026. Checkpoints through Project Templates were released successfully as Railway deployment `0dab30fa-e3f5-4f9e-91f4-bb5bafef3635`. See `PRODUCTION_DEPLOYMENT_2026-09-17.md` for backup, migration, security, and live-smoke evidence.
 
@@ -15,6 +15,7 @@ Apply checkpoints only in this dependency order:
 | 5 | Secure Integration Setup Workshop (checkpoint commit containing this row) | v8 `secure_integration_setup_workshop` | 27/27 unit, 136/136 scenarios, 158/158 browser, TypeScript/build/standalone/package audits; schema-v7 rollback copy verified | Pending behind order 4; requires controlled deployment, access-boundary smoke test, then private link issuance |
 | 6 | Resource Management (checkpoint commit containing this row) | v9 `resource_management_invariants` | 28/28 unit, 136/136 scenarios, 155/155 browser, TypeScript/build/standalone, production/full audits; schema-v8 rollback and isolated restore verified | Pending behind orders 4 and 5; requires controlled deployment plus live role, persistence, assignment, and lifecycle smoke tests |
 | 7 | Projects and Project lifecycle (checkpoint commit containing this row) | v10 `project_lifecycle_invariants` | 29/29 unit, 142/142 scenarios, 156/156 browser, TypeScript/build/standalone, production/full audits; schema-v9 rollback and isolated restore verified | Pending behind orders 4–6; requires controlled deployment plus live create/edit/rebase/lifecycle/delete, audit, and role smoke tests |
+| 8 | Original Gantt persistence and cascade (checkpoint commit containing this row) | v11 `gantt_plan_invariants` | 11/11 focused engine/migration, 143/143 scenarios, 14/14 focused Project Plan browser, 157/157 browser, TypeScript/build/standalone, production/full audits; schema-v10 rollback and isolated restore verified | Pending behind orders 4–7; requires controlled deployment plus live Plan migration, Task/link/cascade, calendar, audit, concurrency, and role smoke tests |
 
 For each future deployment:
 

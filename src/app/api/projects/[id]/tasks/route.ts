@@ -1,84 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { canViewProject } from "@/lib/authorization";
+import { createPlanTask, getProjectPlan, PlanDomainError } from "@/lib/gantt-cascade";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
-import { cascadeFrom, reconcileHeader } from "@/lib/gantt-cascade";
+import { recordAudit, requestId } from "@/lib/security";
 
-const LINK_TYPE_MAP_OUT: Record<string, string> = { fs: "0", ss: "1", ff: "2", sf: "3" };
-const LINK_TYPE_MAP_IN: Record<string, string> = { "0": "fs", "1": "ss", "2": "ff", "3": "sf" };
-
-function ensureMembership(projectId: number, companyId: number | null) {
-  const p = db.prepare("SELECT id FROM project WHERE id = ? AND company_id = ?").get(projectId, companyId);
-  return !!p;
+const idFrom = (value: string) => { const id = Number(value); return Number.isInteger(id) && id > 0 ? id : null; };
+const noStore = { "cache-control": "no-store" };
+function failure(error: unknown) {
+  if (error instanceof PlanDomainError) return NextResponse.json({ error: { code: error.code, message: error.message, fields: error.fields } }, { status: error.status, headers: noStore });
+  return NextResponse.json({ error: { code: "PLAN_WRITE_FAILED", message: "The Project Plan could not be saved." } }, { status: 503, headers: noStore });
 }
 
-// dhtmlx-gantt expects: { data: Task[], links: Link[] }
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const projectId = idFrom((await params).id);
   const actor = await getCurrentActor();
-  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const projectId = Number(id);
-  if (!canViewProject(actor, projectId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!actor) return NextResponse.json({ error: { code: "AUTHENTICATION_REQUIRED", message: "Sign in to continue." } }, { status: 401, headers: noStore });
+  if (!projectId || !actor.companyId || !canViewProject(actor, projectId)) return NextResponse.json({ error: { code: "PROJECT_NOT_FOUND", message: "Project not found." } }, { status: 404, headers: noStore });
+  const plan = getProjectPlan(projectId, actor.companyId, actor.companyRole === "external");
+  if (!plan) return NextResponse.json({ error: { code: "PROJECT_NOT_FOUND", message: "Project not found." } }, { status: 404, headers: noStore });
   const external = actor.companyRole === "external";
-  const tasks = db.prepare(`SELECT id, parent_id, name, start_date, duration, progress, color, is_header, sort_order
-    FROM task WHERE project_id = ? ${external ? "AND external_visible = 1" : ""} ORDER BY sort_order, id`).all(projectId) as any[];
-  const links = external ? [] : db.prepare(
-    "SELECT * FROM task_link WHERE project_id = ?",
-  ).all(projectId) as any[];
-
-  const data = tasks.map(t => ({
-    id: t.id,
-    text: t.name,
-    start_date: t.start_date,
-    duration: t.duration,
-    progress: t.progress ?? 0,
-    parent: t.parent_id || 0,
-    color: t.color,
-    type: t.is_header ? "project" : "task",
+  const data = plan.tasks.map(task => ({
+    id: task.id,
+    text: task.name,
+    start_date: task.start_date,
+    end_date: task.end_date,
+    duration: task.duration,
+    progress: task.progress,
+    parent: task.parent_id || 0,
+    color: task.color,
+    type: task.is_header ? "project" : "task",
     open: true,
+    is_root: task.is_root === 1,
+    ...(!external ? {
+      version: task.version,
+      allow_saturday: task.allow_saturday === 1,
+      allow_sunday: task.allow_sunday === 1,
+      resource_category_id: task.resource_category_id,
+      external_visible: task.external_visible === 1,
+      start_by_mode: task.start_by_mode,
+    } : {}),
   }));
-  const linkData = links.map(l => ({
-    id: l.id,
-    source: l.source_task_id,
-    target: l.target_task_id,
-    type: LINK_TYPE_MAP_OUT[l.link_type] ?? "0",
-    lag: l.lag_days,
-  }));
-
-  return NextResponse.json({ data, links: linkData });
+  const links = plan.links.map(link => ({ id: link.id, source: link.source_task_id, target: link.target_task_id, type: ({ fs: "0", ss: "1", ff: "2", sf: "3" } as const)[link.link_type], lag: link.lag_days }));
+  return NextResponse.json({ data, links, ...(!external ? { planVersion: plan.project.planVersion } : {}), projectEndDate: plan.project.endDate }, { headers: noStore });
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const g = await requireCompanyRole(["owner", "admin"]);
-  if ("error" in g) return g.error;
-  const actor = g.actor;
-  if (await validateMutationRequest(req, actor)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  if (!ensureMembership(Number(id), actor.companyId)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  const body = await req.json();
-  if (!body.text || !body.start_date) {
-    return NextResponse.json({ error: "Task name and start_date are required" }, { status: 400 });
-  }
-  const duration = Number(body.duration ?? 1);
-  if (!Number.isFinite(duration) || duration <= 0) {
-    return NextResponse.json({ error: "Duration must be greater than zero" }, { status: 400 });
-  }
-  const isHeader = body.type === "project" ? 1 : 0;
-  const parent = body.parent && Number(body.parent) > 0 ? Number(body.parent) : null;
-  const sortRow = db.prepare("SELECT COALESCE(MAX(sort_order), 0) + 1 AS s FROM task WHERE project_id = ?").get(Number(id)) as { s: number };
-  const r = db.prepare(
-    `INSERT INTO task (project_id, parent_id, name, start_date, duration, progress, color, is_header, sort_order, external_visible)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    Number(id), parent, body.text,
-    body.start_date, duration, Number(body.progress) || 0,
-    body.color || "#5599dd", isHeader, sortRow.s, body.external_visible === true ? 1 : 0,
-  );
-  const newId = r.lastInsertRowid as number;
-  if (parent) reconcileHeader(parent);
-  return NextResponse.json({ id: newId, tid: newId });
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const trace = requestId(request);
+  const projectId = idFrom((await params).id);
+  const guarded = await requireCompanyRole(["owner", "admin"]);
+  if ("error" in guarded) return guarded.error;
+  const actor = guarded.actor;
+  if (await validateMutationRequest(request, actor)) return NextResponse.json({ error: { code: "ACTION_FORBIDDEN", message: "The request could not be verified." } }, { status: 403, headers: noStore });
+  if (!projectId || !actor.companyId) return NextResponse.json({ error: { code: "PROJECT_NOT_FOUND", message: "Project not found." } }, { status: 404, headers: noStore });
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return NextResponse.json({ error: { code: "VALIDATION_FAILED", message: "Check the highlighted fields." } }, { status: 400, headers: noStore });
+  try {
+    const result = createPlanTask(projectId, actor.companyId, body);
+    recordAudit({ requestId: trace, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "task.create", targetType: "task", targetId: result.taskId, result: "success" });
+    return NextResponse.json({ id: result.taskId, tid: result.taskId, planVersion: result.plan?.project.planVersion }, { status: 201, headers: noStore });
+  } catch (error) { return failure(error); }
 }

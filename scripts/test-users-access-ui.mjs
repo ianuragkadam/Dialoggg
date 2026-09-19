@@ -182,7 +182,10 @@ try {
     assert.equal(Object.hasOwn(projectJson.projects[0], "note"), false);
     assert.equal(Object.hasOwn(projectJson.projects[0], "client_email"), false);
     const tasks = await externalPage.evaluate(async id => (await fetch(`/api/projects/${id}/tasks`)).json(), assignedProjectId);
-    assert.deepEqual(tasks.data.map(item => item.text), ["Visible milestone"]);
+    assert.deepEqual(tasks.data.map(item => item.text), ["Assigned Court", "Visible milestone"]);
+    assert.equal(tasks.data.filter(item => item.is_root).length, 1);
+    assert.equal(Object.hasOwn(tasks, "planVersion"), false);
+    assert.equal(tasks.data.some(item => Object.hasOwn(item, "version") || Object.hasOwn(item, "resource_category_id") || Object.hasOwn(item, "start_by_mode")), false);
     assert.deepEqual(tasks.links, []);
     const events = await externalPage.evaluate(async id => (await fetch(`/api/projects/${id}/events`)).json(), assignedProjectId);
     assert.match(JSON.stringify(events), /Visible visit/); assert.doesNotMatch(JSON.stringify(events), /Internal meeting|private description/);

@@ -17,6 +17,8 @@
 - Schema-v9 triggers enforce fixed Resource Categories, same-company Category/User links, unique normalized names, and active same-company Task/Event assignments even if an application path is bypassed.
 - Project mutations enforce same-origin plus double-submit CSRF, Owner/Admin authorization, tenant-safe Project Type/User assignment checks, structured errors, and optimistic versions. Employee/External writes are denied; cross-company records return not found.
 - Schema-v10 triggers enforce Active initial state, only approved Active/Completed/Archived transitions, and Archive-before-delete. Permanent deletion is Owner-only with exact-name acknowledgement; audit history survives through a nullable Project reference plus immutable target ID.
+- Project Plan mutations require Owner/Admin, same-origin double-submit CSRF, company-scoped Project lookup, optimistic Plan/Task versions, no-store responses, structured safe errors, and payload-minimal audit events. Employee is read-only; External/Client receives a reduced visible-Task DTO with no dependency, Resource, version, category, manual-date, or start-mode data.
+- Schema-v11 triggers enforce exactly one protected root per Project, same-Project Header hierarchy, valid leaf-only dependency endpoints, supported link types, non-negative integer lag, unique Task pairs, leaf-only Resource assignment, non-empty Header deletion, and completed Task history protection. Application transactions reject cycles and stale versions before committing schedule changes.
 
 ## Known gaps before final release
 

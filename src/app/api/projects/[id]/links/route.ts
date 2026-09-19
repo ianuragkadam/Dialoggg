@@ -1,43 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
-import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
-import { requireAdmin } from "@/lib/guard";
-import { cascadeFrom, wouldCreateCycle } from "@/lib/gantt-cascade";
+import { createPlanLink, PlanDomainError } from "@/lib/gantt-cascade";
+import { requireCompanyRole } from "@/lib/guard";
+import { validateMutationRequest } from "@/lib/request-security";
+import { recordAudit, requestId } from "@/lib/security";
 
-const LINK_TYPE_IN: Record<string, string> = { "0": "fs", "1": "ss", "2": "ff", "3": "sf" };
+const noStore = { "cache-control": "no-store" };
+const idFrom = (value: string) => { const id = Number(value); return Number.isInteger(id) && id > 0 ? id : null; };
 
-function ensureMembership(projectId: number, companyId: number | null) {
-  const p = db.prepare("SELECT id FROM project WHERE id = ? AND company_id = ?").get(projectId, companyId);
-  return !!p;
-}
-
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const g = await requireAdmin();
-  if ("error" in g) return g.error;
-  const user = g.user;
-  if (!ensureMembership(Number(id), user.company_id)) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const trace = requestId(request);
+  const guarded = await requireCompanyRole(["owner", "admin"]);
+  if ("error" in guarded) return guarded.error;
+  const actor = guarded.actor;
+  if (await validateMutationRequest(request, actor)) return NextResponse.json({ error: { code: "ACTION_FORBIDDEN", message: "The request could not be verified." } }, { status: 403, headers: noStore });
+  const projectId = idFrom((await params).id);
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!projectId || !actor.companyId || !body) return NextResponse.json({ error: { code: "VALIDATION_FAILED", message: "Check the dependency values." } }, { status: 400, headers: noStore });
+  try {
+    const result = createPlanLink(projectId, actor.companyId, body);
+    recordAudit({ requestId: trace, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "task_dependency.create", targetType: "task_dependency", targetId: result.linkId, result: "success" });
+    return NextResponse.json({ id: result.linkId, tid: result.linkId, planVersion: result.plan?.project.planVersion }, { status: 201, headers: noStore });
+  } catch (error) {
+    if (error instanceof PlanDomainError) return NextResponse.json({ error: { code: error.code, message: error.message, fields: error.fields } }, { status: error.status, headers: noStore });
+    return NextResponse.json({ error: { code: "DEPENDENCY_WRITE_FAILED", message: "The dependency could not be saved." } }, { status: 503, headers: noStore });
   }
-  const body = await req.json();
-  const source = Number(body.source);
-  const target = Number(body.target);
-  if (!source || !target || source === target) {
-    return NextResponse.json({ error: "Invalid link" }, { status: 400 });
-  }
-  const linkedTasks = db.prepare(
-    "SELECT COUNT(*) AS count FROM task WHERE project_id = ? AND id IN (?, ?)",
-  ).get(Number(id), source, target) as { count: number };
-  if (linkedTasks.count !== 2) {
-    return NextResponse.json({ error: "Task not found" }, { status: 404 });
-  }
-  if (wouldCreateCycle(source, target)) {
-    return NextResponse.json({ error: "Cycle" }, { status: 400 });
-  }
-  const linkType = LINK_TYPE_IN[String(body.type ?? "0")] ?? "fs";
-  const r = db.prepare(
-    "INSERT INTO task_link (project_id, source_task_id, target_task_id, link_type, lag_days) VALUES (?, ?, ?, ?, ?)",
-  ).run(Number(id), source, target, linkType, Number(body.lag ?? 0));
-  cascadeFrom(source);
-  return NextResponse.json({ id: r.lastInsertRowid, tid: r.lastInsertRowid });
 }

@@ -2,12 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { canViewProject } from "@/lib/authorization";
-
-function addDays(iso: string, days: number) {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
+import { addDays, workingDayEnd } from "@/lib/dates";
 
 export async function GET(req: NextRequest) {
   const actor = await getCurrentActor();
@@ -49,7 +44,8 @@ export async function GET(req: NextRequest) {
   `).all(...args) as any[];
 
   const tasks = db.prepare(`
-    SELECT t.id, t.name, t.start_date, t.duration, t.color, p.name AS project_name FROM task t
+    SELECT t.id, t.name, t.start_date, t.duration, t.color, t.allow_saturday, t.allow_sunday,
+      p.name AS project_name FROM task t
     JOIN project p ON p.id = t.project_id
     WHERE ${where} AND t.is_header = 0 ${actor.companyRole === "external" ? "AND t.external_visible = 1" : ""}
   `).all(...args) as any[];
@@ -63,7 +59,8 @@ export async function GET(req: NextRequest) {
       })),
       ...tasks.map(t => ({
         id: `t${t.id}`, title: `${t.name} (${t.project_name})`,
-        start: t.start_date, end: addDays(t.start_date, t.duration),
+        start: t.start_date,
+        end: addDays(workingDayEnd(t.start_date, t.duration, { allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday }), 1),
         color: t.color,
       })),
     ],

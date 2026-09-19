@@ -1,6 +1,6 @@
 # Product Status
 
-Last verified: September 19, 2026
+Last verified: September 20, 2026
 
 ## Complete foundations
 
@@ -40,11 +40,12 @@ Last verified: September 19, 2026
 - Migration 10 enforces approved lifecycle transitions and Archive-before-delete at the database boundary; Employee remains company-wide read-only and External/Client remains assigned-only with safe serialization
 - Verification passed 29/29 unit/foundation/migration checks, 142/142 scenarios, 16/16 focused Projects browser checks, and 156/156 browser checks across all eleven suites; production/full dependency audits report zero vulnerabilities
 - The existing original Gantt remains the internal Project Plan; automated and human-click QA fixed External navigation leakage and direct Completed/Archived edit access
-- Project Plan/Gantt workflow UI above the unchanged original Gantt, including complete Task fields, Header/root rules, all dependency types, multiple predecessors, lag, working-day examples, cascade/drag behavior, and safe deletion
+- Project Plan/Gantt is persistent locally on the retained original DHTMLX interface. Schema v11 and the server scheduling engine enforce one protected root, Header/leaf invariants, inclusive working days, independent weekends, FS/SS/FF/SF dependencies, non-negative lag, multiple predecessors, cycle rejection, earlier/later cascade, linked-drag review, atomic Resource assignment, roll-ups, optimistic versions, safe deletion, audit, and tenant/Role boundaries.
+- Gantt, Project End Date, Project/Master/Resource Calendars, Resource conflict views, and iCal feeds use the same weekend-aware schedule result. Verification passes 11/11 focused engine/migration checks, 143/143 scenarios, 14/14 focused Project Plan browser checks, and 157/157 browser checks across all eleven suites.
 - Project, Master, and Resource Calendar UI with Day/Week/Month states, Task/Event distinction, full Event editor, recurrence/end/scope choices, Event drag confirmation, conflicts, history, and Project Plan routing
 - Personal Google Calendar UI at `/account/google-calendar` with one-way delivery, a dedicated **Dialoggg** calendar, safe item previews, health/retry/failure states, disconnect choices, and explicit post-restoration resume
 - Company Microsoft Storage UI at `/settings/microsoft-storage` plus each Project's **Common and Private** tab, approved role boundaries, create/link choices, company root, new-tab behavior, and graceful folder failure/recovery states
-- All ten requirements-led UI modules have focused Playwright coverage, production builds, and visible human click QA; the original `GanttChart.tsx` remains unchanged
+- All ten requirements-led UI modules have focused Playwright coverage, production builds, and visible human click QA; the original `GanttChart.tsx` remains the Plan foundation and now persists through the scheduling APIs.
 - Fresh cross-module QA on September 16, 2026 passed 261/261 automated checks and visible Chrome click testing. Seven naming, lifecycle, action, calendar-context, modal-focus, and deployment-reliability defects were fixed; full evidence and remaining release gaps are recorded in `docs/QA_GAP_ANALYSIS_2026-09-16.md`
 
 ## Requirements validation
@@ -56,9 +57,8 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 - Live provider delivery for queued first-Owner invitations and Google synchronization workers/resume controls; Company Administration persistence, audit, authorization, suspension, and per-company pause state are implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
 - Production deployment and live-volume verification of the locally complete Resource Management schema-v9 checkpoint; broader Event editing/recurrence and Google delivery remain separate checkpoints
-- Production deployment and live-volume verification of the locally complete Projects/lifecycle schema-v10 checkpoint; the later complete Gantt cascade engine remains a separate dependency checkpoint
+- Production deployment and live-volume verification of the locally complete Projects/lifecycle schema-v10 and Gantt/cascade schema-v11 checkpoints
 - Production deployment and live-volume verification of the locally complete Project Templates checkpoint
-- Complete weekend-aware Gantt persistence/cascade enforcement; the detailed UI review is complete and retains the original Gantt
 - Event persistence, recurrence calculations, assignments, authorization, and downstream calendar writes; the detailed Event/Calendar UI review is complete
 - Google OAuth, token protection, background synchronization, mapping/retry/reconciliation, and monitoring; the detailed Google Calendar UI review is complete
 - Microsoft OAuth/Graph, protected company/folder identifiers, real folder create/link/open/recovery, and authorization enforcement; the detailed Common/Private UI review is complete

@@ -135,9 +135,9 @@ export default function ProjectPlanWorkflowReview({ projectName, canEdit }: { pr
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-lg font-semibold">Project Plan controls</h2>
               <span className="rounded-full bg-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-950">Original Gantt retained</span>
-              <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium">UI workflow review</span>
+              <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium">Scheduling reference</span>
             </div>
-            <p className="mt-1 max-w-3xl text-sm text-blue-100">Review every approved Task, dependency, working-day, cascade, and safety interaction. The existing Gantt directly below remains unchanged.</p>
+            <p className="mt-1 max-w-3xl text-sm text-blue-100">Review the approved scheduling rules here, then make real persistent changes in the original Gantt directly below.</p>
           </div>
           {canEdit ? (
             <div className="flex flex-wrap gap-2">

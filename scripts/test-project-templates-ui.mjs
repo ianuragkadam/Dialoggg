@@ -254,7 +254,8 @@ try {
     createdProjectId = Number(href?.match(/\/projects\/(\d+)/)?.[1]);
     assert.ok(createdProjectId);
     const tasks = await page.evaluate(async id => (await fetch(`/api/projects/${id}/tasks`)).json(), createdProjectId);
-    assert.equal(tasks.data.length, 4);
+    assert.equal(tasks.data.filter(task => !task.is_root).length, 4);
+    assert.equal(tasks.data.filter(task => task.is_root).length, 1);
     assert.ok(tasks.data.every(task => task.progress === 0));
   });
 

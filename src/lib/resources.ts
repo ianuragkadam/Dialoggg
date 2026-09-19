@@ -1,4 +1,5 @@
 import db from "@/db";
+import { workingDayEnd } from "@/lib/dates";
 import {
   RESOURCE_CATEGORIES,
   type ResourceAssignmentUi,
@@ -68,12 +69,6 @@ function dateValue(value: string | null, endOfDay = false) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function addDays(value: string, days: number) {
-  const date = new Date(`${value}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + Math.max(1, days));
-  return date.toISOString().slice(0, 10);
-}
-
 function displayDate(value: string | null) {
   if (!value) return "Unscheduled";
   const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : value);
@@ -83,13 +78,14 @@ function displayDate(value: string | null) {
 
 function assignmentsForResource(resourceId: number, companyId: number): ResourceAssignmentUi[] {
   const taskRows = db.prepare(`
-    SELECT t.id, t.name, t.start_date, t.duration, p.name AS project_name
+    SELECT t.id, t.name, t.start_date, t.duration, t.allow_saturday, t.allow_sunday,
+      p.name AS project_name
     FROM task_resource tr
     JOIN task t ON t.id = tr.task_id
     JOIN project p ON p.id = t.project_id
     WHERE tr.resource_id = ? AND p.company_id = ?
     ORDER BY t.start_date, t.id
-  `).all(resourceId, companyId) as Array<{ id: number; name: string; start_date: string; duration: number; project_name: string }>;
+  `).all(resourceId, companyId) as Array<{ id: number; name: string; start_date: string; duration: number; allow_saturday: number; allow_sunday: number; project_name: string }>;
   const eventRows = db.prepare(`
     SELECT es.id, es.title, es.timing_mode, es.start_date, es.end_date, es.start_at, es.end_at,
       COALESCE(p.name, 'Company calendar') AS project_name
@@ -105,7 +101,7 @@ function assignmentsForResource(resourceId: number, companyId: number): Resource
 
   const intervals: AssignmentInterval[] = [
     ...taskRows.map(task => {
-      const endDate = addDays(task.start_date, task.duration);
+      const endDate = workingDayEnd(task.start_date, task.duration, { allowSaturday: !!task.allow_saturday, allowSunday: !!task.allow_sunday });
       return {
         id: task.id, kind: "Task" as const, title: task.name, project: task.project_name,
         timing: `${displayDate(task.start_date)} – ${displayDate(endDate)} · All day`, conflict: false,

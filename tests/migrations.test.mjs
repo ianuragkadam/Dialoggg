@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 10/);
+    assert.match(second.stdout, /version 11/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -84,6 +84,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 8, name: "secure_integration_setup_workshop" },
           { version: 9, name: "resource_management_invariants" },
           { version: 10, name: "project_lifecycle_invariants" },
+          { version: 11, name: "gantt_plan_invariants" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -250,9 +251,11 @@ test("Resource migration enforces fixed categories, tenant scope, one-to-one Use
       const typeTwo = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type Two', 'type two')").run(companyTwo).lastInsertRowid);
       const projectOne = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Project One', '2026-09-19')").run(companyOne, typeOne).lastInsertRowid);
       const projectTwo = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Project Two', '2026-09-19')").run(companyTwo, typeTwo).lastInsertRowid);
-      const taskOne = Number(database.prepare("INSERT INTO task (project_id, name, start_date, duration) VALUES (?, 'Task One', '2026-09-19', 1)").run(projectOne).lastInsertRowid);
-      const taskOneLater = Number(database.prepare("INSERT INTO task (project_id, name, start_date, duration) VALUES (?, 'Task Later', '2026-09-20', 1)").run(projectOne).lastInsertRowid);
-      const taskTwo = Number(database.prepare("INSERT INTO task (project_id, name, start_date, duration) VALUES (?, 'Task Two', '2026-09-19', 1)").run(projectTwo).lastInsertRowid);
+      const rootOne = database.prepare("SELECT id FROM task WHERE project_id=? AND is_root=1").get(projectOne).id;
+      const rootTwo = database.prepare("SELECT id FROM task WHERE project_id=? AND is_root=1").get(projectTwo).id;
+      const taskOne = Number(database.prepare("INSERT INTO task (project_id, parent_id, name, start_date, manual_start_date, duration) VALUES (?, ?, 'Task One', '2026-09-19', '2026-09-19', 1)").run(projectOne, rootOne).lastInsertRowid);
+      const taskOneLater = Number(database.prepare("INSERT INTO task (project_id, parent_id, name, start_date, manual_start_date, duration) VALUES (?, ?, 'Task Later', '2026-09-20', '2026-09-20', 1)").run(projectOne, rootOne).lastInsertRowid);
+      const taskTwo = Number(database.prepare("INSERT INTO task (project_id, parent_id, name, start_date, manual_start_date, duration) VALUES (?, ?, 'Task Two', '2026-09-19', '2026-09-19', 1)").run(projectTwo, rootTwo).lastInsertRowid);
       database.prepare("INSERT INTO task_resource (task_id, resource_id) VALUES (?, ?)").run(taskOne, resourceOne);
       assert.throws(() => database.prepare("INSERT INTO task_resource (task_id, resource_id) VALUES (?, ?)").run(taskTwo, resourceOne), /TASK_RESOURCE_SCOPE_OR_STATUS_INVALID/);
 
@@ -310,6 +313,47 @@ test("Project lifecycle migration enforces approved transitions and archived-onl
       assert.equal(database.prepare("DELETE FROM project WHERE id = ?").run(projectId).changes, 1);
       assert.deepEqual(database.prepare("SELECT project_id,target_id FROM audit_event WHERE action='project.archive'").get(), { project_id: null, target_id: String(projectId) });
       assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_project_company_status_updated'").get());
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+      database.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Gantt migration creates one protected root and enforces hierarchy and dependency scope", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-gantt-invariants-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const companyOne = Number(database.prepare("INSERT INTO company(name) VALUES('Gantt One')").run().lastInsertRowid);
+      const companyTwo = Number(database.prepare("INSERT INTO company(name) VALUES('Gantt Two')").run().lastInsertRowid);
+      const typeOne = Number(database.prepare("INSERT INTO project_type(company_id,name,normalized_name) VALUES(?,'Court','court')").run(companyOne).lastInsertRowid);
+      const typeTwo = Number(database.prepare("INSERT INTO project_type(company_id,name,normalized_name) VALUES(?,'Field','field')").run(companyTwo).lastInsertRowid);
+      const projectOne = Number(database.prepare("INSERT INTO project(company_id,project_type_id,name,start_date) VALUES(?,?,'Plan One','2026-09-18')").run(companyOne,typeOne).lastInsertRowid);
+      const projectTwo = Number(database.prepare("INSERT INTO project(company_id,project_type_id,name,start_date) VALUES(?,?,'Plan Two','2026-09-18')").run(companyTwo,typeTwo).lastInsertRowid);
+      const rootOne = database.prepare("SELECT id,is_header,parent_id FROM task WHERE project_id=? AND is_root=1").get(projectOne);
+      const rootTwo = database.prepare("SELECT id FROM task WHERE project_id=? AND is_root=1").get(projectTwo);
+      assert.deepEqual({ is_header: rootOne.is_header, parent_id: rootOne.parent_id }, { is_header: 1, parent_id: null });
+      assert.equal(database.prepare("SELECT COUNT(*) count FROM task WHERE project_id=? AND is_root=1").get(projectOne).count, 1);
+      const header = Number(database.prepare("INSERT INTO task(project_id,parent_id,name,start_date,manual_start_date,duration,is_header) VALUES(?,?, 'Header','2026-09-18','2026-09-18',1,1)").run(projectOne,rootOne.id).lastInsertRowid);
+      const first = Number(database.prepare("INSERT INTO task(project_id,parent_id,name,start_date,manual_start_date,duration) VALUES(?,?,'First','2026-09-18','2026-09-18',2)").run(projectOne,header).lastInsertRowid);
+      const second = Number(database.prepare("INSERT INTO task(project_id,parent_id,name,start_date,manual_start_date,duration) VALUES(?,?,'Second','2026-09-21','2026-09-21',1)").run(projectOne,header).lastInsertRowid);
+      assert.throws(() => database.prepare("INSERT INTO task(project_id,parent_id,name,start_date,manual_start_date,duration) VALUES(?,?,'Cross','2026-09-18','2026-09-18',1)").run(projectOne,rootTwo.id), /GANTT_TASK_SCOPE_INVALID/);
+      assert.throws(() => database.prepare("DELETE FROM task WHERE id=?").run(rootOne.id), /GANTT_ROOT_PROTECTED/);
+      assert.throws(() => database.prepare("DELETE FROM task WHERE id=?").run(header), /GANTT_HEADER_NOT_EMPTY/);
+      assert.throws(() => database.prepare("INSERT INTO task_link(project_id,source_task_id,target_task_id,link_type,lag_days) VALUES(?,?,?,?,?)").run(projectOne,first,header,"fs",0), /GANTT_LINK_SCOPE_INVALID/);
+      database.prepare("INSERT INTO task_link(project_id,source_task_id,target_task_id,link_type,lag_days) VALUES(?,?,?,?,?)").run(projectOne,first,second,"fs",0);
+      assert.throws(() => database.prepare("INSERT INTO task_link(project_id,source_task_id,target_task_id,link_type,lag_days) VALUES(?,?,?,?,?)").run(projectOne,first,second,"ss",0), /UNIQUE constraint failed/);
+      assert.throws(() => database.prepare("UPDATE task_link SET lag_days=-1 WHERE source_task_id=? AND target_task_id=?").run(first,second), /GANTT_LINK_SCOPE_INVALID/);
+      database.prepare("UPDATE task SET progress=1 WHERE id=?").run(first);
+      assert.throws(() => database.prepare("DELETE FROM task WHERE id=?").run(first), /GANTT_COMPLETED_HISTORY_PROTECTED/);
+      assert.equal(database.prepare("SELECT plan_version FROM project WHERE id=?").get(projectOne).plan_version, 1);
+      assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='ux_task_project_root'").get());
     } finally {
       assert.equal(database.pragma("foreign_key_check").length, 0);
       database.close();
@@ -386,6 +430,7 @@ test("Project Template migration enforces tenant-scoped sources, graph reference
       const companyTwo = Number(database.prepare("INSERT INTO company (name) VALUES ('Template Company Two')").run().lastInsertRowid);
       const typeOne = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type One', 'type one')").run(companyOne).lastInsertRowid);
       const projectOne = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Source One', '2026-09-17')").run(companyOne, typeOne).lastInsertRowid);
+      const projectRoot = database.prepare("SELECT id FROM task WHERE project_id=? AND is_root=1").get(projectOne).id;
       const identity = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('template@example.test', 'hash', 'Template', 'active')").run().lastInsertRowid);
       const membershipOne = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'admin', 'active')").run(identity, companyOne).lastInsertRowid);
       const membershipTwo = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'admin', 'active')").run(identity, companyTwo).lastInsertRowid);
@@ -411,8 +456,8 @@ test("Project Template migration enforces tenant-scoped sources, graph reference
 
       const categoryTwo = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(companyTwo).lastInsertRowid);
       assert.throws(() => database.prepare(`
-        INSERT INTO task (project_id, name, start_date, duration, resource_category_id) VALUES (?, 'Scoped Task', '2026-09-17', 1, ?)
-      `).run(projectOne, categoryTwo), /TASK_RESOURCE_CATEGORY_SCOPE_INVALID/);
+        INSERT INTO task (project_id, parent_id, name, start_date, manual_start_date, duration, resource_category_id) VALUES (?, ?, 'Scoped Task', '2026-09-17', '2026-09-17', 1, ?)
+      `).run(projectOne, projectRoot, categoryTwo), /TASK_RESOURCE_CATEGORY_SCOPE_INVALID|GANTT_TASK_SCOPE_INVALID/);
     } finally {
       assert.equal(database.pragma("foreign_key_check").length, 0);
       database.close();
