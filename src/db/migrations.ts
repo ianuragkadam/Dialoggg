@@ -1121,7 +1121,216 @@ const migration008: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008];
+const migration009: Migration = {
+  version: 9,
+  name: "resource_management_invariants",
+  signature: "fixed categories + unique category/name and resource/name + independent linked membership lifecycle + active task/event guards v3",
+  up(database) {
+    addColumn(database, "resource", "normalized_name", "normalized_name TEXT NOT NULL DEFAULT ''");
+    addColumn(database, "resource", "version", "version INTEGER NOT NULL DEFAULT 1");
+    addColumn(database, "resource", "created_at", "created_at TEXT");
+    addColumn(database, "resource", "updated_at", "updated_at TEXT");
+
+    const fixedCategories = ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"] as const;
+    const companies = database.prepare("SELECT id FROM company ORDER BY id").all() as Array<{ id: number }>;
+    const findCategory = database.prepare(`
+      SELECT id FROM resource_category WHERE company_id = ? AND lower(name) = lower(?) ORDER BY id LIMIT 1
+    `);
+    const insertCategory = database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, ?)");
+    const canonicalizeCategory = database.prepare("UPDATE resource_category SET name = ? WHERE id = ?");
+    const reassignCategory = database.prepare("UPDATE resource SET category_id = ? WHERE company_id = ? AND category_id = ?");
+    const assignFallbackCategory = database.prepare(`
+      UPDATE resource SET category_id = ?
+      WHERE company_id = ? AND (category_id IS NULL OR category_id NOT IN (
+        SELECT id FROM resource_category WHERE company_id = ?
+      ))
+    `);
+    const removeCategory = database.prepare("DELETE FROM resource_category WHERE id = ?");
+
+    for (const company of companies) {
+      const canonicalIds = new Map<string, number>();
+      for (const categoryName of fixedCategories) {
+        const existing = findCategory.get(company.id, categoryName) as { id: number } | undefined;
+        const id = existing?.id ?? Number(insertCategory.run(company.id, categoryName).lastInsertRowid);
+        canonicalizeCategory.run(categoryName, id);
+        canonicalIds.set(categoryName.toLocaleLowerCase("en-US"), id);
+      }
+
+      const otherId = canonicalIds.get("other")!;
+      const categoryRows = database.prepare(`
+        SELECT id, name FROM resource_category WHERE company_id = ? ORDER BY id
+      `).all(company.id) as Array<{ id: number; name: string }>;
+      for (const category of categoryRows) {
+        const canonicalId = canonicalIds.get(category.name.trim().toLocaleLowerCase("en-US"));
+        if (!canonicalId || canonicalId !== category.id) {
+          reassignCategory.run(canonicalId ?? otherId, company.id, category.id);
+          removeCategory.run(category.id);
+        }
+      }
+      assignFallbackCategory.run(otherId, company.id, company.id);
+
+      const resources = database.prepare(`
+        SELECT id, name FROM resource WHERE company_id = ? ORDER BY id
+      `).all(company.id) as Array<{ id: number; name: string }>;
+      const usedNames = new Set<string>();
+      const updateResourceName = database.prepare(`
+        UPDATE resource SET name = ?, normalized_name = ?, status = CASE WHEN status = 'inactive' THEN 'inactive' ELSE 'active' END,
+          created_at = COALESCE(created_at, CURRENT_TIMESTAMP), updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)
+        WHERE id = ?
+      `);
+      for (const resource of resources) {
+        const baseName = resource.name.trim().replace(/\s+/g, " ") || `Resource ${resource.id}`;
+        let name = baseName;
+        let normalizedName = name.toLocaleLowerCase("en-US");
+        if (usedNames.has(normalizedName)) {
+          name = `${baseName} (${resource.id})`;
+          normalizedName = name.toLocaleLowerCase("en-US");
+        }
+        usedNames.add(normalizedName);
+        updateResourceName.run(name, normalizedName, resource.id);
+      }
+    }
+
+    database.exec(`
+      DELETE FROM task_resource
+      WHERE NOT EXISTS (
+        SELECT 1 FROM task t
+        JOIN project p ON p.id = t.project_id
+        JOIN resource r ON r.id = task_resource.resource_id
+        WHERE t.id = task_resource.task_id AND p.company_id = r.company_id
+      );
+      DELETE FROM event_resource
+      WHERE NOT EXISTS (
+        SELECT 1 FROM event_series es
+        JOIN resource r ON r.id = event_resource.resource_id
+        WHERE es.id = event_resource.series_id AND es.company_id = r.company_id
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_resource_company_normalized_name
+        ON resource(company_id, normalized_name);
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_resource_category_company_name
+        ON resource_category(company_id, name);
+      CREATE INDEX IF NOT EXISTS idx_resource_company_status_category
+        ON resource(company_id, status, category_id, normalized_name);
+      CREATE INDEX IF NOT EXISTS idx_task_resource_resource
+        ON task_resource(resource_id, task_id);
+      CREATE INDEX IF NOT EXISTS idx_event_resource_resource
+        ON event_resource(resource_id, series_id);
+
+      CREATE TRIGGER trg_resource_category_fixed_insert
+      BEFORE INSERT ON resource_category
+      WHEN NEW.name NOT IN ('Employee','Subcontractor','Supplier','Equipment','Other')
+      BEGIN
+        SELECT RAISE(ABORT, 'RESOURCE_CATEGORY_FIXED');
+      END;
+
+      CREATE TRIGGER trg_resource_category_fixed_update
+      BEFORE UPDATE OF company_id, name ON resource_category
+      WHEN NEW.company_id <> OLD.company_id OR NEW.name <> OLD.name
+      BEGIN
+        SELECT RAISE(ABORT, 'RESOURCE_CATEGORY_FIXED');
+      END;
+
+      CREATE TRIGGER trg_resource_category_fixed_delete
+      BEFORE DELETE ON resource_category
+      BEGIN
+        SELECT RAISE(ABORT, 'RESOURCE_CATEGORY_FIXED');
+      END;
+
+      CREATE TRIGGER trg_resource_scope_insert
+      BEFORE INSERT ON resource
+      WHEN NEW.status NOT IN ('active','inactive')
+        OR trim(NEW.name) = ''
+        OR NEW.normalized_name <> lower(trim(NEW.name))
+        OR NOT EXISTS (
+          SELECT 1 FROM resource_category rc
+          WHERE rc.id = NEW.category_id AND rc.company_id = NEW.company_id
+            AND rc.name IN ('Employee','Subcontractor','Supplier','Equipment','Other')
+        )
+        OR (NEW.linked_membership_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM company_membership cm
+          WHERE cm.id = NEW.linked_membership_id AND cm.company_id = NEW.company_id
+            AND cm.status IN ('pending','active')
+        ))
+      BEGIN
+        SELECT RAISE(ABORT, 'RESOURCE_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER trg_resource_scope_update
+      BEFORE UPDATE OF company_id, category_id, name, normalized_name, status, linked_membership_id ON resource
+      WHEN NEW.company_id <> OLD.company_id
+        OR NEW.status NOT IN ('active','inactive')
+        OR trim(NEW.name) = ''
+        OR NEW.normalized_name <> lower(trim(NEW.name))
+        OR NOT EXISTS (
+          SELECT 1 FROM resource_category rc
+          WHERE rc.id = NEW.category_id AND rc.company_id = NEW.company_id
+            AND rc.name IN ('Employee','Subcontractor','Supplier','Equipment','Other')
+        )
+        OR (NEW.linked_membership_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM company_membership cm
+          WHERE cm.id = NEW.linked_membership_id AND cm.company_id = NEW.company_id
+        ))
+        OR (NEW.linked_membership_id IS NOT OLD.linked_membership_id
+          AND NEW.linked_membership_id IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM company_membership cm
+            WHERE cm.id = NEW.linked_membership_id AND cm.company_id = NEW.company_id
+              AND cm.status IN ('pending','active')
+          ))
+      BEGIN
+        SELECT RAISE(ABORT, 'RESOURCE_SCOPE_INVALID');
+      END;
+
+      CREATE TRIGGER trg_task_resource_scope_insert
+      BEFORE INSERT ON task_resource
+      WHEN NOT EXISTS (
+        SELECT 1 FROM task t
+        JOIN project p ON p.id = t.project_id
+        JOIN resource r ON r.id = NEW.resource_id
+        WHERE t.id = NEW.task_id AND p.company_id = r.company_id AND r.status = 'active'
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'TASK_RESOURCE_SCOPE_OR_STATUS_INVALID');
+      END;
+
+      CREATE TRIGGER trg_task_resource_scope_update
+      BEFORE UPDATE OF task_id, resource_id ON task_resource
+      WHEN NOT EXISTS (
+        SELECT 1 FROM task t
+        JOIN project p ON p.id = t.project_id
+        JOIN resource r ON r.id = NEW.resource_id
+        WHERE t.id = NEW.task_id AND p.company_id = r.company_id AND r.status = 'active'
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'TASK_RESOURCE_SCOPE_OR_STATUS_INVALID');
+      END;
+
+      CREATE TRIGGER trg_event_resource_scope_insert
+      BEFORE INSERT ON event_resource
+      WHEN NOT EXISTS (
+        SELECT 1 FROM event_series es
+        JOIN resource r ON r.id = NEW.resource_id
+        WHERE es.id = NEW.series_id AND es.company_id = r.company_id AND r.status = 'active'
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'EVENT_RESOURCE_SCOPE_OR_STATUS_INVALID');
+      END;
+
+      CREATE TRIGGER trg_event_resource_scope_update
+      BEFORE UPDATE OF series_id, resource_id ON event_resource
+      WHEN NOT EXISTS (
+        SELECT 1 FROM event_series es
+        JOIN resource r ON r.id = NEW.resource_id
+        WHERE es.id = NEW.series_id AND es.company_id = r.company_id AND r.status = 'active'
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'EVENT_RESOURCE_SCOPE_OR_STATUS_INVALID');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

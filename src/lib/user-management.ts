@@ -187,6 +187,7 @@ export function updateUserProfile(actor: Actor, membershipId: number, input: {
   const row = targetMembership(actor, membershipId);
   if (!row || !canManageMembership(actor, { membershipId: row.id, role: row.role, status: row.status })) return null;
   db.transaction(() => {
+    const resourceName = `${input.firstName} ${input.lastName}`.trim().replace(/\s+/g, " ");
     db.prepare(`
       UPDATE identity SET first_name = ?, last_name = ?, phone = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
@@ -196,9 +197,10 @@ export function updateUserProfile(actor: Actor, membershipId: number, input: {
         .run(`${input.firstName} ${input.lastName}`.trim(), input.phone || null, row.legacy_user_id);
     }
     db.prepare(`
-      UPDATE resource SET name = ?, email = ?, phone = ?
+      UPDATE resource SET name = ?, normalized_name = ?, email = ?, phone = ?, version = version + 1,
+        updated_at = CURRENT_TIMESTAMP
       WHERE linked_membership_id = ? AND company_id = ?
-    `).run(`${input.firstName} ${input.lastName}`.trim(), row.normalized_email, input.phone || null, row.id, actor.companyId);
+    `).run(resourceName, resourceName.toLocaleLowerCase("en-US"), row.normalized_email, input.phone || null, row.id, actor.companyId);
   })();
   return getCompanyUser(actor, membershipId);
 }

@@ -1,6 +1,6 @@
 # Product Status
 
-Last verified: September 17, 2026
+Last verified: September 19, 2026
 
 ## Complete foundations
 
@@ -32,8 +32,9 @@ Last verified: September 17, 2026
 - Approved fixed Roles, search/filtering, invitation review, optional linked Resource, lifecycle confirmations, exact Project-access changes, External/Client minimum access, and Owner/Admin locks
 - Focused automated and human-click QA completed; the incorrect Owner-screen Employee explanation found manually was fixed and regression-tested
 - Resources and fixed Resource Categories UI at `/resources`, `/resources/new`, and `/resources/[id]`
-- Five fixed Categories, searchable directory, create/edit review, one-to-one User linkage, Task/Event schedule, explicit conflict acknowledgement, independent lifecycle confirmation, and Employee read-only states
-- Focused automated and human-click QA completed; ambiguous lifecycle-control names and stakeholder-specific conflict copy found manually were fixed and regression-tested
+- Resource Management is now persistent locally: five database-locked Categories, tenant-safe normalized names, audited create/edit/lifecycle writes, one-to-one company membership linkage, Task/Event-series assignments, optimistic versions, and preserved history on deactivate/restore
+- Owner/Admin manage, Employee reads, and External/Client is denied across the server pages and v1 APIs; legacy Resource/User paths use the same fixed-Category and normalization rules
+- Verification passed 28/28 unit/foundation/migration checks, 136/136 scenarios, 14/14 focused Resource browser checks, and 155/155 browser checks across all eleven suites; production/full dependency audits report zero vulnerabilities
 - Projects, role-based Project views, and lifecycle UI at `/projects`, `/projects/new`, `/projects/[id]`, and `/projects/[id]/edit`
 - Complete required-field review, derived End Date rule, Template/blank Plan choice, User assignments, Start Date rebase, Complete/Reopen, Archive/Restore, Owner-only permanent deletion, Employee visibility, and External/Client safe view
 - The existing original Gantt remains the internal Project Plan; automated and human-click QA fixed External navigation leakage and direct Completed/Archived edit access
@@ -52,7 +53,7 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 
 - Live provider delivery for queued first-Owner invitations and Google synchronization workers/resume controls; Company Administration persistence, audit, authorization, suspension, and per-company pause state are implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
-- Resource persistence, fixed-Category enforcement, User linkage, Event assignment, and lifecycle enforcement; the complete UI review module is implemented
+- Production deployment and live-volume verification of the locally complete Resource Management schema-v9 checkpoint; broader Event editing/recurrence and Google delivery remain separate checkpoints
 - Project field/lifecycle persistence beyond the now-complete Project Type and Template-instantiation paths, assignment wiring, External access enforcement across every API, derived End Date, and working-day rebase; the complete UI review module is implemented
 - Production deployment and live-volume verification of the locally complete Project Templates checkpoint
 - Complete weekend-aware Gantt persistence/cascade enforcement; the detailed UI review is complete and retains the original Gantt

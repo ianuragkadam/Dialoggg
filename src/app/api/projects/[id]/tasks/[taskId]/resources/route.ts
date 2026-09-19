@@ -3,6 +3,7 @@ import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
+import { recordAudit, requestId } from "@/lib/security";
 
 function taskBelongsToCompany(projectId: number, taskId: number, companyId: number | null) {
   return !!db.prepare(`
@@ -28,6 +29,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string; taskId: string }> }) {
+  const traceId = requestId(req);
   const { id, taskId } = await params;
   const g = await requireCompanyRole(["owner", "admin"]);
   if ("error" in g) return g.error;
@@ -37,12 +39,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const body = await req.json();
-  const ids: number[] = Array.isArray(body.resource_ids) ? body.resource_ids.map(Number) : [];
+  const rawIds = Array.isArray(body.resource_ids) ? body.resource_ids.map(Number) : [];
+  if (!rawIds.every(id => Number.isInteger(id) && id > 0)) return NextResponse.json({ error: "Invalid Resource IDs" }, { status: 400 });
+  const ids = [...new Set(rawIds)];
   for (const resourceId of ids) {
     const resource = db.prepare(
-      "SELECT id FROM resource WHERE id = ? AND company_id = ?",
+      "SELECT id FROM resource WHERE id = ? AND company_id = ? AND status = 'active'",
     ).get(resourceId, actor.companyId);
-    if (!resource) return NextResponse.json({ error: "Resource not found" }, { status: 404 });
+    if (!resource) return NextResponse.json({ error: "Active Resource not found" }, { status: 404 });
   }
 
   const tx = db.transaction(() => {
@@ -52,5 +56,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   });
   tx();
 
-  return NextResponse.json({ ok: true });
+  recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId: Number(id), action: "task.resources.update", targetType: "task", targetId: Number(taskId), result: "success", metadata: { resourceCount: ids.length } });
+
+  return NextResponse.json({ ok: true }, { headers: { "x-request-id": traceId, "cache-control": "no-store" } });
 }

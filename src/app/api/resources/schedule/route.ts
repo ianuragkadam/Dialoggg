@@ -1,69 +1,113 @@
 import { NextResponse } from "next/server";
+
 import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentActor } from "@/lib/auth";
 
 function addDays(iso: string, days: number) {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const date = new Date(`${iso}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
+type ScheduleItem = {
+  id: string;
+  resourceId: number;
+  title: string;
+  start: string;
+  end: string;
+  color: string;
+  projectId: number | null;
+  kind: "Task" | "Event";
+};
+
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (user.user_type === "external") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const actor = await getCurrentActor();
+  if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (actor.contextType !== "company" || !actor.companyId || actor.companyRole === "external") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-  const resources = db.prepare(
-    "SELECT id, name FROM resource WHERE company_id = ? ORDER BY name",
-  ).all(user.company_id) as { id: number; name: string }[];
-
-  // Pull every assigned non-header task across all of this company's projects
-  const events = db.prepare(`
-    SELECT t.id AS task_id, t.name, t.start_date, t.duration, t.color,
-           tr.resource_id, p.id AS project_id, p.name AS project_name
+  const resources = db.prepare("SELECT id, name FROM resource WHERE company_id = ? ORDER BY lower(name), id")
+    .all(actor.companyId) as Array<{ id: number; name: string }>;
+  const taskRows = db.prepare(`
+    SELECT t.id, t.name, t.start_date, t.duration, t.color,
+      tr.resource_id, p.id AS project_id, p.name AS project_name
     FROM task t
     JOIN task_resource tr ON tr.task_id = t.id
     JOIN project p ON p.id = t.project_id
+    JOIN resource r ON r.id = tr.resource_id AND r.company_id = p.company_id
     WHERE p.company_id = ? AND t.is_header = 0
-  `).all(user.company_id) as any[];
+  `).all(actor.companyId) as Array<{ id: number; name: string; start_date: string; duration: number; color: string; resource_id: number; project_id: number; project_name: string }>;
+  const eventRows = db.prepare(`
+    SELECT es.id, es.title, es.timing_mode, es.start_date, es.end_date, es.start_at, es.end_at, es.color,
+      er.resource_id, es.project_id, COALESCE(p.name, 'Company calendar') AS project_name
+    FROM event_series es
+    JOIN event_resource er ON er.series_id = es.id
+    JOIN resource r ON r.id = er.resource_id AND r.company_id = es.company_id
+    LEFT JOIN project p ON p.id = es.project_id AND p.company_id = es.company_id
+    WHERE es.company_id = ?
+  `).all(actor.companyId) as Array<{
+    id: number; title: string; timing_mode: "all_day" | "timed"; start_date: string | null; end_date: string | null;
+    start_at: string | null; end_at: string | null; color: string; resource_id: number; project_id: number | null; project_name: string;
+  }>;
 
-  // Detect overlap: same resource on two tasks whose date ranges intersect.
-  // Group by resource_id, sort by start, then flag overlapping pairs.
+  const items: ScheduleItem[] = [
+    ...taskRows.map(row => ({
+      id: `t${row.id}-r${row.resource_id}`,
+      resourceId: row.resource_id,
+      title: `${row.name} (${row.project_name})`,
+      start: row.start_date,
+      end: addDays(row.start_date, row.duration),
+      color: row.color,
+      projectId: row.project_id,
+      kind: "Task" as const,
+    })),
+    ...eventRows.flatMap(row => {
+      const start = row.timing_mode === "timed" ? row.start_at : row.start_date;
+      const end = row.timing_mode === "timed" ? row.end_at : row.start_date ? addDays(row.end_date || row.start_date, 1) : null;
+      return start && end ? [{
+        id: `e${row.id}-r${row.resource_id}`,
+        resourceId: row.resource_id,
+        title: `${row.title} (${row.project_name})`,
+        start,
+        end,
+        color: row.color,
+        projectId: row.project_id,
+        kind: "Event" as const,
+      }] : [];
+    }),
+  ];
+
   const conflicts = new Set<string>();
-  const byResource: Record<number, any[]> = {};
-  for (const e of events) {
-    (byResource[e.resource_id] ??= []).push({
-      ...e,
-      end: addDays(e.start_date, e.duration),
-    });
-  }
-  for (const list of Object.values(byResource)) {
-    list.sort((a, b) => a.start_date < b.start_date ? -1 : 1);
-    for (let i = 0; i < list.length - 1; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        if (list[i].end > list[j].start_date) {
-          conflicts.add(`t${list[i].task_id}-r${list[i].resource_id}`);
-          conflicts.add(`t${list[j].task_id}-r${list[j].resource_id}`);
+  const byResource = new Map<number, ScheduleItem[]>();
+  for (const item of items) byResource.set(item.resourceId, [...(byResource.get(item.resourceId) ?? []), item]);
+  for (const resourceItems of byResource.values()) {
+    resourceItems.sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+    for (let left = 0; left < resourceItems.length; left += 1) {
+      const leftEnd = Date.parse(resourceItems[left].end);
+      for (let right = left + 1; right < resourceItems.length; right += 1) {
+        if (leftEnd > Date.parse(resourceItems[right].start)) {
+          conflicts.add(resourceItems[left].id);
+          conflicts.add(resourceItems[right].id);
         } else break;
       }
     }
   }
 
   return NextResponse.json({
-    resources: resources.map(r => ({ id: String(r.id), title: r.name })),
-    events: events.map(e => {
-      const eventId = `t${e.task_id}-r${e.resource_id}`;
-      const conflict = conflicts.has(eventId);
+    resources: resources.map(resource => ({ id: String(resource.id), title: resource.name })),
+    events: items.map(item => {
+      const conflict = conflicts.has(item.id);
       return {
-        id: eventId,
-        resourceId: String(e.resource_id),
-        title: `${e.name} (${e.project_name})`,
-        start: e.start_date,
-        end: addDays(e.start_date, e.duration),
-        color: conflict ? "#c0392b" : e.color,
+        id: item.id,
+        resourceId: String(item.resourceId),
+        title: item.title,
+        start: item.start,
+        end: item.end,
+        color: conflict ? "#c0392b" : item.color,
         borderColor: conflict ? "#7d1f15" : undefined,
-        extendedProps: { conflict, project_id: e.project_id },
+        extendedProps: { conflict, project_id: item.projectId, kind: item.kind },
       };
     }),
-  });
+  }, { headers: { "cache-control": "no-store" } });
 }

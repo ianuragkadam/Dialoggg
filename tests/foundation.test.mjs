@@ -187,12 +187,13 @@ test("Resources UI covers fixed Categories, one-to-one links, lifecycle, and con
   assert.match(list, /no category builder/);
   assert.match(list, /Deactivate Resource\?/);
   assert.match(create, /Optional User link/);
-  assert.match(create, /already linked one-to-one/);
+  assert.match(create, /already linked to another Resource/);
   assert.match(create, /Confirm Resource/);
   assert.match(detail, /Change linked User/);
   assert.match(detail, /Schedule conflict warning/);
   assert.match(detail, /Historical assignments and names remain visible/);
-  assert.match(`${list}\n${create}\n${detail}`, /UI preview/);
+  assert.match(`${list}\n${create}\n${detail}`, /authenticatedFetch/);
+  assert.doesNotMatch(`${list}\n${create}\n${detail}`, /UI preview|reset on refresh|non-persistent/);
 });
 
 test("Projects UI covers complete fields, lifecycle, rebase, and External boundaries", async () => {

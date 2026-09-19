@@ -74,7 +74,7 @@ The script creates only isolated local Admin and Employee test identities in a t
 
 ## Resources UI Playwright check
 
-The Resources UI has a focused browser script at `scripts/test-resources-ui.mjs`. It verifies the five fixed Categories, search/filter recovery, distinct lifecycle-control names, deactivation/restoration history language, required and duplicate validation, exact Add Resource review, keyboard Escape, one-to-one User linkage, Task/Event schedule details, explicit conflict acknowledgement, Employee read-only access, signed-out redirects, and phone-width overflow.
+The Resources UI has a focused browser script at `scripts/test-resources-ui.mjs`. It verifies CSRF and custom-Category rejection, cross-tenant and External denial, Task/Event assignment persistence, inactive assignment rejection, the five fixed Categories, search/filter recovery, persisted create/edit/User-link/lifecycle actions, duplicate validation, conflict acknowledgement, retained history, linked-User independence, Employee read-only access, signed-out redirects, and phone-width overflow.
 
 With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
 
@@ -82,7 +82,7 @@ With Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set, run:
 node scripts/test-resources-ui.mjs
 ```
 
-The script creates only isolated local Admin and Employee test identities in a temporary database and removes the database after completion. It never mutates production Resources, Users, assignments, calendars, feeds, or company records.
+The script creates isolated local Admin, Employee, External, and second-company fixtures in a temporary database, performs real browser and API writes there, and removes the database after completion. It never reads or mutates production Resources, Users, assignments, calendars, feeds, or company records. The September 19 checkpoint passed 14/14 focused checks and 155/155 checks across all eleven UI suites.
 
 ## Projects UI Playwright check
 

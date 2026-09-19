@@ -1,87 +1,65 @@
-# Resources and Fixed Resource Categories UI Module
+# Resources and Fixed Resource Categories
 
-Last verified: September 15, 2026
+Last verified: September 19, 2026
 
 ## Delivery boundary
 
-This is a detailed UI-only review module for company Resources. It demonstrates the approved fixed Categories, Resource creation and editing, optional one-to-one User linkage, Task/Event schedule visibility, schedule-conflict acknowledgement, and deactivate/restore behavior. Preview actions do not persist Resources, links, assignments, calendars, feeds, Users, or notifications; state resets on refresh.
+Resource Management is persistent and company-scoped. A Resource is schedulable capacity and never receives login access. A User is an identity with a company membership and may optionally have a one-to-one link to a Resource; linking does not couple their lifecycle.
 
-The module keeps **User** and **Resource** separate: a Resource can be scheduled but cannot log in. Scott's completed follow-up choices are applied, including one-to-one User/Resource linkage, conflict warning with explicit acknowledgement, and historical preservation on deactivation.
+Owner/Admin can create, edit, link, deactivate, restore, and assign Resources. Employee has read-only directory, detail, schedule, and feed access subject to the linked-Resource rule. External/Client and Platform contexts cannot access company Resource records.
 
 ## Requirement traceability
 
-| Requirement | UI coverage |
-| --- | --- |
-| `DG-RES-001`, `DG-RES-002` | The directory and form identify Resources as schedulable people, subcontractors, suppliers, equipment, or other capacity and explicitly state that a Resource receives no login access. |
-| `DG-RES-003` | Add and Edit require a Resource Name and exactly one Category; invalid optional contact email is rejected. |
-| `DG-RES-004`, `DG-OOS-002` | Only Employee, Subcontractor, Supplier, Equipment, and Other appear. No add, rename, delete, or custom-category builder is offered. |
-| `DG-RES-005` | Owner/Admin edit preview updates display values without replacing schedule identity. Final persistence and cross-company API validation remain pending. |
-| `DG-RES-006`, `DG-USR-007`, `FUP-010` | Add and detail flows explain and demonstrate an optional one-to-one company-scoped User link. Already-linked Jamie Morgan is excluded from the available User choices. Resource/User lifecycle remains independent. |
-| `DG-RES-007`, `DG-RES-008` | Resource detail presents both Task and Event assignments and links to the Resource Calendar. Final assignment editors and Event persistence remain pending. |
-| `DG-RES-009`, `DG-RES-010`, `FUP-011` | Deactivate confirmation removes the Resource from new assignments while preserving historical Task/Event and calendar records. Restore is available and never changes the linked User automatically. |
-| `DG-RES-011` | All three routes require authentication and resolve the current company role. Unknown Resource IDs return not found. Final persisted tenant isolation remains enforced by the backend phase. |
-| `FUP-009` | A visible schedule-conflict alert names the overlapping Task and Event and requires explicit acknowledgement instead of silently blocking every overlap. |
-| `DG-ROL-005`, `DG-ROL-006`, `DG-UX-001` | Owner/Admin receives management controls; Employee receives a read-only Resource directory/detail; approved capitalization and terminology are used throughout. |
-| `DG-UX-004`, `DG-UX-007`, `DG-UX-009`, `FUP-019` | Responsive layouts avoid phone-width page overflow. Controls have distinct accessible names, dialogs use dialog/alertdialog semantics, and statuses never rely on color alone. |
+| Requirement | Implemented behavior | Verification |
+| --- | --- | --- |
+| `DG-RES-001`, `DG-RES-002` | Resource records are separate from login identities and represent schedulable people, subcontractors, suppliers, equipment, or other capacity. | Unit/static, scenario, focused browser |
+| `DG-RES-003` | Name and exactly one Category are required; optional email and phone are validated and normalized. | API and browser validation |
+| `DG-RES-004`, `DG-OOS-002` | Exactly five Categories are seeded and database-locked: Employee, Subcontractor, Supplier, Equipment, Other. Custom insert, rename, and delete fail closed. | Migration invariant test and API test |
+| `DG-RES-005` | Company-scoped create/edit uses case-insensitive unique normalized names, optimistic versions, audit records, and refresh persistence. | Scenario and browser persistence |
+| `DG-RES-006`, `DG-USR-007`, `FUP-010` | Optional same-company one-to-one membership linkage is enforced by validation, unique index, and database triggers. User/Resource lifecycles remain independent. | Migration, API, lifecycle browser check |
+| `DG-RES-007`, `DG-RES-008` | Multiple Task and canonical Event-series assignments persist and render together on Resource detail; tenant scope is enforced in service and triggers. | Assignment API and browser checks |
+| `DG-RES-009`, `DG-RES-010`, `FUP-011` | Deactivation blocks only new assignments; historical Task/Event links and calendar history remain. Restore re-enables assignment without changing a linked User. | Migration and persisted lifecycle checks |
+| `DG-RES-011` | Every Resource read/write is authenticated, role-gated, and company-scoped; cross-tenant IDs return not found and External access is denied. | Scenario and focused API checks |
+| `FUP-009` | Task/Event overlaps receive a visible conflict label and explicit acknowledgement without silent assignment changes. | Focused browser check |
+| `DG-ROL-005`, `DG-ROL-006` | Owner/Admin manage; Employee reads; External/Client is denied. | Role browser and API checks |
+| `DG-UX-001`, `DG-UX-004`, `DG-UX-007`, `DG-UX-009`, `FUP-019` | Approved terminology, named controls, accessible dialogs/status, keyboard-safe confirmation, and phone-width layout are retained. | Static and browser checks |
 
-## Routes and access
+## Routes and APIs
 
-| Route | Purpose | Signed out | Employee | Owner/Admin |
-| --- | --- | --- | --- | --- |
-| `/resources` | Search/filter the company Resource directory and review lifecycle actions | Redirect to Login | Read-only | Full UI preview |
-| `/resources/new` | Configure and review a Resource | Redirect to Login | Restricted state | Full UI preview |
-| `/resources/[id]` | Review details, User link, schedule, conflict, edit, and lifecycle | Redirect to Login | Read-only | Full UI preview; unknown IDs are 404 |
+| Route | Purpose | Access |
+| --- | --- | --- |
+| `/resources` | Persistent Resource directory, filters, summary, lifecycle | Employee read; Owner/Admin manage |
+| `/resources/new` | Validated create and optional User link | Owner/Admin |
+| `/resources/[id]` | Detail, edit, link, Task/Event schedule, conflict, lifecycle | Employee read; Owner/Admin manage |
+| `/api/v1/resources` | List/create structured Resource DTOs | Company internal roles; create is Owner/Admin |
+| `/api/v1/resources/[id]` | Read/update/lifecycle with optimistic version | Company internal roles; writes are Owner/Admin |
+| `/api/v1/resources/[id]/assignments` | Read/replace Task and Event-series assignments | Company internal roles; write is Owner/Admin |
 
-## Resource directory states
+All mutations enforce same-origin plus double-submit CSRF validation and write an audit event. Compatibility endpoints use the same domain rules and cannot create custom Categories.
 
-- Summary cards show Resources, Active, Linked Users, and Schedule conflicts.
-- Search matches name, email, or Category without case sensitivity.
-- Category filter contains only the five approved fixed Categories.
-- Status filter contains Active and Inactive.
-- No matching Resources explains the outcome and offers **Clear filters**.
-- Each record shows Name, contact email, Category, status, linked User, and **View**.
-- Owner/Admin lifecycle buttons include the Resource name in their accessible label, such as **Deactivate Jamie Morgan**.
-- Employee sees the same review information without add, deactivate, restore, edit, or link controls.
+## Database invariants
 
-## Add Resource states
+Migration 9, `resource_management_invariants`, performs the following additive/backfill work:
 
-1. **Empty form** — Resource Name and Category errors appear together.
-2. **Duplicate Resource Name** — existing preview names are rejected case-insensitively.
-3. **Optional contact validation** — invalid email is rejected; blank email and phone are allowed.
-4. **Fixed Category** — exactly one approved Category is required.
-5. **Optional linked User** — available company Users may be selected; already-linked Users are unavailable.
-6. **Review** — exact Name, Category, contact values, and linked User are repeated before confirmation.
-7. **Back to edit / Escape** — review closes without losing values.
-8. **Leave Resource setup?** — protects a changed form and confirms that nothing was created.
-9. **Resource preview complete** — explicitly states that no Resource, User link, assignment, calendar, or feed was created.
-
-## Resource detail and conflict states
-
-- Details show Resource Name, Category, status, contact email, and phone.
-- Edit validates required Name and optional email before updating the in-memory preview.
-- Linked User explains the one-to-one rule and can be changed or removed in an exact review dialog.
-- Schedule contains both Task and Event examples and retains historical visibility messaging.
-- An overlap carries a non-color **Schedule conflict** label and **Review conflict** action.
-- The alert names both conflicting items, offers **Go back**, and requires **Proceed in UI preview** acknowledgement.
-- Conflict copy is product-neutral and does not expose stakeholder workshop language.
-
-## Lifecycle confirmations
-
-- **Deactivate Resource?** states that new Task/Event assignment stops while historical assignments, Resource Calendar history, and the Resource name remain visible.
-- **Restore Resource?** states that the Resource becomes available for new assignments again.
-- Both confirmations state that a linked User is never deactivated or restored automatically.
-- Safe cancellation is available before every lifecycle preview action.
+- canonicalizes the five Categories per existing company and reassigns legacy custom or invalid values to Other;
+- normalizes and de-duplicates legacy Resource names without deleting a Resource;
+- adds normalized name, optimistic version, and timestamps;
+- removes pre-existing cross-company Task/Event assignment rows;
+- enforces Resource/Category/membership company scope and one-to-one membership linkage;
+- rejects new Task/Event assignments to inactive or cross-company Resources while preserving existing history; and
+- locks Category insert/update/delete to the approved fixed set.
 
 ## QA evidence
 
-- Production build and TypeScript validation passed with 55 generated application routes, including all three Resource UI routes.
-- Foundation suite passed 13 of 13 checks.
-- Isolated application suite passed 93 of 93 scenarios, including authentication, Admin access, Employee restriction, and unknown-Resource handling.
-- Focused Resources Playwright suite passed 17 of 17 scenarios.
-- Human-click QA covered Login, authenticated navigation, the five fixed Categories, distinct lifecycle-control names, Add Resource validation and exact review, linked User choice, Task/Event schedule details, and the conflict warning.
-- Human testing found ambiguous repeated lifecycle button names and stakeholder-specific conflict copy. Resource names were added to accessible button labels, the copy was made product-neutral, regression tests were added, and automated plus human retesting passed.
-- The existing original `GanttChart` was not edited or replaced.
+- 28/28 unit, foundation, backup/restore, and migration tests.
+- 136/136 production-like API/scenario checks.
+- 14/14 focused Resource browser checks, including real create/edit/link/lifecycle/assignment persistence.
+- 155/155 browser checks across all eleven UI suites.
+- TypeScript validation, Next.js 15.5.24 production build, and standalone asset packaging passed.
+- Locked npm 10.8.2 production and full dependency audits found zero vulnerabilities.
 
-## Data wiring intentionally deferred
+Detailed backup, restore, migration, security, and acceptance evidence is in [Resource Management checkpoint evidence](evidence/RESOURCE_MANAGEMENT_CHECKPOINT_2026-09-19.md).
 
-The backend phase must persist Resource lifecycle and contact data, seed/lock fixed Categories, enforce the one-to-one User relationship and company boundary, support multiple Resource assignments on Tasks and Events, reject new assignments to inactive Resources, preserve historical identifiers, audit changes, and connect Resource Calendar and Google synchronization. The current UI does not claim these production behaviors are complete.
+## Remaining boundary
+
+Production has not received schema v9 or this checkpoint. Google synchronization and the broader Event/Calendar persistence checkpoint remain separate work. The original `GanttChart.tsx` was not replaced.

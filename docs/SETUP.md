@@ -16,7 +16,11 @@ npm install
 npm run dev
 ```
 
-Visit <http://localhost:3030>. A fresh database is initialized automatically. Register the first company and Admin through the application; do not use shared or production credentials for local development.
+Visit <http://localhost:3030>. Run the migration command before first startup, then provision a local Platform Administrator/company through the approved administrative workflow or isolated test fixtures. Public self-registration is disabled; do not use shared or production credentials for local development.
+
+```powershell
+npm run db:migrate
+```
 
 ## Environment variables
 
@@ -43,3 +47,14 @@ npm start
 ```
 
 Run `npm test` before handing a change to another developer or deploying it.
+
+## Database upgrades
+
+Before applying a new migration to an existing database, create and verify a rollback copy:
+
+```powershell
+npm run db:backup -- data/backups/pre-change.db
+npm run db:migrate
+```
+
+Exercise `npm run db:restore -- <backup.db> --confirm` only against an explicitly isolated data directory during routine verification. Production restore is an incident/change-controlled operation. Schema v9 adds the Resource Management invariants documented in [Resource Management checkpoint evidence](evidence/RESOURCE_MANAGEMENT_CHECKPOINT_2026-09-19.md).

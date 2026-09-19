@@ -499,6 +499,7 @@ try {
   const invitedPassword = "Invited-Password-1!";
   const invitedNewPassword = "Invited-Password-2!";
   let invitedMembershipId;
+  let invitedResourceId;
   let invitationToken;
 
   await check("Admin cannot provision another User password", async () => {
@@ -530,7 +531,9 @@ try {
       assert.notEqual(invitation.token_hash, invitationToken);
       const hours = (Date.parse(invitation.expires_at) - Date.now()) / 3_600_000;
       assert.ok(hours > 71.9 && hours <= 72.1, `invite lifetime ${hours}`);
-      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM resource WHERE linked_membership_id = ?").get(invitedMembershipId).count, 1);
+      const linkedResource = database.prepare("SELECT id FROM resource WHERE linked_membership_id = ?").get(invitedMembershipId);
+      assert.ok(linkedResource?.id);
+      invitedResourceId = linkedResource.id;
     } finally { database.close(); }
   });
 
@@ -973,11 +976,11 @@ try {
   });
 
   await check("Admin opens every Resource UI route", async () => {
-    for (const [route, pattern] of [["/resources", /Company Resource directory/], ["/resources/new", /Optional User link/], ["/resources/jamie-morgan", /Task and Event schedule/]]) {
+    for (const [route, pattern] of [["/resources", /Company Resource directory/], ["/resources/new", /Optional User link/], [`/resources/${invitedResourceId}`, /Task and Event schedule/]]) {
       const response = await adminA.request(route);
       assert.equal(response.status, 200, route);
       assert.match(response.text, pattern);
-      assert.match(response.text, /UI preview/);
+      assert.doesNotMatch(response.text, /UI preview/);
     }
   });
 
@@ -1262,7 +1265,7 @@ try {
   });
 
   await check("Employee receives read-only Resources and cannot add one", async () => {
-    for (const route of ["/resources", "/resources/jamie-morgan"]) {
+    for (const route of ["/resources", `/resources/${invitedResourceId}`]) {
       const response = await viewerA.request(route);
       assert.equal(response.status, 200, route);
       assert.match(response.text, /Employee read-only/);
@@ -1343,14 +1346,14 @@ try {
   await check("admin creates a categorized resource", async () => {
     const response = await adminA.request("/api/resources", {
       method: "POST",
-      body: { name: "Scenario Electrician", category_name: "Scenario Trade", email: "trade-a@example.test" },
+      body: { name: "Scenario Electrician", category_name: "Employee", email: "trade-a@example.test" },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
     resourceAId = response.data.id;
     const list = await adminA.request("/api/resources");
     assert.equal(list.status, 200);
     const resource = list.data.resources.find(item => item.id === resourceAId);
-    assert.equal(resource.category, "Scenario Trade");
+    assert.equal(resource.category, "Employee");
     categoryAId = resource.category_id;
     assert.ok(categoryAId);
   });
@@ -1358,7 +1361,7 @@ try {
   await check("company B creates its own resource", async () => {
     const response = await adminB.request("/api/resources", {
       method: "POST",
-      body: { name: "Scenario Plumber", category_name: "Scenario Supplier" },
+      body: { name: "Scenario Plumber", category_name: "Supplier" },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
     resourceBId = response.data.id;
@@ -1514,8 +1517,8 @@ try {
       database.transaction(() => {
         database.prepare("UPDATE task SET resource_category_id = ? WHERE id IN (?, ?)").run(categoryAId, predecessorId, successorId);
         templateResourceId = Number(database.prepare(`
-          INSERT INTO resource (company_id, category_id, name, status)
-          VALUES (?, ?, 'Template-only Crew', 'active')
+          INSERT INTO resource (company_id, category_id, name, normalized_name, status)
+          VALUES (?, ?, 'Template-only Crew', 'template-only crew', 'active')
         `).run(companyAId, categoryAId).lastInsertRowid);
         const insertTask = database.prepare(`
           INSERT INTO task (

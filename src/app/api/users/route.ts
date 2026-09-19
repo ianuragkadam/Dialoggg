@@ -113,13 +113,15 @@ export async function POST(request: NextRequest) {
           SELECT id FROM resource_category WHERE company_id = ? AND lower(name) = 'employee'
         `).get(actor.companyId) as { id: number } | undefined;
         if (!employeeCategory) throw new Error("EMPLOYEE_CATEGORY_MISSING");
+        const resourceName = `${firstName} ${lastName}`.trim().replace(/\s+/g, " ");
+        const normalizedResourceName = resourceName.toLocaleLowerCase("en-US");
         db.prepare(`
-          INSERT OR IGNORE INTO resource (company_id, category_id, name, email, linked_membership_id)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(actor.companyId, employeeCategory.id, `${firstName} ${lastName}`, email, membershipId);
-        db.prepare(`UPDATE resource SET name = ?, email = ?
+          INSERT OR IGNORE INTO resource (company_id, category_id, name, normalized_name, email, linked_membership_id)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(actor.companyId, employeeCategory.id, resourceName, normalizedResourceName, email, membershipId);
+        db.prepare(`UPDATE resource SET name = ?, normalized_name = ?, email = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
           WHERE company_id = ? AND linked_membership_id = ?`)
-          .run(`${firstName} ${lastName}`, email, actor.companyId, membershipId);
+          .run(resourceName, normalizedResourceName, email, actor.companyId, membershipId);
       }
       issueInvitation({
         membershipId,

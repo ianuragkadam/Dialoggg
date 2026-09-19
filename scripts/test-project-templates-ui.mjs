@@ -92,7 +92,8 @@ try {
       `).run(admin.companyId, admin.defaultProjectTypeId, admin.legacyUserId).lastInsertRowid);
       const categoryId = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(admin.companyId).id;
       const resourceId = Number(seed.prepare(`
-        INSERT INTO resource (company_id, category_id, name, status) VALUES (?, ?, 'Template Crew', 'active')
+        INSERT INTO resource (company_id, category_id, name, normalized_name, status)
+        VALUES (?, ?, 'Template Crew', 'template crew', 'active')
       `).run(admin.companyId, categoryId).lastInsertRowid);
       const insertTask = seed.prepare(`
         INSERT INTO task (

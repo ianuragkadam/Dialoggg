@@ -13,11 +13,13 @@
 - Integration setup invitation bearers remain in URL fragments, are exchanged for short-lived HttpOnly sessions, and are stored only as SHA-256 hashes. Writable and read-only invitations are separate, expiring, revocable, and scoped to platform, company, or an explicitly authorized combination.
 - Integration credentials use versioned AES-256-GCM envelopes authenticated to their config/version context. API responses expose only configured state, a short fingerprint/last-four display, environment, and timestamps.
 - Integration mutations enforce same-origin plus double-submit CSRF checks, rate limits, scoped provider authorization, safe error codes, and payload-free audit metadata. OAuth uses PKCE and one-time hashed state.
+- Resource mutations enforce same-origin plus double-submit CSRF, Owner/Admin authorization, structured errors, optimistic versions, and payload-minimal audit records. Employee is read-only; External/Client and cross-tenant access fail closed.
+- Schema-v9 triggers enforce fixed Resource Categories, same-company Category/User links, unique normalized names, and active same-company Task/Event assignments even if an application path is bypassed.
 
 ## Known gaps before final release
 
-- The final Owner, Admin, Employee (Internal), and External/Client permission matrix is not implemented.
-- There is no invitation, email verification, password-reset, multi-factor authentication, or session-management interface.
+- The fixed Role model, membership invitations, password reset, Resource authorization, and core Project visibility are implemented; a final route-by-route permission audit is still required as remaining modules become persistent.
+- Multi-factor authentication, end-user session management, and verified self-service login-email change are not implemented.
 - Some legacy login and write endpoints do not yet have rate limiting or automated abuse protection; integration invitation exchange and validation paths do.
 - Questionnaire URL tokens grant access to anyone who possesses the link; they must be treated as passwords and rotated if disclosed.
 - A full route-by-route tenant-isolation review is required as new modules are added.

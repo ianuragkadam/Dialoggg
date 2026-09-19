@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 8/);
+    assert.match(second.stdout, /version 9/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -82,6 +82,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 6, name: "project_template_invariants" },
           { version: 7, name: "membership_access_invariants" },
           { version: 8, name: "secure_integration_setup_workshop" },
+          { version: 9, name: "resource_management_invariants" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -186,7 +187,92 @@ test("membership access migration enforces Owner, tenant, linked Resource, and E
       database.prepare("UPDATE company_membership SET status = 'active' WHERE id = ?").run(externalMembership);
       assert.throws(() => database.prepare("DELETE FROM project_membership WHERE company_membership_id = ?").run(externalMembership), /EXTERNAL_PROJECT_REQUIRED/);
       const category = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(companyTwo).lastInsertRowid);
-      assert.throws(() => database.prepare("INSERT INTO resource (company_id, category_id, name, linked_membership_id) VALUES (?, ?, 'Cross linked', ?)").run(companyTwo, category, externalMembership), /RESOURCE_MEMBERSHIP_SCOPE_INVALID/);
+      assert.throws(() => database.prepare("INSERT INTO resource (company_id, category_id, name, normalized_name, linked_membership_id) VALUES (?, ?, 'Cross linked', 'cross linked', ?)").run(companyTwo, category, externalMembership), /RESOURCE_SCOPE_INVALID/);
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+      database.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Resource migration enforces fixed categories, tenant scope, one-to-one User links, and active assignments", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-resource-invariants-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const companyOne = Number(database.prepare("INSERT INTO company (name) VALUES ('Resource One')").run().lastInsertRowid);
+      const companyTwo = Number(database.prepare("INSERT INTO company (name) VALUES ('Resource Two')").run().lastInsertRowid);
+      const insertCategory = database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, ?)");
+      for (const companyId of [companyOne, companyTwo]) {
+        for (const name of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) insertCategory.run(companyId, name);
+      }
+      const categoryOne = database.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(companyOne).id;
+      const categoryTwo = database.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(companyTwo).id;
+      const identityOne = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('resource-one@example.test', 'hash', 'One', 'active')").run().lastInsertRowid);
+      const identityTwo = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('resource-two@example.test', 'hash', 'Two', 'active')").run().lastInsertRowid);
+      const membershipOne = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'owner', 'active')").run(identityOne, companyOne).lastInsertRowid);
+      const membershipTwo = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'owner', 'active')").run(identityTwo, companyTwo).lastInsertRowid);
+      const linkedIdentity = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('resource-link@example.test', 'hash', 'Linked', 'active')").run().lastInsertRowid);
+      const linkedMembership = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'employee', 'active')").run(linkedIdentity, companyOne).lastInsertRowid);
+      const resourceOne = Number(database.prepare(`
+        INSERT INTO resource (company_id, category_id, name, normalized_name, linked_membership_id, status)
+        VALUES (?, ?, 'Crew One', 'crew one', ?, 'active')
+      `).run(companyOne, categoryOne, linkedMembership).lastInsertRowid);
+      const resourceTwo = Number(database.prepare(`
+        INSERT INTO resource (company_id, category_id, name, normalized_name, linked_membership_id, status)
+        VALUES (?, ?, 'Crew Two', 'crew two', ?, 'active')
+      `).run(companyTwo, categoryTwo, membershipTwo).lastInsertRowid);
+
+      assert.throws(() => insertCategory.run(companyOne, "Custom"), /RESOURCE_CATEGORY_FIXED/);
+      assert.throws(() => insertCategory.run(companyOne, "Employee"), /UNIQUE constraint failed/);
+      assert.throws(() => database.prepare("UPDATE resource_category SET name = 'Custom' WHERE id = ?").run(categoryOne), /RESOURCE_CATEGORY_FIXED/);
+      assert.throws(() => database.prepare("DELETE FROM resource_category WHERE id = ?").run(categoryOne), /RESOURCE_CATEGORY_FIXED/);
+      assert.throws(() => database.prepare(`
+        INSERT INTO resource (company_id, category_id, name, normalized_name, status)
+        VALUES (?, ?, 'Wrong Category', 'wrong category', 'active')
+      `).run(companyOne, categoryTwo), /RESOURCE_SCOPE_INVALID/);
+      assert.throws(() => database.prepare(`
+        INSERT INTO resource (company_id, category_id, name, normalized_name, linked_membership_id, status)
+        VALUES (?, ?, 'Second Link', 'second link', ?, 'active')
+      `).run(companyOne, categoryOne, linkedMembership), /UNIQUE constraint failed/);
+      assert.throws(() => database.prepare(`
+        INSERT INTO resource (company_id, category_id, name, normalized_name, status)
+        VALUES (?, ?, 'Crew One', 'crew one', 'active')
+      `).run(companyOne, categoryOne), /UNIQUE constraint failed/);
+
+      const typeOne = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type One', 'type one')").run(companyOne).lastInsertRowid);
+      const typeTwo = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type Two', 'type two')").run(companyTwo).lastInsertRowid);
+      const projectOne = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Project One', '2026-09-19')").run(companyOne, typeOne).lastInsertRowid);
+      const projectTwo = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Project Two', '2026-09-19')").run(companyTwo, typeTwo).lastInsertRowid);
+      const taskOne = Number(database.prepare("INSERT INTO task (project_id, name, start_date, duration) VALUES (?, 'Task One', '2026-09-19', 1)").run(projectOne).lastInsertRowid);
+      const taskOneLater = Number(database.prepare("INSERT INTO task (project_id, name, start_date, duration) VALUES (?, 'Task Later', '2026-09-20', 1)").run(projectOne).lastInsertRowid);
+      const taskTwo = Number(database.prepare("INSERT INTO task (project_id, name, start_date, duration) VALUES (?, 'Task Two', '2026-09-19', 1)").run(projectTwo).lastInsertRowid);
+      database.prepare("INSERT INTO task_resource (task_id, resource_id) VALUES (?, ?)").run(taskOne, resourceOne);
+      assert.throws(() => database.prepare("INSERT INTO task_resource (task_id, resource_id) VALUES (?, ?)").run(taskTwo, resourceOne), /TASK_RESOURCE_SCOPE_OR_STATUS_INVALID/);
+
+      const eventOne = Number(database.prepare(`
+        INSERT INTO event_series (company_id, project_id, title, timing_mode, start_date, end_date, time_zone, created_by_membership_id)
+        VALUES (?, ?, 'Event One', 'all_day', '2026-09-19', '2026-09-20', 'UTC', ?)
+      `).run(companyOne, projectOne, membershipOne).lastInsertRowid);
+      const eventTwo = Number(database.prepare(`
+        INSERT INTO event_series (company_id, project_id, title, timing_mode, start_date, end_date, time_zone, created_by_membership_id)
+        VALUES (?, ?, 'Event Two', 'all_day', '2026-09-19', '2026-09-20', 'UTC', ?)
+      `).run(companyTwo, projectTwo, membershipTwo).lastInsertRowid);
+      database.prepare("INSERT INTO event_resource (series_id, resource_id) VALUES (?, ?)").run(eventOne, resourceOne);
+      assert.throws(() => database.prepare("INSERT INTO event_resource (series_id, resource_id) VALUES (?, ?)").run(eventTwo, resourceOne), /EVENT_RESOURCE_SCOPE_OR_STATUS_INVALID/);
+
+      database.prepare("UPDATE company_membership SET status = 'deactivated' WHERE id = ?").run(linkedMembership);
+      database.prepare("UPDATE resource SET status = 'inactive' WHERE id = ?").run(resourceOne);
+      assert.equal(database.prepare("SELECT linked_membership_id FROM resource WHERE id = ?").get(resourceOne).linked_membership_id, linkedMembership);
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM task_resource WHERE resource_id = ?").get(resourceOne).count, 1);
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM event_resource WHERE resource_id = ?").get(resourceOne).count, 1);
+      assert.throws(() => database.prepare("INSERT INTO task_resource (task_id, resource_id) VALUES (?, ?)").run(taskOneLater, resourceOne), /TASK_RESOURCE_SCOPE_OR_STATUS_INVALID/);
+      assert.throws(() => database.prepare("INSERT INTO event_resource (series_id, resource_id) VALUES (?, ?)").run(eventOne, resourceTwo), /EVENT_RESOURCE_SCOPE_OR_STATUS_INVALID/);
     } finally {
       assert.equal(database.pragma("foreign_key_check").length, 0);
       database.close();
@@ -286,7 +372,7 @@ test("Project Template migration enforces tenant-scoped sources, graph reference
       `).run(templateId), /TEMPLATE_DEPENDENCY_INVALID/);
       database.prepare(`INSERT INTO template_dependency (template_id, source_ref, target_ref, link_type) VALUES (?, 'a', 'b', 'fs')`).run(templateId);
 
-      const categoryTwo = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Other Company Category')").run(companyTwo).lastInsertRowid);
+      const categoryTwo = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(companyTwo).lastInsertRowid);
       assert.throws(() => database.prepare(`
         INSERT INTO task (project_id, name, start_date, duration, resource_category_id) VALUES (?, 'Scoped Task', '2026-09-17', 1, ?)
       `).run(projectOne, categoryTwo), /TASK_RESOURCE_CATEGORY_SCOPE_INVALID/);
