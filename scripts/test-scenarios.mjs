@@ -860,6 +860,81 @@ try {
     assert.equal((await platform.request("/api/v1/platform/integration-settings/microsoft")).data.data.status, "verified");
   });
 
+  const resendPlatformConfig = {
+    sendingDomain: "verified.example.test",
+    fromName: "Dialoggg",
+    fromAddress: "notifications@verified.example.test",
+    replyTo: "support@verified.example.test",
+  };
+  const resendSecret = "re_test_scenario_valid";
+
+  await check("Platform Resend settings require reauthentication, encrypt credentials, and redact safe reads", async () => {
+    const denied = await platform.request("/api/v1/platform/integration-settings/resend", {
+      method: "POST",
+      body: { action: "save", currentPassword: "wrong-password", environment: "test", config: resendPlatformConfig, secrets: { apiKey: resendSecret } },
+    });
+    assert.equal(denied.status, 403);
+    const saved = await platform.request("/api/v1/platform/integration-settings/resend", {
+      method: "POST",
+      body: { action: "save", currentPassword: platformPassword, environment: "test", config: resendPlatformConfig, secrets: { apiKey: resendSecret, webhookSecret: "whsec_scenario_secret" } },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    assert.equal(saved.data.data.status, "saved");
+    assert.equal(saved.data.data.credential.configured, true);
+    assert.doesNotMatch(JSON.stringify(saved.data), /re_test_scenario_valid|whsec_scenario_secret/);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const encrypted = JSON.stringify(database.prepare("SELECT encrypted_envelope FROM integration_credential_version WHERE config_id = (SELECT id FROM integration_config WHERE provider = 'resend_platform')").all());
+      assert.doesNotMatch(encrypted, /re_test_scenario_valid|whsec_scenario_secret/);
+    } finally { database.close(); }
+  });
+
+  await check("Platform Resend validation is read-only and test delivery requires explicit confirmation", async () => {
+    const validated = await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "validate" } });
+    assert.equal(validated.status, 200, JSON.stringify(validated.data));
+    assert.equal(validated.data.data.status, "verified");
+    assert.deepEqual(validated.data.data.validation.details, { domain: "verified.example.test", state: "verified", dnsStatus: "ready", spf: "verified", dkim: "verified" });
+    const unconfirmed = await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "test_send", recipient: "owner@example.test" } });
+    assert.equal(unconfirmed.status, 400);
+    assert.equal(unconfirmed.data.error.code, "TEST_EMAIL_CONFIRMATION_REQUIRED");
+    const confirmed = await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "test_send", recipient: "owner@example.test", confirmed: true } });
+    assert.equal(confirmed.status, 200, JSON.stringify(confirmed.data));
+    assert.equal(JSON.stringify(confirmed.data).includes("owner@example.test"), false);
+    assert.deepEqual(confirmed.data.data.validation.details, { domain: "verified.example.test", state: "verified", dnsStatus: "ready", spf: "verified", dkim: "verified" });
+
+    const webhookOnlyRotation = await platform.request("/api/v1/platform/integration-settings/resend", {
+      method: "POST",
+      body: { action: "save", currentPassword: platformPassword, environment: "test", config: resendPlatformConfig, secrets: { webhookSecret: "whsec_rotated_only" } },
+    });
+    assert.equal(webhookOnlyRotation.status, 200, JSON.stringify(webhookOnlyRotation.data));
+    assert.equal(webhookOnlyRotation.data.data.credential.version, 2);
+    assert.equal((await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "validate" } })).status, 200);
+  });
+
+  await check("Platform Resend rejects unusable rotation and supports recovery, disable, and enable", async () => {
+    const rotated = await platform.request("/api/v1/platform/integration-settings/resend", {
+      method: "POST",
+      body: { action: "save", currentPassword: platformPassword, environment: "test", config: resendPlatformConfig, secrets: { apiKey: "re_test_invalid_rotated" } },
+    });
+    assert.equal(rotated.status, 200);
+    assert.equal(rotated.data.data.credential.version, 3);
+    const rejected = await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "validate" } });
+    assert.equal(rejected.status, 400);
+    assert.equal(rejected.data.error.code, "RESEND_KEY_REJECTED");
+    const recovered = await platform.request("/api/v1/platform/integration-settings/resend", {
+      method: "POST",
+      body: { action: "save", currentPassword: platformPassword, environment: "test", config: resendPlatformConfig, secrets: { apiKey: "re_test_scenario_recovered" } },
+    });
+    assert.equal(recovered.data.data.credential.version, 4);
+    assert.equal((await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "validate" } })).status, 200);
+    const disabled = await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "disable", currentPassword: platformPassword } });
+    assert.ok(disabled.data.data.disabledAt);
+    const blocked = await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "test_send", recipient: "owner@example.test", confirmed: true } });
+    assert.equal(blocked.status, 409);
+    const enabled = await platform.request("/api/v1/platform/integration-settings/resend", { method: "POST", body: { action: "enable", currentPassword: platformPassword } });
+    assert.equal(enabled.data.data.status, "saved");
+  });
+
   await check("tenant Admin cannot call Platform Company Administration APIs", async () => {
     const response = await adminA.request("/api/v1/platform/companies");
     assert.equal(response.status, 403);
@@ -868,6 +943,7 @@ try {
       body: { name: "Forbidden Company", timeZone: "America/New_York", ownerFirstName: "No", ownerLastName: "Access", ownerEmail: `forbidden-${suffix}@example.test` },
     });
     assert.equal(create.status, 403);
+    assert.equal((await adminA.request("/api/v1/platform/integration-settings/resend")).status, 403);
   });
 
   await check("company provisioning rejects an invalid IANA time zone", async () => {

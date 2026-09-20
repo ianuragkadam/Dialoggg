@@ -159,10 +159,10 @@ export async function POST(request: NextRequest) {
       const attempt = beginValidation(saved.id, session.id, "test_email", id);
       try {
         await sendResendTest({ ...saved, recipient, idempotencyKey: `integration-test:${attempt}` });
-        finishValidation(attempt, saved.id, "passed", null, { delivery: "accepted" });
+        finishValidation(attempt, saved.id, "passed", null, { delivery: "accepted" }, false);
       } catch (error) {
         const code = error instanceof IntegrationProviderError ? error.code : "RESEND_TEST_EMAIL_FAILED";
-        finishValidation(attempt, saved.id, "failed", code);
+        finishValidation(attempt, saved.id, "failed", code, {}, false);
         throw error;
       }
       recordAudit({ requestId: id, companyId: session.company_id, action: "integration_resend.test_email", targetType: "integration_config", targetId: saved.id, result: "success", metadata: { recipientDomain: recipient.split("@")[1] } });

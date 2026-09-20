@@ -193,6 +193,46 @@ try {
     await adminContext.close();
   });
 
+  await check("Platform Administrator manages permanent Resend settings with write-only secrets and explicit test-send confirmation", async () => {
+    const loginResponse = await login(baseUrl, platformEmail, platformPassword);
+    const combined = loginResponse.headers.get("set-cookie") || "";
+    const session = combined.match(/dialoggg_session=([^;]+)/)?.[1]; const csrf = combined.match(/dialoggg_csrf=([^;]+)/)?.[1]; assert.ok(session && csrf);
+    const adminContext = await browser.newContext(); await adminContext.addCookies([
+      { name: "dialoggg_session", value: session, domain: "127.0.0.1", path: "/", httpOnly: true, secure: false, sameSite: "Lax" },
+      { name: "dialoggg_csrf", value: csrf, domain: "127.0.0.1", path: "/", httpOnly: false, secure: false, sameSite: "Strict" },
+    ]);
+    const admin = await adminContext.newPage(); await admin.goto(`${baseUrl}/platform/integration-setup`);
+    const resend = admin.getByRole("region", { name: "Resend transactional email settings" }); await resend.getByRole("heading", { name: "Resend transactional email settings" }).waitFor();
+    await resend.getByLabel("Verified sending domain").fill("verified.example.test");
+    await resend.getByLabel("From name").fill("Dialoggg");
+    await resend.getByLabel("From address").fill("notifications@verified.example.test");
+    await resend.getByLabel("Reply-To / support address").fill("support@verified.example.test");
+    await resend.getByLabel("Resend API key").fill("re_test_permanent_resend_secret");
+    await resend.getByLabel("Replacement webhook signing secret (optional)").fill("whsec_permanent_secret");
+    await resend.getByLabel("Current Platform Administrator password").fill(platformPassword);
+    const saveResponsePromise = admin.waitForResponse(response => response.url().endsWith("/api/v1/platform/integration-settings/resend") && response.request().method() === "POST");
+    await resend.getByRole("button", { name: "Save encrypted credential" }).click();
+    const saveResponse = await saveResponsePromise; const saveBody = await saveResponse.text(); assert.equal(saveResponse.status(), 200, saveBody);
+    const afterSave = await resend.innerText();
+    assert.match(afterSave, /Saved—verification required/, afterSave);
+    assert.doesNotMatch(afterSave, /re_test_permanent_resend_secret|whsec_permanent_secret/);
+    await resend.getByRole("button", { name: "Validate domain and sender" }).click();
+    await resend.getByText("Valid", { exact: true }).waitFor();
+    assert.match(await resend.innerText(), /DNS ready; SPF verified; DKIM verified/);
+    await resend.getByLabel("Confirmed test recipient").fill("resend-ui@example.test");
+    admin.once("dialog", dialog => dialog.accept());
+    await resend.getByRole("button", { name: "Confirm and send one test" }).click();
+    await resend.getByText("One confirmed test email was accepted by Resend.").waitFor();
+    const db = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const stored = JSON.stringify(db.prepare("SELECT encrypted_envelope FROM integration_credential_version WHERE config_id = (SELECT id FROM integration_config WHERE provider = 'resend_platform')").all());
+      assert.doesNotMatch(stored, /re_test_permanent_resend_secret|whsec_permanent_secret/);
+      const audit = JSON.stringify(db.prepare("SELECT metadata_json FROM audit_event WHERE action LIKE 'integration_resend.%'").all());
+      assert.doesNotMatch(audit, /re_test_permanent_resend_secret|whsec_permanent_secret|resend-ui@example\.test/);
+    } finally { db.close(); }
+    await adminContext.close();
+  });
+
   await context.close();
 } finally { if (browser) await browser.close(); if (appServer && appServer.exitCode === null) { appServer.kill(); await new Promise(resolve => setTimeout(resolve, 600)); } await rm(dataDirectory, { recursive: true, force: true }); }
 const passed = results.filter(item => item.status === "PASS").length; const failed = results.length - passed; process.stdout.write(`\nRESULT  ${passed} passed, ${failed} failed, ${results.length} total\n`); if (failed) process.exitCode = 1;

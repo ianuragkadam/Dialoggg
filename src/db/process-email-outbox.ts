@@ -1,5 +1,5 @@
-import { processEmailOutbox, resendEmailSender } from "../lib/email-outbox";
+import { processEmailOutbox } from "../lib/email-outbox";
 
-const result = await processEmailOutbox(resendEmailSender());
-process.stdout.write(`Email outbox processed: ${result.delivered} delivered, ${result.failed} deferred or failed.\n`);
+const result = await processEmailOutbox();
+process.stdout.write(`Email outbox processed: ${result.delivered} delivered, ${result.failed} failed, ${result.deferred} deferred, ${result.expired} expired.\n`);
 if (result.failed) process.exitCode = 1;

@@ -2117,7 +2117,74 @@ const migration014: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014];
+const migration015: Migration = {
+  version: 15,
+  name: "transactional_email_delivery",
+  signature: "durable Resend delivery + encrypted provider receipts + expiry + dead-letter attempt ledger v1",
+  up(database) {
+    addColumn(database, "outbox_job", "recipient_domain", "recipient_domain TEXT");
+    addColumn(database, "outbox_job", "expires_at", "expires_at TEXT");
+    addColumn(database, "outbox_job", "provider_config_id", "provider_config_id INTEGER REFERENCES integration_config(id)");
+    addColumn(database, "outbox_job", "provider_credential_version", "provider_credential_version INTEGER");
+    addColumn(database, "outbox_job", "provider_message_envelope", "provider_message_envelope TEXT");
+    addColumn(database, "outbox_job", "first_attempt_at", "first_attempt_at TEXT");
+    addColumn(database, "outbox_job", "last_attempt_at", "last_attempt_at TEXT");
+    addColumn(database, "outbox_job", "dead_at", "dead_at TEXT");
+    addColumn(database, "outbox_job", "failure_kind", "failure_kind TEXT");
+    addColumn(database, "outbox_job", "last_http_status", "last_http_status INTEGER");
+    addColumn(database, "outbox_job", "max_attempts", "max_attempts INTEGER NOT NULL DEFAULT 8 CHECK (max_attempts BETWEEN 1 AND 100)");
+    addColumn(database, "outbox_job", "manual_retry_count", "manual_retry_count INTEGER NOT NULL DEFAULT 0 CHECK (manual_retry_count >= 0)");
+
+    database.exec(`
+      UPDATE outbox_job SET
+        recipient_domain = COALESCE(NULLIF(trim(recipient_domain), ''), 'legacy.invalid'),
+        expires_at = COALESCE(expires_at, CASE kind
+          WHEN 'invitation_email' THEN datetime(created_at, '+72 hours')
+          WHEN 'password_reset_email' THEN datetime(created_at, '+1 hour')
+          ELSE datetime(created_at, '+7 days')
+        END)
+      WHERE kind IN ('invitation_email','password_reset_email','operational_notification_email');
+
+      CREATE TABLE email_delivery_attempt (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        outbox_job_id INTEGER NOT NULL,
+        attempt_number INTEGER NOT NULL CHECK (attempt_number > 0),
+        credential_version INTEGER,
+        status TEXT NOT NULL CHECK (status IN ('started','delivered','retry','dead','cancelled','deferred')),
+        safe_error_code TEXT,
+        http_status INTEGER,
+        provider_message_envelope TEXT,
+        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at TEXT,
+        latency_ms INTEGER CHECK (latency_ms IS NULL OR latency_ms >= 0),
+        UNIQUE (outbox_job_id, attempt_number),
+        FOREIGN KEY (outbox_job_id) REFERENCES outbox_job(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_email_delivery_attempt_job ON email_delivery_attempt(outbox_job_id, started_at DESC);
+      CREATE INDEX idx_email_outbox_ready ON outbox_job(status, next_attempt_at, expires_at)
+        WHERE kind IN ('invitation_email','password_reset_email','operational_notification_email');
+      CREATE INDEX idx_email_outbox_company_status ON outbox_job(company_id, status, created_at DESC)
+        WHERE kind IN ('invitation_email','password_reset_email','operational_notification_email');
+
+      CREATE TRIGGER trg_email_outbox_expiry_insert
+      BEFORE INSERT ON outbox_job
+      WHEN NEW.kind IN ('invitation_email','password_reset_email','operational_notification_email')
+        AND (NEW.expires_at IS NULL OR NEW.recipient_domain IS NULL OR trim(NEW.recipient_domain) = '' OR instr(NEW.recipient_domain, '@') > 0)
+      BEGIN SELECT RAISE(ABORT, 'EMAIL_OUTBOX_METADATA_REQUIRED'); END;
+
+      CREATE TRIGGER trg_email_outbox_scope_update
+      BEFORE UPDATE OF company_id, kind, idempotency_key, payload_json, recipient_domain, expires_at ON outbox_job
+      WHEN OLD.kind IN ('invitation_email','password_reset_email','operational_notification_email') AND (
+        NEW.company_id IS NOT OLD.company_id OR NEW.kind <> OLD.kind OR NEW.idempotency_key <> OLD.idempotency_key
+        OR NEW.payload_json <> OLD.payload_json OR NEW.recipient_domain <> OLD.recipient_domain OR NEW.expires_at <> OLD.expires_at
+      )
+      BEGIN SELECT RAISE(ABORT, 'EMAIL_OUTBOX_IDENTITY_IMMUTABLE'); END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

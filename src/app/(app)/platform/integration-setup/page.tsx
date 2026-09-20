@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import IntegrationInvitationAdmin from "@/components/IntegrationInvitationAdmin";
 import PlatformGoogleSettings from "@/components/PlatformGoogleSettings";
 import PlatformMicrosoftSettings from "@/components/PlatformMicrosoftSettings";
+import PlatformResendSettings from "@/components/PlatformResendSettings";
 import ModuleRestricted from "@/components/ModuleRestricted";
 import { getCurrentUser, isPlatformAdmin } from "@/lib/auth";
 
@@ -17,6 +18,7 @@ export default async function IntegrationSetupAccessPage() {
   return <main className="mx-auto max-w-5xl space-y-6 p-6">
     <PlatformGoogleSettings />
     <PlatformMicrosoftSettings />
+    <PlatformResendSettings />
     <IntegrationInvitationAdmin />
   </main>;
 }

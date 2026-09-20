@@ -155,6 +155,29 @@ function parseJson(value: string) {
   try { return JSON.parse(value) as Record<string, string>; } catch { return {}; }
 }
 
+function latestValidationDetails(configId: number | undefined, operation?: "validate" | "test_email") {
+  if (!configId) return { operation: null, status: null, errorCode: null, details: {}, completedAt: null };
+  const row = db.prepare(`
+    SELECT operation, status, error_code, safe_details_json, completed_at
+    FROM integration_validation_attempt
+    WHERE config_id = ? AND status IN ('passed','failed') AND (? IS NULL OR operation = ?)
+    ORDER BY id DESC LIMIT 1
+  `).get(configId, operation ?? null, operation ?? null) as {
+    operation: string;
+    status: string;
+    error_code: string | null;
+    safe_details_json: string;
+    completed_at: string | null;
+  } | undefined;
+  return {
+    operation: row?.operation ?? null,
+    status: row?.status ?? null,
+    errorCode: row?.error_code ?? null,
+    details: row ? parseJson(row.safe_details_json) : {},
+    completedAt: row?.completed_at ?? null,
+  };
+}
+
 export function callbackUri(provider: "google" | "microsoft") {
   const origin = process.env.APP_BASE_URL?.replace(/\/$/, "");
   if (!origin || (process.env.NODE_ENV === "production" && process.env.INTEGRATION_PROVIDER_MODE !== "fake" && !origin.startsWith("https://"))) {
@@ -230,9 +253,11 @@ export function saveIntegrationConfig(input: {
       ON CONFLICT DO NOTHING
     `).run(input.provider, scope.scope, scope.companyId, input.environment, JSON.stringify(cleanConfig));
     const row = db.prepare(`
-      SELECT id, credential_version FROM integration_config
-      WHERE provider = ? AND company_id IS ?
-    `).get(input.provider, scope.companyId) as { id: number; credential_version: number };
+      SELECT ic.id, ic.credential_version,
+        COALESCE((SELECT MAX(cv.version) FROM integration_credential_version cv WHERE cv.config_id = ic.id), 0) AS latest_version
+      FROM integration_config ic
+      WHERE ic.provider = ? AND ic.company_id IS ?
+    `).get(input.provider, scope.companyId) as { id: number; credential_version: number; latest_version: number };
     db.prepare(`
       UPDATE integration_config SET environment = ?, non_secret_json = ?, status = 'saved',
         safe_status_code = NULL, verified_at = NULL, saved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -241,7 +266,7 @@ export function saveIntegrationConfig(input: {
 
     const secrets = Object.fromEntries(Object.entries(input.secrets ?? {}).filter(([, value]) => String(value).length > 0).map(([key, value]) => [key, String(value)]));
     if (Object.keys(secrets).length > 0) {
-      const version = row.credential_version + 1;
+      const version = row.latest_version + 1;
       const context = `integration:${row.id}:v${version}`;
       const primary = secrets.clientSecret || secrets.apiKey || secrets.certificate || Object.values(secrets)[0];
       db.prepare(`UPDATE integration_credential_version SET is_active = 0, retired_at = CURRENT_TIMESTAMP WHERE config_id = ? AND is_active = 1`).run(row.id);
@@ -312,16 +337,25 @@ export function beginValidation(configId: number, invitationId: number | null, o
   return Number(result.lastInsertRowid);
 }
 
-export function finishValidation(attemptId: number, configId: number, status: "passed" | "failed", errorCode: string | null, details: Record<string, string> = {}) {
+export function finishValidation(
+  attemptId: number,
+  configId: number,
+  status: "passed" | "failed",
+  errorCode: string | null,
+  details: Record<string, string> = {},
+  updateConfigStatus = true,
+) {
   db.transaction(() => {
     db.prepare(`
       UPDATE integration_validation_attempt SET status = ?, error_code = ?, safe_details_json = ?, completed_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(status, errorCode, JSON.stringify(details), attemptId);
-    db.prepare(`
-      UPDATE integration_config SET status = ?, safe_status_code = ?, verified_at = ?, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(status === "passed" ? "verified" : "action_required", errorCode, status === "passed" ? new Date().toISOString() : null, configId);
+    if (updateConfigStatus) {
+      db.prepare(`
+        UPDATE integration_config SET status = ?, safe_status_code = ?, verified_at = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(status === "passed" ? "verified" : "action_required", errorCode, status === "passed" ? new Date().toISOString() : null, configId);
+    }
   })();
 }
 
@@ -458,6 +492,126 @@ export function setPlatformMicrosoftEnabled(enabled: boolean) {
 
 export function revokePlatformMicrosoftConfig() {
   return revokeIntegrationProvider(platformSession(), "microsoft_platform");
+}
+
+export function platformResendSnapshot() {
+  const row = db.prepare(`
+    SELECT ic.*, cv.fingerprint, cv.last_four
+    FROM integration_config ic
+    LEFT JOIN integration_credential_version cv ON cv.config_id = ic.id AND cv.is_active = 1
+    WHERE ic.provider = 'resend_platform' AND ic.company_id IS NULL
+  `).get() as ConfigRow | undefined;
+  const counts = db.prepare(`
+    SELECT status, COUNT(*) AS count FROM outbox_job
+    WHERE kind IN ('invitation_email','password_reset_email','operational_notification_email')
+    GROUP BY status
+  `).all() as Array<{ status: string; count: number }>;
+  const delivery = Object.fromEntries(counts.map(item => [item.status, item.count]));
+  const recent = db.prepare(`
+    SELECT id, kind, status, recipient_domain, attempts, max_attempts, failure_kind,
+      last_error_code, last_http_status, next_attempt_at, expires_at, updated_at,
+      CASE WHEN expires_at IS NOT NULL AND julianday(expires_at) > julianday('now') THEN 1 ELSE 0 END AS retryable
+    FROM outbox_job
+    WHERE kind IN ('invitation_email','password_reset_email','operational_notification_email')
+    ORDER BY id DESC LIMIT 20
+  `).all() as Array<{
+    id: number;
+    kind: string;
+    status: string;
+    recipient_domain: string | null;
+    attempts: number;
+    max_attempts: number;
+    failure_kind: string | null;
+    last_error_code: string | null;
+    last_http_status: number | null;
+    next_attempt_at: string;
+    expires_at: string | null;
+    updated_at: string;
+    retryable: number;
+  }>;
+  return {
+    provider: "resend_platform" as const,
+    status: row?.status ?? "not_started",
+    safeStatusCode: row?.safe_status_code ?? null,
+    environment: row?.environment ?? "production",
+    config: row ? parseJson(row.non_secret_json) : {},
+    credential: row?.fingerprint ? {
+      configured: true,
+      fingerprint: row.fingerprint,
+      lastFour: row.last_four,
+      version: row.credential_version,
+    } : { configured: false, fingerprint: null, lastFour: null, version: 0 },
+    savedAt: row?.saved_at ?? null,
+    verifiedAt: row?.verified_at ?? null,
+    disabledAt: row?.disabled_at ?? null,
+    validation: latestValidationDetails(row?.id, "validate"),
+    delivery: {
+      pending: delivery.pending ?? 0,
+      running: delivery.running ?? 0,
+      retry: delivery.retry ?? 0,
+      completed: delivery.completed ?? 0,
+      dead: delivery.dead ?? 0,
+      cancelled: delivery.cancelled ?? 0,
+    },
+    recent: recent.map(item => ({
+      id: item.id,
+      kind: item.kind,
+      status: item.status,
+      recipientDomain: item.recipient_domain,
+      attempts: item.attempts,
+      maxAttempts: item.max_attempts,
+      failureKind: item.failure_kind,
+      lastErrorCode: item.last_error_code,
+      lastHttpStatus: item.last_http_status,
+      nextAttemptAt: item.next_attempt_at,
+      expiresAt: item.expires_at,
+      updatedAt: item.updated_at,
+      retryable: item.retryable === 1,
+    })),
+  };
+}
+
+export function savePlatformResendConfig(input: {
+  environment: "test" | "production";
+  config: Record<string, string>;
+  secrets?: Record<string, string>;
+}) {
+  return saveIntegrationConfig({ ...input, session: platformSession(), provider: "resend_platform" });
+}
+
+export function platformResendConfig(requireVerified = false) {
+  const saved = configForProvider(platformSession(), "resend_platform");
+  if (saved.disabled_at) throw new Error("RESEND_PLATFORM_DISABLED");
+  if (requireVerified && saved.status !== "verified") throw new Error("RESEND_PLATFORM_VERIFICATION_REQUIRED");
+  return saved;
+}
+
+export function setPlatformResendEnabled(enabled: boolean) {
+  const row = db.prepare("SELECT id, credential_version FROM integration_config WHERE provider = 'resend_platform' AND company_id IS NULL")
+    .get() as { id: number; credential_version: number } | undefined;
+  if (!row) throw new Error("CONFIG_NOT_SAVED");
+  db.prepare(`
+    UPDATE integration_config SET disabled_at = ?, status = ?, safe_status_code = ?, verified_at = NULL,
+      updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(
+    enabled ? null : new Date().toISOString(),
+    enabled && row.credential_version > 0 ? "saved" : "action_required",
+    enabled ? "VERIFICATION_REQUIRED" : "DISABLED",
+    row.id,
+  );
+}
+
+export function revokePlatformResendConfig() {
+  return revokeIntegrationProvider(platformSession(), "resend_platform");
+}
+
+export function markPlatformResendDeliveryFailure(configId: number, code: string) {
+  if (!["RESEND_CREDENTIAL_REJECTED", "RESEND_DOMAIN_NOT_VERIFIED", "RESEND_SENDER_REJECTED"].includes(code)) return;
+  db.prepare(`
+    UPDATE integration_config SET status = 'action_required', safe_status_code = ?, verified_at = NULL,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND provider = 'resend_platform'
+  `).run(code, configId);
 }
 
 export function createPlatformOauthState(actor: Actor, configId: number, provider: "google" | "microsoft" = "google") {

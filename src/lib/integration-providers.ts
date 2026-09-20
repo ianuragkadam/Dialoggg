@@ -21,7 +21,7 @@ export function integrationProviderIsFake() {
 async function providerJson(url: string, init: RequestInit, failureCode: string) {
   let response: Response;
   try {
-    response = await fetch(url, { ...init, cache: "no-store" });
+    response = await fetch(url, { ...init, cache: "no-store", signal: init.signal ?? AbortSignal.timeout(10_000) });
   } catch {
     throw new IntegrationProviderError("PROVIDER_UNREACHABLE");
   }
@@ -317,9 +317,10 @@ export async function validateResend(input: { config: Record<string, string>; se
     throw new IntegrationProviderError("RESEND_FROM_DOMAIN_MISMATCH");
   }
   if (fakeMode()) {
-    if (!input.secrets.apiKey.startsWith("re_test_")) throw new IntegrationProviderError("RESEND_KEY_REJECTED");
+    if (!input.secrets.apiKey.startsWith("re_test_") || /invalid|revoked/i.test(input.secrets.apiKey)) throw new IntegrationProviderError("RESEND_KEY_REJECTED");
+    if (/outage|timeout/i.test(input.secrets.apiKey)) throw new IntegrationProviderError("PROVIDER_UNREACHABLE");
     if (configuredDomain !== "verified.example.test") throw new IntegrationProviderError("RESEND_DOMAIN_NOT_VERIFIED");
-    return { domain: configuredDomain, state: "verified" };
+    return { domain: configuredDomain, state: "verified", dnsStatus: "ready", spf: "verified", dkim: "verified" };
   }
   const result = await providerJson("https://api.resend.com/domains", {
     headers: { authorization: `Bearer ${input.secrets.apiKey}` },
@@ -327,11 +328,36 @@ export async function validateResend(input: { config: Record<string, string>; se
   const domains = Array.isArray(result.data) ? result.data : [];
   const match = domains.find((domain: any) => String(domain?.name).toLowerCase() === configuredDomain);
   if (!match || String(match.status).toLowerCase() !== "verified") throw new IntegrationProviderError("RESEND_DOMAIN_NOT_VERIFIED");
-  return { domain: configuredDomain, state: "verified" };
+  const domainId = typeof match.id === "string" ? match.id : "";
+  if (!domainId) throw new IntegrationProviderError("RESEND_DOMAIN_NOT_VERIFIED");
+  const domain = await providerJson(`https://api.resend.com/domains/${encodeURIComponent(domainId)}`, {
+    headers: { authorization: `Bearer ${input.secrets.apiKey}` },
+  }, "RESEND_DOMAIN_LOOKUP_FAILED") as any;
+  if (String(domain?.name).toLowerCase() !== configuredDomain || String(domain?.status).toLowerCase() !== "verified") {
+    throw new IntegrationProviderError("RESEND_DOMAIN_NOT_VERIFIED");
+  }
+  const records = Array.isArray(domain.records) ? domain.records : [];
+  const recordState = (record: any) => String(record?.status || "pending").toLowerCase();
+  const spf = records.find((record: any) => /spf/i.test(String(record?.record || record?.type || "")));
+  const dkim = records.find((record: any) => /dkim/i.test(String(record?.record || record?.type || "")));
+  const spfState = spf ? recordState(spf) : "not_reported";
+  const dkimState = dkim ? recordState(dkim) : "not_reported";
+  return {
+    domain: configuredDomain,
+    state: "verified",
+    dnsStatus: spfState === "verified" && dkimState === "verified" ? "ready" : "attention_required",
+    spf: spfState,
+    dkim: dkimState,
+  };
 }
 
 export async function sendResendTest(input: { config: Record<string, string>; secrets: Record<string, string>; recipient: string; idempotencyKey: string }) {
-  if (fakeMode()) return { id: "fake-email-id" };
+  if (fakeMode()) {
+    if (/invalid|revoked/i.test(input.secrets.apiKey)) throw new IntegrationProviderError("RESEND_TEST_EMAIL_REJECTED_401");
+    if (/outage|timeout/i.test(input.secrets.apiKey)) throw new IntegrationProviderError("PROVIDER_UNREACHABLE");
+    if (/rate/i.test(input.secrets.apiKey)) throw new IntegrationProviderError("RESEND_TEST_EMAIL_REJECTED_429");
+    return { id: "fake-email-id" };
+  }
   return providerJson("https://api.resend.com/emails", {
     method: "POST",
     headers: {

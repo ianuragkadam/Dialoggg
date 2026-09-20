@@ -19,6 +19,7 @@ if (!companyName || !ownerName || !ownerEmail || !ownerPassword || ownerPassword
 console.log("Resetting local data and creating the requested seed Owner…");
 
 const wipeTables = [
+  "email_delivery_attempt",
   "google_oauth_state", "microsoft_oauth_state", "google_sync_run", "google_item_mapping", "google_connection",
   "platform_integration_oauth_state", "integration_invitation", "integration_config",
   "company_google_sync_state", "project_folder_mapping", "microsoft_connection",

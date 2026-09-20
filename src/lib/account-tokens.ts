@@ -53,6 +53,7 @@ export function issueInvitation(input: {
       companyId: target.company_id,
       kind: "invitation_email",
       idempotencyKey: `invitation:${invitationId}`,
+      expiresAt,
       email: {
         to: target.normalized_email,
         template: "invitation",
@@ -90,6 +91,7 @@ export function issuePasswordReset(identityId: number, baseUrl: string) {
     queueTransactionalEmail({
       kind: "password_reset_email",
       idempotencyKey: `password-reset:${resetId}`,
+      expiresAt,
       email: {
         to: identity.normalized_email,
         template: "password_reset",

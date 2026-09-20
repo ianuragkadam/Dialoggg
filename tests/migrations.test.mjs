@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 14/);
+    assert.match(second.stdout, /version 15/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -88,6 +88,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 12, name: "event_calendar_invariants" },
           { version: 13, name: "google_calendar_delivery" },
           { version: 14, name: "microsoft_onedrive_delivery" },
+          { version: 15, name: "transactional_email_delivery" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -539,6 +540,46 @@ test("production migration creates and verifies a pre-migration backup", async (
       assert.equal(backup.pragma("integrity_check", { simple: true }), "ok");
       assert.equal(backup.prepare("SELECT name FROM company WHERE id = 1").get().name, "Backup Source");
     } finally { backup.close(); }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("transactional email migration enforces durable delivery metadata and attempt scope", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-email-migration-"));
+  try {
+    const migrated = migrate(dataDirectory);
+    assert.equal(migrated.status, 0, `${migrated.stdout}\n${migrated.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      assert.throws(() => database.prepare(`
+        INSERT INTO outbox_job (kind, idempotency_key, payload_json)
+        VALUES ('invitation_email', 'missing-email-metadata', '{}')
+      `).run(), /EMAIL_OUTBOX_METADATA_REQUIRED/);
+      const jobId = Number(database.prepare(`
+        INSERT INTO outbox_job (kind, idempotency_key, payload_json, recipient_domain, expires_at)
+        VALUES ('invitation_email', 'valid-email-job', '{"encrypted":true}', 'example.test', datetime('now', '+72 hours'))
+      `).run().lastInsertRowid);
+      assert.throws(() => database.prepare("UPDATE outbox_job SET payload_json = '{}' WHERE id = ?").run(jobId), /EMAIL_OUTBOX_IDENTITY_IMMUTABLE/);
+      assert.throws(() => database.prepare("UPDATE outbox_job SET max_attempts = 0 WHERE id = ?").run(jobId), /CHECK constraint failed/);
+      database.prepare(`
+        INSERT INTO email_delivery_attempt (outbox_job_id, attempt_number, status)
+        VALUES (?, 1, 'started')
+      `).run(jobId);
+      assert.throws(() => database.prepare(`
+        INSERT INTO email_delivery_attempt (outbox_job_id, attempt_number, status)
+        VALUES (?, 1, 'started')
+      `).run(jobId), /UNIQUE constraint failed/);
+      assert.throws(() => database.prepare(`
+        INSERT INTO email_delivery_attempt (outbox_job_id, attempt_number, status)
+        VALUES (999999, 1, 'started')
+      `).run(), /FOREIGN KEY constraint failed/);
+      assert.equal(database.pragma("integrity_check", { simple: true }), "ok");
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+    } finally {
+      database.close();
+    }
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
   }
