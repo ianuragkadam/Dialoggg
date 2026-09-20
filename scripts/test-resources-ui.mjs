@@ -111,7 +111,7 @@ try {
     assert.equal(schedule.status, 200);
     const schedulePayload = await schedule.json();
     assert.ok(schedulePayload.events.some(item => item.id === `t${seededTaskId}-r${jamieId}` && item.extendedProps.kind === "Task"));
-    assert.ok(schedulePayload.events.some(item => item.id === `e${seededEventId}-r${jamieId}` && item.extendedProps.kind === "Event"));
+    assert.ok(schedulePayload.events.some(item => item.extendedProps.seriesId === seededEventId && item.resourceId === String(jamieId) && item.extendedProps.kind === "Event"));
     const inactive = await fetch(`${baseUrl}/api/v1/resources/${permitId}/assignments`, { method: "PUT", headers: { ...adminHeaders, "content-type": "application/json" }, body: JSON.stringify({ taskIds: [seededTaskId], eventSeriesIds: [] }) });
     assert.equal(inactive.status, 409);
   });

@@ -258,6 +258,8 @@ try {
   let viewerAMembershipId;
   let projectAId;
   let projectBId;
+  let recurringEventId;
+  let recurringEventVersion;
   let lifecycleProjectId;
   let projectTypeAId;
   let projectTypeASecondaryId;
@@ -1802,6 +1804,25 @@ try {
     assert.ok(response.data.id);
   });
 
+  await check("admin creates a persistent recurring Event series", async () => {
+    const response=await adminA.request("/api/events",{method:"POST",body:{projectId:projectAId,pushToProject:true,title:"Scenario recurring inspection",timingMode:"all_day",startDate:"2026-01-10",endDate:"2026-01-10",recurrenceFrequency:"daily",recurrenceEndMode:"count",recurrenceCount:3,resourceIds:[]}});
+    assert.equal(response.status,201,JSON.stringify(response.data));recurringEventId=response.data.event.id;recurringEventVersion=response.data.event.version;
+    const calendar=await adminA.request(`/api/calendar?project_id=${projectAId}&start=2026-01-09T00:00:00Z&end=2026-01-15T00:00:00Z`);assert.equal(calendar.data.events.filter(item=>item.extendedProps?.seriesId===recurringEventId).length,3);
+  });
+
+  await check("occurrence cancellation preserves the remaining Event series",async()=>{
+    const response=await adminA.request(`/api/events/${recurringEventId}/exceptions`,{method:"POST",body:{version:recurringEventVersion,occurrenceKey:"2026-01-11",action:"cancel"}});assert.equal(response.status,200,JSON.stringify(response.data));recurringEventVersion=response.data.event.version;
+    const calendar=await adminA.request(`/api/calendar?project_id=${projectAId}&start=2026-01-09T00:00:00Z&end=2026-01-15T00:00:00Z`);assert.deepEqual(calendar.data.events.filter(item=>item.extendedProps?.seriesId===recurringEventId).map(item=>item.start),["2026-01-10","2026-01-12"]);
+  });
+
+  await check("Event series updates reject stale versions",async()=>{const response=await adminA.request(`/api/events/${recurringEventId}`,{method:"PUT",body:{version:1,projectId:projectAId,pushToProject:true,title:"Stale update",timingMode:"all_day",startDate:"2026-01-10",endDate:"2026-01-10",resourceIds:[]}});assert.equal(response.status,409);assert.equal(response.data.error.code,"EVENT_VERSION_CONFLICT");});
+
+  await check("Employee cannot mutate Event series",async()=>{const response=await viewerA.request("/api/events",{method:"POST",body:{title:"Denied",timingMode:"all_day",startDate:"2026-01-10",endDate:"2026-01-10",resourceIds:[]}});assert.equal(response.status,403);});
+
+  await check("master-only Events never appear on a Project Calendar",async()=>{const created=await adminA.request("/api/events",{method:"POST",body:{title:"Internal master meeting",timingMode:"all_day",startDate:"2026-01-13",endDate:"2026-01-13",resourceIds:[]}});assert.equal(created.status,201);const [master,project]=await Promise.all([adminA.request("/api/calendar?start=2026-01-12T00:00:00Z&end=2026-01-14T00:00:00Z"),adminA.request(`/api/projects/${projectAId}/events?start=2026-01-12T00:00:00Z&end=2026-01-14T00:00:00Z`)]);assert.ok(master.data.events.some(item=>item.title==="Internal master meeting"));assert.ok(!project.data.events.some(item=>item.title==="Internal master meeting"));});
+
+  await check("Resource Event conflicts require and record Owner or Admin acknowledgement",async()=>{const body={projectId:projectAId,pushToProject:true,title:"Acknowledged site overlap",timingMode:"timed",startDate:"2026-01-06",endDate:"2026-01-06",startTime:"10:00",endTime:"11:00",resourceIds:[resourceAId]};const blocked=await adminA.request("/api/events",{method:"POST",body});assert.equal(blocked.status,409,JSON.stringify(blocked.data));assert.equal(blocked.data.error.code,"RESOURCE_CONFLICT");assert.ok(blocked.data.error.details.conflicts.length>=1);const confirmed=await adminA.request("/api/events",{method:"POST",body:{...body,confirmConflicts:true}});assert.equal(confirmed.status,201,JSON.stringify(confirmed.data));const verify=new Database(path.join(dataDirectory,"dialoggg.db"),{readonly:true});try{assert.ok(verify.prepare("SELECT COUNT(*) count FROM event_conflict_acknowledgement WHERE series_id=?").get(confirmed.data.event.id).count>=1);}finally{verify.close();}});
+
   await check("downstream calendars use the shared weekend-aware Task result", async () => {
     const task = await adminA.request(`/api/projects/${projectAId}/tasks`, {
       method: "POST",
@@ -1837,7 +1858,8 @@ try {
     assert.ok(matching.data.events.some(event => event.title.includes("Scenario Project A")));
     const nonMatching = await adminA.request(`/api/calendar?project_type_id=${projectTypeASecondaryId}`);
     assert.equal(nonMatching.status, 200);
-    assert.equal(nonMatching.data.events.length, 0);
+    assert.ok(nonMatching.data.events.every(event => event.extendedProps?.project_id == null));
+    assert.ok(nonMatching.data.events.some(event => event.title === "Internal master meeting"));
     const combined = await adminA.request(`/api/calendar?project_type_id=${projectTypeAId}&project_type_id=${projectTypeASecondaryId}`);
     assert.equal(combined.status, 200);
     assert.ok(combined.data.events.some(event => event.title.includes("Scenario Project A")));

@@ -1614,7 +1614,124 @@ const migration011: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011];
+const migration012: Migration = {
+  version: 12,
+  name: "event_calendar_invariants",
+  signature: "persistent zoned event series + occurrence exceptions + soft-delete history + conflict acknowledgements v1",
+  up(database) {
+    addColumn(database, "event_series", "legacy_event_id", "legacy_event_id INTEGER");
+    addColumn(database, "event_series", "status", "status TEXT NOT NULL DEFAULT 'active'");
+    addColumn(database, "event_series", "deleted_at", "deleted_at TEXT");
+    addColumn(database, "event_series", "updated_by_membership_id", "updated_by_membership_id INTEGER");
+    addColumn(database, "event_exception", "version", "version INTEGER NOT NULL DEFAULT 1");
+    addColumn(database, "event_exception", "updated_at", "updated_at TEXT");
+    addColumn(database, "event_exception", "updated_by_membership_id", "updated_by_membership_id INTEGER");
+
+    database.exec(`
+      UPDATE event_series SET status = CASE WHEN status = 'deleted' THEN 'deleted' ELSE 'active' END,
+        deleted_at = CASE WHEN status = 'deleted' THEN COALESCE(deleted_at, updated_at, CURRENT_TIMESTAMP) ELSE NULL END,
+        updated_by_membership_id = COALESCE(updated_by_membership_id, created_by_membership_id),
+        version = CASE WHEN version >= 1 THEN version ELSE 1 END;
+      UPDATE event_exception SET version = CASE WHEN version >= 1 THEN version ELSE 1 END,
+        updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP);
+
+      INSERT INTO event_series (
+        company_id, project_id, legacy_event_id, title, description, color, timing_mode,
+        start_date, end_date, time_zone, push_to_project, external_visible,
+        recurrence_end_mode, version, created_by_membership_id, updated_by_membership_id
+      )
+      SELECT p.company_id, e.project_id, e.id, trim(e.title), COALESCE(e.description, ''),
+        COALESCE(e.color, '#7f8c8d'), 'all_day', e.start_date, COALESCE(e.end_date, e.start_date),
+        c.time_zone, 1, COALESCE(e.external_visible, 0), 'none', 1,
+        (SELECT cm.id FROM company_membership cm
+          WHERE cm.company_id = p.company_id AND cm.status = 'active'
+          ORDER BY CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, cm.id LIMIT 1),
+        (SELECT cm.id FROM company_membership cm
+          WHERE cm.company_id = p.company_id AND cm.status = 'active'
+          ORDER BY CASE cm.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, cm.id LIMIT 1)
+      FROM event e JOIN project p ON p.id = e.project_id JOIN company c ON c.id = p.company_id
+      WHERE NOT EXISTS (SELECT 1 FROM event_series es WHERE es.legacy_event_id = e.id)
+        AND EXISTS (SELECT 1 FROM company_membership cm WHERE cm.company_id = p.company_id AND cm.status = 'active');
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_event_series_legacy_event
+        ON event_series(legacy_event_id) WHERE legacy_event_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_event_series_calendar
+        ON event_series(company_id, status, project_id, start_date, start_at, id);
+      CREATE INDEX IF NOT EXISTS idx_event_exception_occurrence
+        ON event_exception(series_id, occurrence_key, action);
+
+      CREATE TABLE IF NOT EXISTS event_conflict_acknowledgement (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        series_id INTEGER NOT NULL,
+        occurrence_key TEXT NOT NULL,
+        resource_id INTEGER NOT NULL,
+        actor_membership_id INTEGER NOT NULL,
+        conflict_summary_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (series_id) REFERENCES event_series(id) ON DELETE CASCADE,
+        FOREIGN KEY (resource_id) REFERENCES resource(id),
+        FOREIGN KEY (actor_membership_id) REFERENCES company_membership(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_event_conflict_ack_series
+        ON event_conflict_acknowledgement(series_id, occurrence_key, created_at);
+
+      CREATE TRIGGER trg_event_series_scope_insert
+      BEFORE INSERT ON event_series
+      WHEN NEW.status <> 'active' OR trim(NEW.title) = '' OR NEW.version < 1
+        OR NEW.push_to_project NOT IN (0,1) OR NEW.external_visible NOT IN (0,1)
+        OR NOT EXISTS (SELECT 1 FROM company c WHERE c.id = NEW.company_id AND c.time_zone = NEW.time_zone)
+        OR NOT EXISTS (SELECT 1 FROM company_membership cm WHERE cm.id = NEW.created_by_membership_id AND cm.company_id = NEW.company_id AND cm.status = 'active')
+        OR (NEW.project_id IS NULL AND (NEW.push_to_project <> 0 OR NEW.external_visible <> 0))
+        OR (NEW.project_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM project p WHERE p.id = NEW.project_id AND p.company_id = NEW.company_id AND p.status = 'active'))
+        OR (NEW.timing_mode = 'all_day' AND (NEW.start_date IS NULL OR NEW.end_date IS NULL OR NEW.end_date < NEW.start_date OR NEW.start_at IS NOT NULL OR NEW.end_at IS NOT NULL))
+        OR (NEW.timing_mode = 'timed' AND (NEW.start_at IS NULL OR NEW.end_at IS NULL OR NEW.end_at <= NEW.start_at OR NEW.start_date IS NOT NULL OR NEW.end_date IS NOT NULL))
+        OR NEW.timing_mode NOT IN ('all_day','timed')
+        OR (NEW.recurrence_frequency IS NULL AND (NEW.recurrence_end_mode <> 'none' OR NEW.recurrence_end_date IS NOT NULL OR NEW.recurrence_count IS NOT NULL))
+        OR (NEW.recurrence_frequency IS NOT NULL AND NEW.recurrence_frequency NOT IN ('daily','weekly','monthly'))
+        OR (NEW.recurrence_frequency IS NOT NULL AND NEW.recurrence_end_mode = 'date' AND (NEW.recurrence_end_date IS NULL OR NEW.recurrence_end_date < COALESCE(NEW.start_date, substr(NEW.start_at,1,10))))
+        OR (NEW.recurrence_frequency IS NOT NULL AND NEW.recurrence_end_mode = 'count' AND (NEW.recurrence_count IS NULL OR NEW.recurrence_count < 1 OR NEW.recurrence_count <> CAST(NEW.recurrence_count AS INTEGER)))
+        OR (NEW.recurrence_frequency IS NOT NULL AND NEW.recurrence_end_mode = 'none' AND (NEW.recurrence_end_date IS NOT NULL OR NEW.recurrence_count IS NOT NULL))
+      BEGIN SELECT RAISE(ABORT, 'EVENT_SERIES_SCOPE_INVALID'); END;
+
+      CREATE TRIGGER trg_event_series_scope_update
+      BEFORE UPDATE ON event_series
+      WHEN NEW.company_id <> OLD.company_id OR NEW.created_by_membership_id <> OLD.created_by_membership_id
+        OR NEW.status NOT IN ('active','deleted') OR trim(NEW.title) = '' OR NEW.version < OLD.version
+        OR (NEW.status = 'deleted' AND NEW.deleted_at IS NULL) OR (NEW.status = 'active' AND NEW.deleted_at IS NOT NULL)
+        OR NEW.push_to_project NOT IN (0,1) OR NEW.external_visible NOT IN (0,1)
+        OR NOT EXISTS (SELECT 1 FROM company c WHERE c.id = NEW.company_id AND c.time_zone = NEW.time_zone)
+        OR (NEW.project_id IS NULL AND (NEW.push_to_project <> 0 OR NEW.external_visible <> 0))
+        OR (NEW.project_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM project p WHERE p.id = NEW.project_id AND p.company_id = NEW.company_id AND p.status = 'active'))
+        OR (NEW.timing_mode = 'all_day' AND (NEW.start_date IS NULL OR NEW.end_date IS NULL OR NEW.end_date < NEW.start_date OR NEW.start_at IS NOT NULL OR NEW.end_at IS NOT NULL))
+        OR (NEW.timing_mode = 'timed' AND (NEW.start_at IS NULL OR NEW.end_at IS NULL OR NEW.end_at <= NEW.start_at OR NEW.start_date IS NOT NULL OR NEW.end_date IS NOT NULL))
+        OR NEW.timing_mode NOT IN ('all_day','timed')
+        OR (NEW.recurrence_frequency IS NULL AND (NEW.recurrence_end_mode <> 'none' OR NEW.recurrence_end_date IS NOT NULL OR NEW.recurrence_count IS NOT NULL))
+        OR (NEW.recurrence_frequency IS NOT NULL AND NEW.recurrence_frequency NOT IN ('daily','weekly','monthly'))
+        OR (NEW.recurrence_frequency IS NOT NULL AND NEW.recurrence_end_mode = 'date' AND (NEW.recurrence_end_date IS NULL OR NEW.recurrence_end_date < COALESCE(NEW.start_date, substr(NEW.start_at,1,10))))
+        OR (NEW.recurrence_frequency IS NOT NULL AND NEW.recurrence_end_mode = 'count' AND (NEW.recurrence_count IS NULL OR NEW.recurrence_count < 1 OR NEW.recurrence_count <> CAST(NEW.recurrence_count AS INTEGER)))
+        OR (NEW.recurrence_frequency IS NOT NULL AND NEW.recurrence_end_mode = 'none' AND (NEW.recurrence_end_date IS NOT NULL OR NEW.recurrence_count IS NOT NULL))
+      BEGIN SELECT RAISE(ABORT, 'EVENT_SERIES_SCOPE_INVALID'); END;
+
+      CREATE TRIGGER trg_event_exception_scope_insert
+      BEFORE INSERT ON event_exception
+      WHEN trim(NEW.occurrence_key) = '' OR NEW.action NOT IN ('cancel','replace')
+        OR (NEW.action = 'cancel' AND NEW.replacement_json IS NOT NULL)
+        OR (NEW.action = 'replace' AND (NEW.replacement_json IS NULL OR json_valid(NEW.replacement_json) = 0))
+        OR NOT EXISTS (SELECT 1 FROM event_series es WHERE es.id = NEW.series_id AND es.status = 'active')
+      BEGIN SELECT RAISE(ABORT, 'EVENT_EXCEPTION_SCOPE_INVALID'); END;
+
+      CREATE TRIGGER trg_event_exception_scope_update
+      BEFORE UPDATE ON event_exception
+      WHEN NEW.series_id <> OLD.series_id OR trim(NEW.occurrence_key) = '' OR NEW.version < OLD.version
+        OR NEW.action NOT IN ('cancel','replace') OR (NEW.action = 'cancel' AND NEW.replacement_json IS NOT NULL)
+        OR (NEW.action = 'replace' AND (NEW.replacement_json IS NULL OR json_valid(NEW.replacement_json) = 0))
+        OR NOT EXISTS (SELECT 1 FROM event_series es WHERE es.id = NEW.series_id AND es.status = 'active')
+      BEGIN SELECT RAISE(ABORT, 'EVENT_EXCEPTION_SCOPE_INVALID'); END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

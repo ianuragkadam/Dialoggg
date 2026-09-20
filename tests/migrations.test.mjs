@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 11/);
+    assert.match(second.stdout, /version 12/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -85,6 +85,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 9, name: "resource_management_invariants" },
           { version: 10, name: "project_lifecycle_invariants" },
           { version: 11, name: "gantt_plan_invariants" },
+          { version: 12, name: "event_calendar_invariants" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -261,11 +262,11 @@ test("Resource migration enforces fixed categories, tenant scope, one-to-one Use
 
       const eventOne = Number(database.prepare(`
         INSERT INTO event_series (company_id, project_id, title, timing_mode, start_date, end_date, time_zone, created_by_membership_id)
-        VALUES (?, ?, 'Event One', 'all_day', '2026-09-19', '2026-09-20', 'UTC', ?)
+        VALUES (?, ?, 'Event One', 'all_day', '2026-09-19', '2026-09-20', 'America/New_York', ?)
       `).run(companyOne, projectOne, membershipOne).lastInsertRowid);
       const eventTwo = Number(database.prepare(`
         INSERT INTO event_series (company_id, project_id, title, timing_mode, start_date, end_date, time_zone, created_by_membership_id)
-        VALUES (?, ?, 'Event Two', 'all_day', '2026-09-19', '2026-09-20', 'UTC', ?)
+        VALUES (?, ?, 'Event Two', 'all_day', '2026-09-19', '2026-09-20', 'America/New_York', ?)
       `).run(companyTwo, projectTwo, membershipTwo).lastInsertRowid);
       database.prepare("INSERT INTO event_resource (series_id, resource_id) VALUES (?, ?)").run(eventOne, resourceOne);
       assert.throws(() => database.prepare("INSERT INTO event_resource (series_id, resource_id) VALUES (?, ?)").run(eventTwo, resourceOne), /EVENT_RESOURCE_SCOPE_OR_STATUS_INVALID/);

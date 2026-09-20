@@ -107,3 +107,15 @@ node scripts/test-project-plan-ui.mjs
 ```
 
 The production-like scenario suite also verifies CSRF/Role/tenant boundaries, Plan and Task concurrency, cascade/cycle behavior, External DTO reduction, and weekend-aware dates shared by Project/Master Calendar responses. The September 20 checkpoint passes 143/143 scenarios, 14/14 focused Project Plan browser checks, and 157/157 browser checks across all eleven UI suites.
+
+## Persistent Events and Calendars checks
+
+`tests/events-calendar.test.mjs` runs `scripts/test-events-calendar-engine.mts` against a migrated temporary database. It covers daily/weekly/monthly recurrence, count/date/open horizons, company-local DST behavior, occurrence replacement/cancellation, Resource conflicts and acknowledgements, soft-deleted history, tenant/Role boundaries, and optimistic concurrency. `tests/migrations.test.mjs` separately proves schema-v12 Event-series, timing, recurrence, exception, Project, and Resource invariants.
+
+`scripts/test-calendars-events-ui.mjs` performs real Event-series and exception writes through the retained Calendar UI, reloads the calendar, and queries its isolated database to prove persistence. It also covers live Project/Resource choices, Master-only versus Project rollup, all-day/timed validation, recurrence, conflict review, series versus occurrence changes, Employee read-only behavior, Task no-drag routing, phone layout, and signed-out routing. Run it with Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set:
+
+```powershell
+node scripts/test-calendars-events-ui.mjs
+```
+
+The production-like scenario suite verifies invalid input, create/update/cancel, stale versions, Employee denial, Master-only isolation, durable conflict acknowledgement, shared Gantt Task dates, Project Type filters, tenant isolation, and company/Project/Resource feeds. The September 20 checkpoint passes 32/32 unit/foundation/migration tests, 149/149 scenarios, 16/16 focused Calendar/Event browser checks, and 158/158 browser checks across all eleven UI suites.

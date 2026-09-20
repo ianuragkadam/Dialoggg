@@ -74,8 +74,8 @@ try {
     database.prepare("INSERT INTO project_user (project_id, user_id) VALUES (?, ?)").run(assignedProjectId, employee.legacyUserId);
     database.prepare(`INSERT INTO task (project_id, name, start_date, duration, external_visible) VALUES (?, 'Visible milestone', '2026-09-17', 1, 1)`).run(assignedProjectId);
     database.prepare(`INSERT INTO task (project_id, name, start_date, duration, external_visible) VALUES (?, 'Internal task', '2026-09-18', 1, 0)`).run(assignedProjectId);
-    database.prepare(`INSERT INTO event (project_id, title, start_date, external_visible, description) VALUES (?, 'Visible visit', '2026-09-17', 1, 'private description')`).run(assignedProjectId);
-    database.prepare(`INSERT INTO event (project_id, title, start_date, external_visible) VALUES (?, 'Internal meeting', '2026-09-18', 0)`).run(assignedProjectId);
+    database.prepare(`INSERT INTO event_series (company_id,project_id,title,description,timing_mode,start_date,end_date,time_zone,push_to_project,external_visible,created_by_membership_id,updated_by_membership_id) VALUES (?,?,'Visible visit','private description','all_day','2026-09-17','2026-09-17','America/New_York',1,1,?,?)`).run(owner.companyId,assignedProjectId,owner.membershipId,owner.membershipId);
+    database.prepare(`INSERT INTO event_series (company_id,project_id,title,timing_mode,start_date,end_date,time_zone,push_to_project,external_visible,created_by_membership_id,updated_by_membership_id) VALUES (?,?,'Internal meeting','all_day','2026-09-18','2026-09-18','America/New_York',1,0,?,?)`).run(owner.companyId,assignedProjectId,owner.membershipId,owner.membershipId);
   } finally { database.close(); }
 
   appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_ENCRYPTION_KEY: encryptionKey }, stdio: ["ignore", "pipe", "pipe"] });

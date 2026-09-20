@@ -45,6 +45,7 @@ export type User = {
   full_name: string | null;
   user_type: "super_admin" | "owner" | "admin" | "viewer" | "internal" | "external";
   company_id: number | null;
+  company_time_zone: string | null;
   company_role: CompanyRole | null;
   context_type: ContextType;
 };
@@ -83,6 +84,7 @@ function actorToUser(actor: Actor): User {
     full_name: fullName || null,
     user_type: legacyRole(actor.companyRole, actor.contextType === "platform"),
     company_id: actor.companyId,
+    company_time_zone: actor.companyTimeZone,
     company_role: actor.companyRole,
     context_type: actor.contextType,
   };

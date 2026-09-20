@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { addDays, workingDayEnd } from "@/lib/dates";
+import { listEventOccurrences } from "@/lib/events-calendar";
 
 type ScheduleItem = {
   id: string;
@@ -13,9 +14,11 @@ type ScheduleItem = {
   color: string;
   projectId: number | null;
   kind: "Task" | "Event";
+  seriesId?: number;
+  occurrenceKey?: string;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const actor = await getCurrentActor();
   if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (actor.contextType !== "company" || !actor.companyId || actor.companyRole === "external") {
@@ -33,18 +36,8 @@ export async function GET() {
     JOIN resource r ON r.id = tr.resource_id AND r.company_id = p.company_id
     WHERE p.company_id = ? AND t.is_header = 0
   `).all(actor.companyId) as Array<{ id: number; name: string; start_date: string; duration: number; color: string; allow_saturday: number; allow_sunday: number; resource_id: number; project_id: number; project_name: string }>;
-  const eventRows = db.prepare(`
-    SELECT es.id, es.title, es.timing_mode, es.start_date, es.end_date, es.start_at, es.end_at, es.color,
-      er.resource_id, es.project_id, COALESCE(p.name, 'Company calendar') AS project_name
-    FROM event_series es
-    JOIN event_resource er ON er.series_id = es.id
-    JOIN resource r ON r.id = er.resource_id AND r.company_id = es.company_id
-    LEFT JOIN project p ON p.id = es.project_id AND p.company_id = es.company_id
-    WHERE es.company_id = ?
-  `).all(actor.companyId) as Array<{
-    id: number; title: string; timing_mode: "all_day" | "timed"; start_date: string | null; end_date: string | null;
-    start_at: string | null; end_at: string | null; color: string; resource_id: number; project_id: number | null; project_name: string;
-  }>;
+  const now=new Date();const rangeStart=request.nextUrl.searchParams.get("start")||new Date(now.getTime()-366*86400000).toISOString();const rangeEnd=request.nextUrl.searchParams.get("end")||new Date(now.getTime()+732*86400000).toISOString();
+  const eventOccurrences=listEventOccurrences(actor,{rangeStart,rangeEnd,includeCompleted:request.nextUrl.searchParams.get("include_completed")==="true"});
 
   const items: ScheduleItem[] = [
     ...taskRows.map(row => ({
@@ -57,20 +50,18 @@ export async function GET() {
       projectId: row.project_id,
       kind: "Task" as const,
     })),
-    ...eventRows.flatMap(row => {
-      const start = row.timing_mode === "timed" ? row.start_at : row.start_date;
-      const end = row.timing_mode === "timed" ? row.end_at : row.start_date ? addDays(row.end_date || row.start_date, 1) : null;
-      return start && end ? [{
-        id: `e${row.id}-r${row.resource_id}`,
-        resourceId: row.resource_id,
-        title: `${row.title} (${row.project_name})`,
-        start,
-        end,
-        color: row.color,
-        projectId: row.project_id,
+    ...eventOccurrences.flatMap(occurrence => occurrence.resourceIds.map(resourceId => ({
+        id: `${occurrence.id}-r${resourceId}`,
+        resourceId,
+        title: `${occurrence.title} (${occurrence.projectName||"Company calendar"})`,
+        start: occurrence.start,
+        end: occurrence.end,
+        color: occurrence.color,
+        projectId: occurrence.projectId,
         kind: "Event" as const,
-      }] : [];
-    }),
+        seriesId: occurrence.seriesId,
+        occurrenceKey: occurrence.occurrenceKey,
+      }))),
   ];
 
   const conflicts = new Set<string>();
@@ -101,7 +92,7 @@ export async function GET() {
         end: item.end,
         color: conflict ? "#c0392b" : item.color,
         borderColor: conflict ? "#7d1f15" : undefined,
-        extendedProps: { conflict, project_id: item.projectId, kind: item.kind },
+        extendedProps: { conflict, project_id: item.projectId, kind: item.kind, seriesId:item.seriesId, occurrenceKey:item.occurrenceKey },
       };
     }),
   }, { headers: { "cache-control": "no-store" } });

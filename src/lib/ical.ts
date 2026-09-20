@@ -1,6 +1,7 @@
 import db from "@/db";
 import { randomBytes } from "node:crypto";
 import { addDays, workingDayEnd } from "@/lib/dates";
+import { expandEventSeries } from "@/lib/events-calendar";
 
 // Return (creating if needed) the iCal token for a company's master feed.
 export function getCompanyToken(companyId: number): string {
@@ -32,6 +33,7 @@ export function getResourceToken(resourceId: number): string {
 type FeedItem = {
   uid: string; title: string; start: string; end: string; // end is exclusive (DTEND)
   description?: string;
+  allDay?: boolean;
 };
 
 function fold(line: string): string {
@@ -53,6 +55,7 @@ function esc(t: string): string {
 function ymd(iso: string): string {
   return iso.replace(/-/g, "");
 }
+function utc(iso:string){return new Date(iso).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z");}
 
 export function buildICS(calName: string, items: FeedItem[]): string {
   const now = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
@@ -68,8 +71,8 @@ export function buildICS(calName: string, items: FeedItem[]): string {
     lines.push("BEGIN:VEVENT");
     lines.push("UID:" + it.uid + "@dialoggg");
     lines.push("DTSTAMP:" + now);
-    lines.push("DTSTART;VALUE=DATE:" + ymd(it.start));
-    lines.push("DTEND;VALUE=DATE:" + ymd(it.end));
+    if(it.allDay===false){lines.push("DTSTART:"+utc(it.start));lines.push("DTEND:"+utc(it.end));}
+    else{lines.push("DTSTART;VALUE=DATE:" + ymd(it.start));lines.push("DTEND;VALUE=DATE:" + ymd(it.end));}
     lines.push(fold("SUMMARY:" + esc(it.title)));
     if (it.description) lines.push(fold("DESCRIPTION:" + esc(it.description)));
     lines.push("END:VEVENT");
@@ -83,7 +86,8 @@ export function projectFeedItems(projectId: number): FeedItem[] {
   const tasks = db.prepare(
     "SELECT * FROM task WHERE project_id = ? AND is_header = 0",
   ).all(projectId) as any[];
-  const events = db.prepare("SELECT * FROM event WHERE project_id = ?").all(projectId) as any[];
+  const events = db.prepare("SELECT * FROM event_series WHERE project_id = ? AND status='active' AND push_to_project=1").all(projectId) as any[];
+  const rangeStart=new Date(Date.now()-366*86400000).toISOString(),rangeEnd=new Date(Date.now()+732*86400000).toISOString();
   return [
     ...tasks.map(t => ({
       uid: `task-${t.id}`, title: t.name,
@@ -91,11 +95,7 @@ export function projectFeedItems(projectId: number): FeedItem[] {
       end: addDays(workingDayEnd(t.start_date, t.duration, { allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday }), 1),
       description: "Dialoggg task",
     })),
-    ...events.map(e => ({
-      uid: `event-${e.id}`, title: e.title,
-      start: e.start_date, end: addDays(e.end_date || e.start_date, 1),
-      description: e.description || "Dialoggg event",
-    })),
+    ...events.flatMap(e => expandEventSeries(e,rangeStart,rangeEnd).map(item=>({uid:`event-${item.seriesId}-${item.occurrenceKey}`,title:item.title,start:item.start,end:item.end,allDay:item.allDay,description:item.description||"Dialoggg event"}))),
   ];
 }
 
@@ -107,13 +107,14 @@ export function resourceFeedItems(resourceId: number): FeedItem[] {
     JOIN project p ON p.id = t.project_id
     WHERE tr.resource_id = ? AND t.is_header = 0
   `).all(resourceId) as any[];
-  return tasks.map(t => ({
+  const resource=db.prepare("SELECT company_id FROM resource WHERE id=?").get(resourceId) as {company_id:number}|undefined;const rangeStart=new Date(Date.now()-366*86400000).toISOString(),rangeEnd=new Date(Date.now()+732*86400000).toISOString();const series=resource?db.prepare("SELECT es.* FROM event_series es JOIN event_resource er ON er.series_id=es.id WHERE er.resource_id=? AND es.company_id=? AND es.status='active'").all(resourceId,resource.company_id) as any[]:[];
+  return [...tasks.map(t => ({
     uid: `task-${t.id}-r${resourceId}`,
     title: `${t.name} (${t.project_name})`,
     start: t.start_date,
     end: addDays(workingDayEnd(t.start_date, t.duration, { allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday }), 1),
     description: t.project_name,
-  }));
+  })),...series.flatMap(e=>expandEventSeries(e,rangeStart,rangeEnd).map(item=>({uid:`event-${item.seriesId}-${item.occurrenceKey}-r${resourceId}`,title:item.projectName?`${item.title} (${item.projectName})`:item.title,start:item.start,end:item.end,allDay:item.allDay,description:item.description||item.projectName||"Dialoggg event"})))];
 }
 
 // Build feed items for every project in a company (the master feed).
@@ -122,16 +123,12 @@ export function companyFeedItems(companyId: number): FeedItem[] {
   const items: FeedItem[] = [];
   for (const p of projects) {
     const tasks = db.prepare("SELECT * FROM task WHERE project_id = ? AND is_header = 0").all(p.id) as any[];
-    const events = db.prepare("SELECT * FROM event WHERE project_id = ?").all(p.id) as any[];
     for (const t of tasks) items.push({
       uid: `task-${t.id}`, title: `${t.name} (${p.name})`,
       start: t.start_date,
       end: addDays(workingDayEnd(t.start_date, t.duration, { allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday }), 1), description: p.name,
     });
-    for (const e of events) items.push({
-      uid: `event-${e.id}`, title: `${e.title} (${p.name})`,
-      start: e.start_date, end: addDays(e.end_date || e.start_date, 1), description: p.name,
-    });
   }
+  const rangeStart=new Date(Date.now()-366*86400000).toISOString(),rangeEnd=new Date(Date.now()+732*86400000).toISOString();const events=db.prepare("SELECT * FROM event_series WHERE company_id=? AND status='active'").all(companyId) as any[];for(const event of events)for(const occurrence of expandEventSeries(event,rangeStart,rangeEnd))items.push({uid:`event-${occurrence.seriesId}-${occurrence.occurrenceKey}`,title:occurrence.projectName?`${occurrence.title} (${occurrence.projectName})`:occurrence.title,start:occurrence.start,end:occurrence.end,allDay:occurrence.allDay,description:occurrence.description||occurrence.projectName||"Dialoggg event"});
   return items;
 }

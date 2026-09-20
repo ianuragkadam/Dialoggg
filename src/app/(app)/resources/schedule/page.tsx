@@ -3,6 +3,7 @@
 import FullCalendar from "@fullcalendar/react";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
 import interactionPlugin from "@fullcalendar/interaction";
+import luxonPlugin from "@fullcalendar/luxon3";
 import { useEffect, useState } from "react";
 import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 
@@ -18,6 +19,7 @@ export default function GlobalResourceSchedulePage() {
   const [events, setEvents] = useState<Evt[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [canManage, setCanManage] = useState(false);
+  const [companyTimeZone,setCompanyTimeZone]=useState("UTC");
 
   useEffect(() => {
     fetch("/api/resources/schedule").then(r => r.json()).then(j => {
@@ -28,7 +30,7 @@ export default function GlobalResourceSchedulePage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/me").then(r => r.json()).then(j => setCanManage(["owner", "admin"].includes(j.user?.user_type)));
+    fetch("/api/me").then(r => r.json()).then(j => {setCanManage(["owner", "admin"].includes(j.user?.user_type));setCompanyTimeZone(j.user?.company_time_zone||"UTC");});
   }, []);
 
   const conflictCount = events.filter(e => e.extendedProps.conflict).length / 2;
@@ -51,11 +53,12 @@ export default function GlobalResourceSchedulePage() {
       <div className="bg-white border rounded shadow-sm p-4">
         {!loaded ? <div className="text-gray-500">Loading…</div> : (
           <FullCalendar
-            plugins={[resourceTimelinePlugin, interactionPlugin]}
+            plugins={[resourceTimelinePlugin, interactionPlugin, luxonPlugin]}
             initialView="resourceTimelineMonth"
             headerToolbar={{ left: "prev,next today", center: "title", right: "resourceTimelineMonth,resourceTimelineWeek,resourceTimelineDay" }}
             resources={resources as any}
             events={events as any}
+            timeZone={companyTimeZone}
             resourceAreaHeaderContent="Resources"
             resourceAreaWidth="20%"
             height={650}
