@@ -308,6 +308,30 @@ try {
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
     assert.equal(response.headers.get("x-frame-options"), "DENY");
     assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.match(response.headers.get("strict-transport-security") || "", /max-age=63072000/);
+  });
+
+  await check("canonical origin rejects missing and forged login origins", async () => {
+    const payload = JSON.stringify({ email: adminAEmail, password: passwordA });
+    const missing = await fetch(`${baseUrl}/api/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: payload });
+    const forged = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example", "x-forwarded-host": "evil.example", "x-forwarded-proto": "https" },
+      body: payload,
+    });
+    assert.equal(missing.status, 403);
+    assert.equal(forged.status, 403);
+    assert.equal(missing.headers.get("set-cookie"), null);
+    assert.equal(forged.headers.get("set-cookie"), null);
+  });
+
+  await check("private questionnaire writes reject a forged origin", async () => {
+    const response = await fetch(`${baseUrl}/api/requirements/${followUpFormToken}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", origin: "https://evil.example", "x-forwarded-host": "evil.example", "x-forwarded-proto": "https" },
+      body: JSON.stringify({ questionId: "fu05", answerId: "next_day", comment: "must not persist" }),
+    });
+    assert.equal(response.status, 403);
   });
 
   await check("initial and follow-up workshops use separate response sets", async () => {
@@ -559,6 +583,12 @@ try {
   });
 
   await check("single-use invitation activates the intended membership and creates a session", async () => {
+    const tooLong = await invitedClient.request("/api/v1/invitations/accept", {
+      method: "POST",
+      body: { token: invitationToken, password: "x".repeat(73) },
+    });
+    assert.equal(tooLong.status, 400);
+    assert.equal(tooLong.data.error.code, "PASSWORD_TOO_LONG");
     const accepted = await invitedClient.request("/api/v1/invitations/accept", {
       method: "POST",
       body: { token: invitationToken, password: invitedPassword },
@@ -620,6 +650,9 @@ try {
   await check("password reset is single-use, revokes sessions, and changes the credential", async () => {
     const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "password_reset_email", invitedEmail);
     const resetToken = fragmentToken(emailJob.message.variables.actionUrl);
+    const tooLong = await anonymous.request("/api/v1/auth/reset-password", { method: "POST", body: { token: resetToken, password: "x".repeat(73) } });
+    assert.equal(tooLong.status, 400);
+    assert.equal(tooLong.data.error.code, "PASSWORD_TOO_LONG");
     const reset = await anonymous.request("/api/v1/auth/reset-password", { method: "POST", body: { token: resetToken, password: invitedNewPassword } });
     assert.equal(reset.status, 200, JSON.stringify(reset.data));
     assert.equal((await invitedClient.request("/api/v1/me")).status, 401);
@@ -2280,12 +2313,20 @@ try {
   });
 
   await check("resource calendar feed contains assigned work", async () => {
-    const response = await adminA.request(`/api/resources/${resourceAId}/feed-url`);
+    const escaped = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try { escaped.prepare("UPDATE task SET name = ? WHERE id = ?").run("Overlapping Work\r\nATTENDEE:injected@example.test", overlapId); }
+    finally { escaped.close(); }
+    const response = await adminA.request(`/api/resources/${resourceAId}/feed-url`, { headers: { "x-forwarded-host": "evil.example", "x-forwarded-proto": "https" } });
     assert.equal(response.status, 200);
+    assert.equal(new URL(response.data.url).origin, baseUrl);
+    assert.match(response.headers.get("cache-control") || "", /no-store/);
     const feed = await anonymous.request(new URL(response.data.url).pathname);
     assert.equal(feed.status, 200);
+    assert.match(feed.headers.get("cache-control") || "", /no-store/);
     assert.match(feed.text, /Framing/);
     assert.match(feed.text, /Overlapping Work/);
+    assert.doesNotMatch(feed.text, /\r\nATTENDEE:/);
+    assert.match(feed.text, /Overlapping Work\\nATTENDEE:injected@example\.test/);
   });
 
   await check("unlinked viewer cannot obtain another resource's feed URL", async () => {
@@ -2305,6 +2346,14 @@ try {
     const response = await adminA.request("/api/account/password", {
       method: "POST",
       body: { current_password: passwordA, new_password: "short" },
+    });
+    assert.equal(response.status, 400);
+  });
+
+  await check("password change rejects a value beyond the bcrypt byte limit", async () => {
+    const response = await adminA.request("/api/account/password", {
+      method: "POST",
+      body: { current_password: passwordA, new_password: "x".repeat(73) },
     });
     assert.equal(response.status, 400);
   });

@@ -77,7 +77,7 @@ export function bootstrapAccount(dataDirectory, {
 export async function login(baseUrl, email, password) {
   const response = await fetch(`${baseUrl}/api/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", origin: baseUrl },
     body: JSON.stringify({ email, password }),
   });
   if (!response.ok) throw new Error(`Fixture login failed (${response.status}): ${await response.text()}`);

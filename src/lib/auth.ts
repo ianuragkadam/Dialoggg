@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { sha256 } from "@/lib/security";
+import { passwordCanBeVerified, passwordPolicyError } from "@/lib/password-policy";
 
 const SESSION_HOURS = 12;
 export const SESSION_COOKIE = "dialoggg_session";
@@ -59,11 +60,20 @@ export function isPlatformAdmin(user: User | null | undefined): boolean {
 }
 
 export async function hashPassword(pw: string) {
+  const policyError = passwordPolicyError(pw);
+  if (policyError) throw new Error(policyError);
   return bcrypt.hash(pw, 12);
 }
 
 export async function verifyPassword(pw: string, hash: string) {
+  if (!passwordCanBeVerified(pw)) return false;
   return bcrypt.compare(pw, hash);
+}
+
+export async function verifyIdentityPassword(identityId: number, value: unknown) {
+  const password = typeof value === "string" ? value : "";
+  const row = db.prepare("SELECT password_hash FROM identity WHERE id = ? AND status = 'active'").get(identityId) as { password_hash: string } | undefined;
+  return !!row && await verifyPassword(password, row.password_hash);
 }
 
 function legacyRole(role: CompanyRole | null, platform: boolean): User["user_type"] {

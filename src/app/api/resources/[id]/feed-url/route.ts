@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { getResourceToken } from "@/lib/ical";
+import { canonicalAppOrigin } from "@/lib/request-security";
 
 // Allowed: an Owner/Admin in the Resource company, or the company membership
 // linked one-to-one to that Resource. External memberships cannot access it.
@@ -21,6 +22,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!canManage && resource.linked_membership_id !== actor.membershipId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const url = `${request.nextUrl.origin}/api/ical/${getResourceToken(resource.id)}.ics`;
-  return NextResponse.json({ url }, { headers: { "cache-control": "no-store" } });
+  const url = `${canonicalAppOrigin(request)}/api/ical/${getResourceToken(resource.id)}.ics`;
+  return NextResponse.json({ url }, { headers: { "cache-control": "no-store, max-age=0", pragma: "no-cache" } });
 }

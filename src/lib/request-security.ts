@@ -14,10 +14,26 @@ export async function validateMutationRequest(request: NextRequest, actor: Actor
   return null;
 }
 
+export function canonicalAppOrigin(request: NextRequest) {
+  const configured = process.env.APP_BASE_URL?.trim();
+  if (configured) {
+    const parsed = new URL(configured);
+    if (
+      !["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password ||
+      parsed.pathname !== "/" || parsed.search || parsed.hash
+    ) throw new Error("APP_BASE_URL_INVALID");
+    return parsed.origin;
+  }
+  if (process.env.NODE_ENV === "production") throw new Error("APP_BASE_URL_REQUIRED");
+  return request.nextUrl.origin;
+}
+
 export function validateRequestOrigin(request: NextRequest) {
   const origin = request.headers.get("origin");
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
-  const protocol = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "");
-  const expectedOrigin = host ? `${protocol}://${host}` : request.nextUrl.origin;
-  return !!origin && origin === expectedOrigin;
+  if (!origin) return false;
+  try {
+    return origin === canonicalAppOrigin(request);
+  } catch {
+    return false;
+  }
 }

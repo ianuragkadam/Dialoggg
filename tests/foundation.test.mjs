@@ -301,11 +301,41 @@ test("database connection uses a bounded lock wait and module initialization nev
 
 test("production security headers and strict rendering are enabled", async () => {
   const config = await read("next.config.mjs");
+  const startup = await read("scripts/start-with-migration.mjs");
   assert.match(config, /reactStrictMode:\s*true/);
   assert.match(config, /poweredByHeader:\s*false/);
   assert.match(config, /X-Content-Type-Options/);
   assert.match(config, /X-Frame-Options/);
   assert.match(config, /Referrer-Policy/);
+  assert.match(config, /Strict-Transport-Security/);
+  assert.match(config, /max-age=63072000/);
+  assert.match(startup, /assertProductionConfig\(\{ \.\.\.process\.env, NODE_ENV: "production" \}\)/);
+});
+
+test("cross-module security uses a canonical origin, bounded passwords, and private calendar feeds", async () => {
+  const requestSecurity = await read("src/lib/request-security.ts");
+  const login = await read("src/app/api/auth/login/route.ts");
+  const passwordPolicy = await read("src/lib/password-policy.ts");
+  const calendar = await read("src/lib/ical.ts");
+  const feed = await read("src/app/api/ical/[token]/route.ts");
+  for (const route of [
+    "src/app/api/calendar/feed-url/route.ts",
+    "src/app/api/projects/[id]/feed-url/route.ts",
+    "src/app/api/resources/[id]/feed-url/route.ts",
+  ]) {
+    const source = await read(route);
+    assert.match(source, /canonicalAppOrigin/);
+    assert.match(source, /no-store/);
+  }
+  assert.match(requestSecurity, /APP_BASE_URL/);
+  assert.match(requestSecurity, /APP_BASE_URL_REQUIRED/);
+  assert.doesNotMatch(requestSecurity, /x-forwarded-host|x-forwarded-proto/);
+  assert.match(login, /validateRequestOrigin/);
+  assert.match(passwordPolicy, /MAX_PASSWORD_BYTES\s*=\s*72/);
+  assert.match(passwordPolicy, /TextEncoder/);
+  assert.match(calendar, /\\r\\n\?\|\\n/);
+  assert.match(feed, /private, no-store/);
+  assert.match(feed, /\[a-f0-9\]\{36\}/);
 });
 
 test("secure integration workshop separates scopes, hashes invitations, encrypts versions, and redacts review output", async () => {
@@ -319,6 +349,8 @@ test("secure integration workshop separates scopes, hashes invitations, encrypts
   for (const table of ["integration_setup_invitation", "integration_setup_session", "integration_config", "integration_credential_version", "integration_validation_attempt", "integration_oauth_state"]) assert.match(migration, new RegExp(`CREATE TABLE ${table}`));
   assert.match(migration, /platform_and_company/);
   assert.match(service, /sha256\(rawToken\)/);
+  assert.match(service, /validateRequestOrigin/);
+  assert.doesNotMatch(service, /x-forwarded-host|x-forwarded-proto/);
   assert.match(crypto, /aes-256-gcm/i);
   assert.match(crypto, /setAAD/);
   assert.match(providers, /code_challenge_method/);

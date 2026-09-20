@@ -78,7 +78,7 @@ try {
     database.prepare(`INSERT INTO event_series (company_id,project_id,title,timing_mode,start_date,end_date,time_zone,push_to_project,external_visible,created_by_membership_id,updated_by_membership_id) VALUES (?,?,'Internal meeting','all_day','2026-09-18','2026-09-18','America/New_York',1,0,?,?)`).run(owner.companyId,assignedProjectId,owner.membershipId,owner.membershipId);
   } finally { database.close(); }
 
-  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_ENCRYPTION_KEY: encryptionKey }, stdio: ["ignore", "pipe", "pipe"] });
+  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_BASE_URL: baseUrl, APP_ENCRYPTION_KEY: encryptionKey }, stdio: ["ignore", "pipe", "pipe"] });
   appServer.stdout.on("data", chunk => { appOutput += chunk.toString(); });
   appServer.stderr.on("data", chunk => { appOutput += chunk.toString(); });
   const startedAt = Date.now();

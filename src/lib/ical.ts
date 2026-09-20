@@ -49,7 +49,7 @@ function fold(line: string): string {
 }
 
 function esc(t: string): string {
-  return (t || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+  return (t || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r\n?|\n/g, "\\n");
 }
 
 function ymd(iso: string): string {

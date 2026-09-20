@@ -110,7 +110,7 @@ try {
   database.close();
 
   async function loginCookies(email) {
-    const result = await json(`${baseUrl}/api/auth/login`, { method: "POST", body: JSON.stringify({ email, password }) });
+    const result = await json(`${baseUrl}/api/auth/login`, { method: "POST", headers: { origin: baseUrl }, body: JSON.stringify({ email, password }) });
     assert.equal(result.response.status, 200);
     return { session: sessionCookie(result.response), csrf: csrfCookie(result.response) };
   }

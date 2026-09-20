@@ -9,11 +9,13 @@ import {
 } from "@/lib/integration-setup";
 import { apiError } from "@/lib/api-response";
 import { clientAddressHash, rateLimitStatus, recordRateLimitFailure, requestId, sha256 } from "@/lib/security";
+import { validateRequestOrigin } from "@/lib/request-security";
 
 const NO_STORE = { "cache-control": "no-store, max-age=0", pragma: "no-cache" };
 
 export async function POST(request: NextRequest) {
   const id = requestId(request);
+  if (!validateRequestOrigin(request)) return apiError(403, "ORIGIN_REJECTED", "Request origin was rejected.", id);
   const limiter = {
     action: "integration_invitation_exchange",
     discriminator: clientAddressHash(request),
@@ -24,11 +26,6 @@ export async function POST(request: NextRequest) {
   const limit = rateLimitStatus(limiter);
   if (!limit.allowed) return apiError(429, "RATE_LIMITED", "Try this private link again later.", id);
   recordRateLimitFailure(limiter, limit.keyHash);
-
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
-  const protocol = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "");
-  if (!origin || !host || origin !== `${protocol}://${host}`) return apiError(403, "ORIGIN_REJECTED", "Request origin was rejected.", id);
 
   let token = "";
   try {
@@ -56,6 +53,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   const id = requestId(request);
+  if (!validateRequestOrigin(request)) return apiError(403, "ORIGIN_REJECTED", "Request origin was rejected.", id);
   const raw = request.cookies.get(INTEGRATION_SESSION_COOKIE)?.value;
   const session = integrationSession(raw);
   if (session) {

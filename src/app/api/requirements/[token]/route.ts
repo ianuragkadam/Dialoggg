@@ -13,6 +13,7 @@ import {
   saveRequirementsGeneralComment,
   setRequirementsFormStatus,
 } from "@/lib/requirements-store";
+import { validateRequestOrigin } from "@/lib/request-security";
 
 const NO_STORE = { "cache-control": "no-store, max-age=0" };
 
@@ -28,6 +29,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ token:
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
+  if (!validateRequestOrigin(req)) return NextResponse.json({ error: "Request rejected" }, { status: 403, headers: NO_STORE });
   const { token } = await params;
   const kind = questionnaireKindForToken(token);
   if (!kind) return notFound();

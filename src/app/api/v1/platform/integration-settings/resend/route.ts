@@ -1,9 +1,7 @@
-import bcrypt from "bcryptjs";
 import { NextRequest } from "next/server";
 
-import db from "@/db";
 import { apiError, apiSuccess } from "@/lib/api-response";
-import { getCurrentActor } from "@/lib/auth";
+import { getCurrentActor, verifyIdentityPassword } from "@/lib/auth";
 import { retryEmailDelivery } from "@/lib/email-outbox";
 import { IntegrationProviderError, sendResendTest, validateResend } from "@/lib/integration-providers";
 import {
@@ -36,12 +34,6 @@ function validate(config: Record<string, string>, requireSecret: boolean, apiKey
   if (Object.keys(invalid).length) throw Object.assign(new Error("FIELDS_INVALID"), { fields: invalid });
 }
 
-async function verifyPassword(identityId: number, value: unknown) {
-  const password = String(value ?? "");
-  const row = db.prepare("SELECT password_hash FROM identity WHERE id = ? AND status = 'active'").get(identityId) as { password_hash: string } | undefined;
-  return !!row && password.length > 0 && await bcrypt.compare(password, row.password_hash);
-}
-
 export async function GET() {
   const id = requestId();
   const actor = await getCurrentActor();
@@ -72,7 +64,7 @@ export async function POST(request: NextRequest) {
 
   try {
     if (action === "save") {
-      if (!await verifyPassword(actor.identityId, body.currentPassword)) return apiError(403, "REAUTHENTICATION_REQUIRED", "Confirm your current Platform Administrator password.", id);
+      if (!await verifyIdentityPassword(actor.identityId, body.currentPassword)) return apiError(403, "REAUTHENTICATION_REQUIRED", "Confirm your current Platform Administrator password.", id);
       const current = platformResendSnapshot();
       const config = cleanConfig(body.config);
       const secrets = body.secrets && typeof body.secrets === "object" ? body.secrets as Record<string, unknown> : {};
@@ -128,7 +120,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (["disable", "enable", "revoke", "retry_job"].includes(action)) {
-      if (!await verifyPassword(actor.identityId, body.currentPassword)) return apiError(403, "REAUTHENTICATION_REQUIRED", "Confirm your current Platform Administrator password.", id);
+      if (!await verifyIdentityPassword(actor.identityId, body.currentPassword)) return apiError(403, "REAUTHENTICATION_REQUIRED", "Confirm your current Platform Administrator password.", id);
       if (action === "revoke") revokePlatformResendConfig();
       else if (action === "disable" || action === "enable") setPlatformResendEnabled(action === "enable");
       else retryEmailDelivery(Number(body.jobId));

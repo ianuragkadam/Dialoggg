@@ -112,7 +112,7 @@ try {
 
   appServer = spawn(process.execPath, ["scripts/start-production.mjs"], {
     cwd: process.cwd(),
-    env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory },
+    env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_BASE_URL: baseUrl },
     stdio: ["ignore", "pipe", "pipe"],
   });
   appServer.stdout.on("data", chunk => { appOutput += chunk.toString(); });

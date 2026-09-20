@@ -3,6 +3,7 @@ import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { canViewProject } from "@/lib/authorization";
 import { getProjectToken } from "@/lib/ical";
+import { canonicalAppOrigin } from "@/lib/request-security";
 
 // Any logged-in company member can get the subscribe URL (viewers included).
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -14,6 +15,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (actor.companyRole === "external") return NextResponse.json({ error: "External/Client calendar subscriptions are not available because access could outlive a Project assignment." }, { status: 403 });
 
   const token = getProjectToken(projectId);
-  const url = `${req.nextUrl.origin}/api/ical/${token}.ics`;
-  return NextResponse.json({ url });
+  const url = `${canonicalAppOrigin(req)}/api/ical/${token}.ics`;
+  return NextResponse.json({ url }, { headers: { "cache-control": "no-store, max-age=0", pragma: "no-cache" } });
 }

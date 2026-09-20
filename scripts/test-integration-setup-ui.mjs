@@ -65,13 +65,28 @@ try {
     assert.equal(await page.getByRole("button", { name: "Mark setup complete" }).isDisabled(), true);
   });
 
-  await check("workshop API is no-store and rejects missing CSRF", async () => {
+  await check("workshop API is no-store and rejects missing CSRF or a forged proxy origin", async () => {
     const result = await page.evaluate(async () => {
       const read = await fetch("/api/integration-setup", { cache: "no-store" });
       const write = await fetch("/api/integration-setup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "complete" }) });
       return { cache: read.headers.get("cache-control"), writeStatus: write.status, writeBody: await write.text() };
     });
     assert.match(result.cache || "", /no-store/); assert.equal(result.writeStatus, 403); assert.match(result.writeBody, /CSRF_REJECTED/);
+    const cookies = await context.cookies();
+    const csrf = cookies.find(cookie => cookie.name === "dialoggg_integration_csrf")?.value || "";
+    const forged = await fetch(`${baseUrl}/api/integration-setup`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: cookies.map(cookie => `${cookie.name}=${cookie.value}`).join("; "),
+        origin: "https://attacker.example",
+        "x-forwarded-host": "attacker.example",
+        "x-forwarded-proto": "https",
+        "x-workshop-csrf": csrf,
+      },
+      body: JSON.stringify({ action: "complete" }),
+    });
+    assert.equal(forged.status, 403); assert.match(await forged.text(), /ORIGIN_REJECTED/);
   });
 
   await check("Google credential saves encrypted, survives refresh, and reports a fake OAuth failure safely", async () => {

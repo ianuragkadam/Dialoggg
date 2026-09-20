@@ -110,6 +110,7 @@ try {
       ...process.env,
       NODE_ENV: "production",
       RAILWAY_VOLUME_MOUNT_PATH: dataDirectory,
+      APP_BASE_URL: baseUrl,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

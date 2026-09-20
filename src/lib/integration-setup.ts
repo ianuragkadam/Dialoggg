@@ -11,6 +11,7 @@ import {
   integrationSecretFingerprint,
   integrationSecretLastFour,
 } from "@/lib/integration-crypto";
+import { validateRequestOrigin } from "@/lib/request-security";
 import { sha256 } from "@/lib/security";
 
 export type IntegrationProvider = "google_platform" | "microsoft_platform" | "microsoft_company" | "resend_platform";
@@ -137,10 +138,7 @@ export function integrationSession(rawToken: string | undefined): IntegrationSes
 }
 
 export function validateIntegrationMutation(request: NextRequest, session: IntegrationSession, csrfToken: string | undefined) {
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
-  const protocol = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "");
-  if (!origin || !host || origin !== `${protocol}://${host}`) return "ORIGIN_REJECTED";
+  if (!validateRequestOrigin(request)) return "ORIGIN_REJECTED";
   const header = request.headers.get("x-workshop-csrf");
   if (!csrfToken || !header || header !== csrfToken || sha256(header) !== session.csrfHash) return "CSRF_REJECTED";
   return null;

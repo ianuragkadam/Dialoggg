@@ -5,6 +5,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import { createSession, hashPassword, revokeIdentitySessions, verifyPassword, type CompanyRole } from "@/lib/auth";
 import { validateRequestOrigin } from "@/lib/request-security";
 import { clientAddressHash, rateLimitStatus, recordAudit, recordRateLimitFailure, requestId, sha256 } from "@/lib/security";
+import { passwordPolicyError, passwordPolicyMessage } from "@/lib/password-policy";
 
 export async function POST(request: NextRequest) {
   const traceId = requestId(request);
@@ -23,8 +24,10 @@ export async function POST(request: NextRequest) {
   if (!rate.allowed) return apiError(429, "RATE_LIMITED", "Too many attempts. Try again later.", traceId);
   const invitation = token.length >= 32 ? invitationForToken(token) : undefined;
   const needsPassword = invitation?.identity_status !== "active";
-  if (!invitation || invitation.membership_status !== "pending" || password.length < 12) {
+  const policyError = passwordPolicyError(password);
+  if (!invitation || invitation.membership_status !== "pending" || policyError) {
     recordRateLimitFailure(options, rate.keyHash);
+    if (invitation?.membership_status === "pending" && policyError) return apiError(400, policyError, passwordPolicyMessage(policyError), traceId);
     return apiError(400, "INVALID_OR_EXPIRED_TOKEN", "This invitation is invalid or expired.", traceId);
   }
   if (!needsPassword) {

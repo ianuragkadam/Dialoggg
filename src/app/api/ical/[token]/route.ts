@@ -7,6 +7,7 @@ import { buildICS, projectFeedItems, companyFeedItems, resourceFeedItems } from 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token: raw } = await params;
   const token = raw.replace(/\.ics$/i, "");
+  if (!/^(?:prj|cmp|res)_[a-f0-9]{36}$/.test(token)) return new NextResponse("Not found", { status: 404, headers: { "Cache-Control": "private, no-store, max-age=0" } });
 
   let calName = "Dialoggg";
   let items;
@@ -36,7 +37,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ token:
     headers: {
       "Content-Type": "text/calendar; charset=utf-8",
       "Content-Disposition": `inline; filename="${token}.ics"`,
-      "Cache-Control": "public, max-age=3600",
+      "Cache-Control": "private, no-store, max-age=0",
+      "Pragma": "no-cache",
     },
   });
 }

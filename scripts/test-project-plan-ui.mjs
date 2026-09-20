@@ -21,7 +21,7 @@ const port = await freePort(); const baseUrl = `http://127.0.0.1:${port}`; const
 try {
   const playwright = await loadPlaywright();
   prepareTestDatabase(dataDirectory); const admin = bootstrapAccount(dataDirectory, { companyName: "Project Plan QA", fullName: "Plan Admin", email: adminEmail, password, role: "admin" }); bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Plan Employee", email: employeeEmail, password, role: "employee" });
-  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory }, stdio: ["ignore", "pipe", "pipe"] });
+  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_BASE_URL: baseUrl }, stdio: ["ignore", "pipe", "pipe"] });
   appServer.stdout.on("data", chunk => { appOutput += chunk.toString(); }); appServer.stderr.on("data", chunk => { appOutput += chunk.toString(); });
   const started = Date.now(); while (true) { if (appServer.exitCode !== null) throw new Error(`Server exited.\n${appOutput}`); try { if ((await fetch(`${baseUrl}/login`)).status === 200) break; } catch {} if (Date.now() - started > 25_000) throw new Error(`Server timeout.\n${appOutput}`); await new Promise(resolve => setTimeout(resolve, 200)); }
 

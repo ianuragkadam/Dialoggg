@@ -11,21 +11,27 @@ import {
   recordRateLimitFailure,
   requestId,
 } from "@/lib/security";
+import { validateRequestOrigin } from "@/lib/request-security";
 
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync("dialoggg-invalid-credential-sentinel", 12);
 
 export async function POST(req: NextRequest) {
   const traceId = requestId(req);
+  const responseHeaders = { "x-request-id": traceId, "cache-control": "no-store" };
+  if (!validateRequestOrigin(req)) {
+    recordAudit({ requestId: traceId, action: "auth.login", result: "denied", metadata: { reason: "request_origin" } });
+    return NextResponse.json({ error: "Request rejected" }, { status: 403, headers: responseHeaders });
+  }
   let body: { email?: unknown; password?: unknown };
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401, headers: { "x-request-id": traceId } });
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401, headers: responseHeaders });
   }
   const email = normalizeEmail(body.email);
   const password = typeof body.password === "string" ? body.password : "";
   if (!email || !password) {
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401, headers: { "x-request-id": traceId } });
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401, headers: responseHeaders });
   }
 
   const rateOptions = {
@@ -40,7 +46,7 @@ export async function POST(req: NextRequest) {
     recordAudit({ requestId: traceId, action: "auth.login", result: "denied", metadata: { reason: "rate_limited" } });
     return NextResponse.json(
       { error: "Too many attempts. Try again later." },
-      { status: 429, headers: { "retry-after": String(rate.retryAfterSeconds || 60), "x-request-id": traceId } },
+      { status: 429, headers: { ...responseHeaders, "retry-after": String(rate.retryAfterSeconds || 60) } },
     );
   }
 
@@ -52,7 +58,7 @@ export async function POST(req: NextRequest) {
   if (!identity || identity.status !== "active" || !ok) {
     recordRateLimitFailure(rateOptions, rate.keyHash);
     recordAudit({ requestId: traceId, action: "auth.login", result: "denied", metadata: { reason: "invalid_credentials" } });
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401, headers: { "x-request-id": traceId } });
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401, headers: responseHeaders });
   }
 
   let session;
@@ -61,7 +67,7 @@ export async function POST(req: NextRequest) {
   } catch {
     recordRateLimitFailure(rateOptions, rate.keyHash);
     recordAudit({ actorIdentityId: identity.id, requestId: traceId, action: "auth.login", result: "denied", metadata: { reason: "no_authorized_context" } });
-    return NextResponse.json({ error: "Invalid credentials" }, { status: 401, headers: { "x-request-id": traceId } });
+    return NextResponse.json({ error: "Invalid credentials" }, { status: 401, headers: responseHeaders });
   }
   clearRateLimit(rate.keyHash);
 
@@ -98,5 +104,5 @@ export async function POST(req: NextRequest) {
     user: responseUser,
     data: { user: responseUser, context, expiresAt: session.expiresAt },
     meta: { requestId: traceId },
-  }, { headers: { "x-request-id": traceId, "cache-control": "no-store" } });
+  }, { headers: responseHeaders });
 }

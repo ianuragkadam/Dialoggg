@@ -72,7 +72,7 @@ try {
     seed.prepare("INSERT INTO event_resource (series_id, resource_id) VALUES (?, ?)").run(seededEventId, jamieId);
   } finally { seed.close(); }
 
-  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory }, stdio: ["ignore", "pipe", "pipe"] });
+  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_BASE_URL: baseUrl }, stdio: ["ignore", "pipe", "pipe"] });
   appServer.stdout.on("data", chunk => { appOutput += chunk.toString(); });
   appServer.stderr.on("data", chunk => { appOutput += chunk.toString(); });
   const started = Date.now();

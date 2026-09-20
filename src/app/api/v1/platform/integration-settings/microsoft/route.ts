@@ -1,8 +1,7 @@
-import bcrypt from "bcryptjs";
 import { NextRequest } from "next/server";
 
 import db from "@/db";
-import { getCurrentActor } from "@/lib/auth";
+import { getCurrentActor, verifyIdentityPassword } from "@/lib/auth";
 import { apiError, apiSuccess } from "@/lib/api-response";
 import {
   createPlatformOauthState,
@@ -42,12 +41,6 @@ async function platformActor(request: NextRequest) {
   return actor;
 }
 
-async function verifyPassword(identityId: number, value: unknown) {
-  const password = String(value ?? "");
-  const row = db.prepare("SELECT password_hash FROM identity WHERE id = ? AND status = 'active'").get(identityId) as { password_hash: string } | undefined;
-  return !!row && password.length > 0 && await bcrypt.compare(password, row.password_hash);
-}
-
 export async function GET() {
   const id = requestId();
   const actor = await getCurrentActor();
@@ -65,7 +58,7 @@ export async function POST(request: NextRequest) {
 
   try {
     if (action === "save") {
-      if (!await verifyPassword(actor.identityId, body.currentPassword)) return apiError(403, "REAUTHENTICATION_REQUIRED", "Confirm your current Platform Administrator password.", id);
+      if (!await verifyIdentityPassword(actor.identityId, body.currentPassword)) return apiError(403, "REAUTHENTICATION_REQUIRED", "Confirm your current Platform Administrator password.", id);
       const current = platformMicrosoftSnapshot();
       const config = cleanConfig(body.config);
       const clientSecret = String((body.secrets as Record<string, unknown> | undefined)?.clientSecret ?? "");
@@ -88,7 +81,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (["disable", "enable", "revoke"].includes(action)) {
-      if (!await verifyPassword(actor.identityId, body.currentPassword)) return apiError(403, "REAUTHENTICATION_REQUIRED", "Confirm your current Platform Administrator password.", id);
+      if (!await verifyIdentityPassword(actor.identityId, body.currentPassword)) return apiError(403, "REAUTHENTICATION_REQUIRED", "Confirm your current Platform Administrator password.", id);
       if (action === "revoke") revokePlatformMicrosoftConfig();
       else setPlatformMicrosoftEnabled(action === "enable");
       recordAudit({ requestId: id, actorIdentityId: actor.identityId, action: `integration_microsoft.${action}`, targetType: "integration_config", targetId: "microsoft_platform", result: "success" });

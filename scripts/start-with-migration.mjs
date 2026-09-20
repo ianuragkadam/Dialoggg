@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { assertProductionConfig } from "./validate-production-config.mjs";
+
+assertProductionConfig({ ...process.env, NODE_ENV: "production" });
 
 const migration = spawnSync(
   process.execPath,

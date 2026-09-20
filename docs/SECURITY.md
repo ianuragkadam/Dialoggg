@@ -2,12 +2,14 @@
 
 ## Implemented controls
 
-- Passwords are hashed with bcrypt.
+- Passwords are hashed with bcrypt through one shared policy: at least 12 characters and at most 72 UTF-8 bytes. Hashing rejects values outside the policy, and verification rejects overlong values before invoking bcrypt.
 - Session identifiers are cryptographically random and stored in HTTP-only cookies.
 - Production cookies use `Secure` and `SameSite=Lax`.
 - Shared authorization guards protect Admin-only writes.
 - Data routes are expected to enforce company ownership.
-- Security response headers disable framing, MIME sniffing, camera, microphone, and geolocation access, and restrict referrer disclosure.
+- Security response headers disable framing, MIME sniffing, camera, microphone, and geolocation access, restrict referrer disclosure, and enable a two-year HSTS policy with subdomains.
+- Production state-changing requests compare `Origin` to the canonical HTTPS `APP_BASE_URL`; client-controlled forwarded host/protocol headers are never an origin authority. Login, logout, password, questionnaire, and Integration Setup writes use this boundary.
+- Production startup fails before migration unless the canonical application origin, absolute persistent-volume path, base64 32-byte encryption key, and non-fake provider mode are valid.
 - Production secrets and database files are excluded from source control.
 - Each private workshop uses different client and review bearer tokens. The original and follow-up workshops also use separate form keys, so their responses cannot overwrite one another.
 - Integration setup invitation bearers remain in URL fragments, are exchanged for short-lived HttpOnly sessions, and are stored only as SHA-256 hashes. Writable and read-only invitations are separate, expiring, revocable, and scoped to platform, company, or an explicitly authorized combination.
@@ -27,12 +29,13 @@
 - Platform Microsoft settings require Platform Administration context, same-origin double-submit CSRF, and current-password reauthentication for save/rotation/disable/enable/revoke. The Entra client secret is a write-only versioned AES-256-GCM envelope; safe reads expose only non-secret metadata, fingerprint/version, callback, verification/disabled timestamps, and safe status. PKCE OAuth must prove the required delegated scope, Graph identity, and temporary create/delete capability before any company connection is enabled.
 - Company Microsoft connections require an active company Owner/Admin and single-use PKCE state. Refresh tokens plus tenant/account/site/drive/root identifiers are context-bound AES-256-GCM ciphertext. Root and folder choices are short-lived opaque encrypted values; browser DTOs, audit metadata, logs, and safe errors omit raw tokens, drive IDs, item IDs, URLs, and provider bodies.
 - Schema-v14 triggers and indexes enforce company/connection/Project scope for Microsoft connections and folder mappings. Owner/Admin may manage Common and Private; assigned Employee/External may receive Common only; unassigned Users receive neither. Private metadata is omitted rather than masked. Disconnect, Project lifecycle, and company lifecycle preserve mappings and never invoke Microsoft rename/move/delete or permission mutation.
+- Company, Project, and Resource iCalendar subscription URLs derive from the canonical application origin and are returned only in non-cacheable authenticated responses. Bearer feeds enforce exact token formats, send `private, no-store`, and escape CR/LF text before serialization.
 
 ## Known gaps before final release
 
 - The fixed Role model, membership invitations, password reset, Resource authorization, and core Project visibility are implemented; a final route-by-route permission audit is still required as remaining modules become persistent.
 - Multi-factor authentication, end-user session management, and verified self-service login-email change are not implemented.
-- Some legacy login and write endpoints do not yet have rate limiting or automated abuse protection; integration invitation exchange and validation paths do.
+- Login, forgot/reset password, invitation acceptance, account-password reauthentication, and integration invitation/validation paths have bounded abuse controls. The remaining authenticated mutation surface still needs a final per-action abuse-budget review before release.
 - Questionnaire URL tokens grant access to anyone who possesses the link; they must be treated as passwords and rotated if disclosed.
 - A full route-by-route tenant-isolation review is required as new modules are added.
 - Dependency audit findings must remain at zero or be triaged for reachability before each release.
