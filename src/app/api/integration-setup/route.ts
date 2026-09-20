@@ -39,13 +39,12 @@ function validateProviderInput(provider: IntegrationProvider, config: Record<str
   if (provider === "google_platform") {
     for (const key of ["projectName", "projectId", "clientId", "supportEmail", "privacyUrl", "privacyStatus"]) if (!config[key]?.trim()) missing.push(key);
     if (requireSecret && !secrets.clientSecret) missing.push("clientSecret");
+  } else if (provider === "microsoft_platform") {
+    for (const key of ["applicationName", "tenantId", "clientId", "publisherDomain"]) if (!config[key]?.trim()) missing.push(key);
+    if (requireSecret && !secrets.clientSecret) missing.push("clientSecret");
   } else if (provider === "microsoft_company") {
-    for (const key of ["tenantId", "clientId", "credentialMode", "storageMode", "rootName"]) if (!config[key]?.trim()) missing.push(key);
-    if (config.storageMode === "sharepoint") for (const key of ["sharepointHost", "sharepointPath"]) if (!config[key]?.trim()) missing.push(key);
-    if (config.credentialMode === "certificate") {
-      if (!config.certificateThumbprint || !/^[A-Fa-f0-9:]{40,59}$/.test(config.certificateThumbprint)) missing.push("certificateThumbprint");
-      if (requireSecret && !secrets.certificate) missing.push("certificate");
-    } else if (requireSecret && !secrets.clientSecret) missing.push("clientSecret");
+    for (const key of ["tenantId", "clientId"]) if (!config[key]?.trim()) missing.push(key);
+    if (requireSecret && !secrets.clientSecret) missing.push("clientSecret");
   } else {
     for (const key of ["sendingDomain", "fromName", "fromAddress", "replyTo"]) if (!config[key]?.trim()) missing.push(key);
     if (requireSecret && !secrets.apiKey) missing.push("apiKey");
@@ -59,6 +58,7 @@ function validateProviderInput(provider: IntegrationProvider, config: Record<str
 
 function fieldsFor(provider: IntegrationProvider) {
   if (provider === "google_platform") return ["projectName", "projectId", "clientId", "supportEmail", "privacyUrl", "privacyStatus"];
+  if (provider === "microsoft_platform") return ["applicationName", "tenantId", "clientId", "publisherDomain"];
   if (provider === "microsoft_company") return ["tenantId", "clientId", "credentialMode", "certificateThumbprint", "storageMode", "rootName", "sharepointHost", "sharepointPath"];
   return ["sendingDomain", "fromName", "fromAddress", "replyTo"];
 }

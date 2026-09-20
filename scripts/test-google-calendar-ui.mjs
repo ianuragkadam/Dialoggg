@@ -141,6 +141,7 @@ try {
   const platformContext = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
   await addAuth(platformContext, platformCookies);
   const platformPage = await platformContext.newPage();
+  const googleSettings = platformPage.getByRole("region", { name: "Google OAuth application settings" });
   const clientErrors = [];
   platformPage.on("pageerror", error => clientErrors.push(error.message));
   platformPage.on("console", message => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) clientErrors.push(message.text()); });
@@ -154,8 +155,8 @@ try {
     });
     assert.equal(diagnostic.status, 200, `${JSON.stringify(diagnostic)}\nSERVER:\n${appOutput}`);
     await platformPage.waitForFunction(() => Array.from(document.querySelectorAll("input[readonly]")).some(input => input.value.length > 0));
-    await platformPage.getByText("Not configured", { exact: true }).waitFor();
-    assert.equal(await platformPage.getByLabel("Authorized callback URL").inputValue(), `${baseUrl}/api/integrations/oauth/google/callback`);
+    await googleSettings.getByText("Not configured", { exact: true }).waitFor();
+    assert.equal(await googleSettings.getByLabel("Authorized callback URL").inputValue(), `${baseUrl}/api/integrations/oauth/google/callback`);
     const body = await platformPage.locator("body").innerText();
     assert.match(body, /write-only and encrypted/);
     assert.match(body, /calendar\.app\.created/);
@@ -163,47 +164,47 @@ try {
   });
 
   await check("Platform save requires password reauthentication", async () => {
-    await platformPage.getByLabel("Cloud project name").fill("Dialoggg Platform");
-    await platformPage.getByLabel("Cloud project ID").fill("dialoggg-platform-test");
-    await platformPage.getByLabel("Web OAuth client ID").fill("123456789-dialoggg.apps.googleusercontent.com");
-    await platformPage.getByLabel("Support email").fill("support@example.test");
-    await platformPage.getByLabel("HTTPS privacy policy URL").fill("https://example.test/privacy");
-    await platformPage.getByLabel("Consent-screen status").selectOption("verified");
-    await platformPage.getByLabel("Environment").selectOption("test");
-    await platformPage.getByLabel("OAuth client secret").fill(clientSecret);
-    await platformPage.getByLabel("Current Platform Administrator password").fill("wrong-password");
-    await platformPage.getByRole("button", { name: "Save encrypted credential" }).click();
-    await platformPage.getByRole("status").filter({ hasText: "Confirm your current Platform Administrator password" }).waitFor();
-    await platformPage.getByText("Not configured", { exact: true }).waitFor();
+    await googleSettings.getByLabel("Cloud project name").fill("Dialoggg Platform");
+    await googleSettings.getByLabel("Cloud project ID").fill("dialoggg-platform-test");
+    await googleSettings.getByLabel("Web OAuth client ID").fill("123456789-dialoggg.apps.googleusercontent.com");
+    await googleSettings.getByLabel("Support email").fill("support@example.test");
+    await googleSettings.getByLabel("HTTPS privacy policy URL").fill("https://example.test/privacy");
+    await googleSettings.getByLabel("Consent-screen status").selectOption("verified");
+    await googleSettings.getByLabel("Environment").selectOption("test");
+    await googleSettings.getByLabel("OAuth client secret").fill(clientSecret);
+    await googleSettings.getByLabel("Current Platform Administrator password").fill("wrong-password");
+    await googleSettings.getByRole("button", { name: "Save encrypted credential" }).click();
+    await googleSettings.getByRole("status").filter({ hasText: "Confirm your current Platform Administrator password" }).waitFor();
+    await googleSettings.getByText("Not configured", { exact: true }).waitFor();
   });
 
   await check("Platform Google credential saves encrypted and verifies through OAuth capability check", async () => {
-    await platformPage.getByLabel("Current Platform Administrator password").fill(platformPassword);
-    await platformPage.getByRole("button", { name: "Save encrypted credential" }).click();
-    await platformPage.getByText("Saved—verification required", { exact: true }).waitFor();
-    assert.equal(await platformPage.getByLabel("Replacement client secret (optional)").inputValue(), "");
-    await platformPage.getByRole("button", { name: "Verify with Google" }).click();
+    await googleSettings.getByLabel("Current Platform Administrator password").fill(platformPassword);
+    await googleSettings.getByRole("button", { name: "Save encrypted credential" }).click();
+    await googleSettings.getByText("Saved—verification required", { exact: true }).waitFor();
+    assert.equal(await googleSettings.getByLabel("Replacement client secret (optional)").inputValue(), "");
+    await googleSettings.getByRole("button", { name: "Verify with Google" }).click();
     await platformPage.waitForURL(/\/platform\/integration-setup\?oauth=google&status=verified/);
-    await platformPage.getByText("Valid", { exact: true }).waitFor();
+    await googleSettings.getByText("Valid", { exact: true }).waitFor();
   });
 
   await check("Platform secret rotation, disable, enable, and retry remain safe", async () => {
-    await platformPage.getByLabel("Replacement client secret (optional)").fill(rotatedSecret);
-    await platformPage.getByLabel("Current Platform Administrator password").fill(platformPassword);
-    await platformPage.getByRole("button", { name: "Save details / rotate secret" }).click();
-    await platformPage.getByText("Saved—verification required", { exact: true }).waitFor();
-    await platformPage.getByRole("button", { name: "Verify with Google" }).click();
+    await googleSettings.getByLabel("Replacement client secret (optional)").fill(rotatedSecret);
+    await googleSettings.getByLabel("Current Platform Administrator password").fill(platformPassword);
+    await googleSettings.getByRole("button", { name: "Save details / rotate secret" }).click();
+    await googleSettings.getByText("Saved—verification required", { exact: true }).waitFor();
+    await googleSettings.getByRole("button", { name: "Verify with Google" }).click();
     await platformPage.waitForURL(/status=verified/);
-    await platformPage.getByText("Valid", { exact: true }).waitFor();
-    await platformPage.getByLabel("Current Platform Administrator password").fill(platformPassword);
-    await platformPage.getByRole("button", { name: "Disable" }).click();
-    await platformPage.getByText("Disabled", { exact: true }).waitFor();
-    await platformPage.getByLabel("Current Platform Administrator password").fill(platformPassword);
-    await platformPage.getByRole("button", { name: "Enable" }).click();
-    await platformPage.getByText("Saved—verification required", { exact: true }).waitFor();
-    await platformPage.getByRole("button", { name: "Retry verification" }).click();
+    await googleSettings.getByText("Valid", { exact: true }).waitFor();
+    await googleSettings.getByLabel("Current Platform Administrator password").fill(platformPassword);
+    await googleSettings.getByRole("button", { name: "Disable" }).click();
+    await googleSettings.getByText("Disabled", { exact: true }).waitFor();
+    await googleSettings.getByLabel("Current Platform Administrator password").fill(platformPassword);
+    await googleSettings.getByRole("button", { name: "Enable" }).click();
+    await googleSettings.getByText("Saved—verification required", { exact: true }).waitFor();
+    await googleSettings.getByRole("button", { name: "Retry verification" }).click();
     await platformPage.waitForURL(/status=verified/);
-    await platformPage.getByText("Valid", { exact: true }).waitFor();
+    await googleSettings.getByText("Valid", { exact: true }).waitFor();
   });
 
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -323,11 +324,11 @@ try {
 
   await check("Platform revoke removes the active credential without exposing secrets", async () => {
     await platformPage.goto(`${baseUrl}/platform/integration-setup`);
-    await platformPage.getByText("Valid", { exact: true }).waitFor();
-    await platformPage.getByLabel("Current Platform Administrator password").fill(platformPassword);
+    await googleSettings.getByText("Valid", { exact: true }).waitFor();
+    await googleSettings.getByLabel("Current Platform Administrator password").fill(platformPassword);
     platformPage.once("dialog", dialog => dialog.accept());
-    await platformPage.getByRole("button", { name: "Revoke" }).click();
-    await platformPage.getByText("Not configured", { exact: true }).waitFor();
+    await googleSettings.getByRole("button", { name: "Revoke" }).click();
+    await googleSettings.getByText("Not configured", { exact: true }).waitFor();
     const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
     try {
       const credentials = JSON.stringify(verify.prepare("SELECT encrypted_envelope FROM integration_credential_version").all());

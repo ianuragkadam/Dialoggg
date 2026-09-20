@@ -131,3 +131,15 @@ node scripts/test-google-calendar-ui.mjs
 ```
 
 The September 20 Google checkpoint passes 32/32 unit/foundation/migration tests, 153/153 scenarios, 14/14 focused Google browser checks, and 159/159 checks across all eleven UI suites. The suite uses `INTEGRATION_PROVIDER_MODE=fake` only in its temporary local server and never calls Google or production.
+
+## Microsoft OneDrive / SharePoint delivery checks
+
+`tests/migrations.test.mjs` proves the schema-v14 platform-provider, company connection, OAuth state, encrypted Project mapping, tenant/connection/Project trigger, index, and migration-history invariants. The production-like scenario suite verifies Platform reauthentication and credential redaction, OAuth/Graph capability gating, missing-scope/wrong-callback/outage recovery, credential rotation/disable/enable, company OAuth, opaque choices, root changes, retry-safe Common/Private create/link, tenant and Role boundaries, renamed/missing/permission states, disconnect, and lifecycle preservation.
+
+`scripts/test-microsoft-storage-ui.mjs` is a real browser suite against an isolated migrated database and the built standalone server. It covers permanent Platform Microsoft settings, company OneDrive connection/root selection, Common/Private create/link/open, renamed display refresh, missing and permission recovery, assigned Employee/External Common-only access, CSRF, disconnect preservation, lifecycle handling, mobile overflow, signed-out routing, and browser-console cleanliness. Run it with Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set:
+
+```powershell
+node scripts/test-microsoft-storage-ui.mjs
+```
+
+The September 20 Microsoft checkpoint passes 33/33 unit/foundation/migration tests, 164/164 scenarios, 16/16 focused Microsoft browser checks, and 160/160 checks across all eleven UI suites. The suite uses `INTEGRATION_PROVIDER_MODE=fake` only in its temporary local server and never calls Microsoft or production.

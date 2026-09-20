@@ -777,6 +777,89 @@ try {
     assert.equal(me.data.user.company_id, null);
   });
 
+  const microsoftPlatformConfig = {
+    applicationName: "Dialoggg Scenario Microsoft",
+    tenantId: "11111111-1111-4111-8111-111111111111",
+    clientId: "22222222-2222-4222-8222-222222222222",
+    publisherDomain: "example.test",
+  };
+  const microsoftSecret = "microsoft-secret-value-scenario-1!";
+
+  await check("Platform Microsoft application save requires reauthentication and redacts the secret", async () => {
+    const denied = await platform.request("/api/v1/platform/integration-settings/microsoft", {
+      method: "POST",
+      body: { action: "save", currentPassword: "wrong-password", environment: "test", config: microsoftPlatformConfig, secrets: { clientSecret: microsoftSecret } },
+    });
+    assert.equal(denied.status, 403);
+    assert.equal(denied.data.error.code, "REAUTHENTICATION_REQUIRED");
+    const saved = await platform.request("/api/v1/platform/integration-settings/microsoft", {
+      method: "POST",
+      body: { action: "save", currentPassword: platformPassword, environment: "test", config: microsoftPlatformConfig, secrets: { clientSecret: microsoftSecret } },
+    });
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    assert.equal(saved.data.data.status, "saved");
+    assert.equal(saved.data.data.credential.configured, true);
+    assert.equal(JSON.stringify(saved.data).includes(microsoftSecret), false);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const row = database.prepare(`SELECT ic.scope_kind, ic.company_id, cv.encrypted_envelope
+        FROM integration_config ic JOIN integration_credential_version cv ON cv.config_id = ic.id AND cv.is_active = 1
+        WHERE ic.provider = 'microsoft_platform'`).get();
+      assert.deepEqual({ scope_kind: row.scope_kind, company_id: row.company_id }, { scope_kind: "platform", company_id: null });
+      assert.equal(row.encrypted_envelope.includes(microsoftSecret), false);
+    } finally { database.close(); }
+  });
+
+  async function platformMicrosoftCallback(code = "fake-success") {
+    const started = await platform.request("/api/v1/platform/integration-settings/microsoft", { method: "POST", body: { action: "oauth_start" } });
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const target = new URL(started.data.data.authorizationUrl);
+    target.searchParams.set("code", code);
+    return platform.request(`${target.pathname}${target.search}`);
+  }
+
+  await check("Platform Microsoft application becomes Valid only after OAuth and Graph capability verification", async () => {
+    const callback = await platformMicrosoftCallback();
+    assert.equal(callback.status, 303);
+    const snapshot = await platform.request("/api/v1/platform/integration-settings/microsoft");
+    assert.equal(snapshot.status, 200);
+    assert.equal(snapshot.data.data.status, "verified");
+    assert.ok(snapshot.data.data.verifiedAt);
+    assert.equal(JSON.stringify(snapshot.data).includes(microsoftSecret), false);
+  });
+
+  await check("Microsoft verification records missing scope, wrong callback, provider outage, and recovery safely", async () => {
+    for (const [code, expected] of [["fake-missing-scope", "MICROSOFT_SCOPE_MISSING"], ["fake-wrong-callback", "MICROSOFT_REDIRECT_URI_MISMATCH"], ["fake-provider-outage", "PROVIDER_UNREACHABLE"]]) {
+      const callback = await platformMicrosoftCallback(code);
+      assert.equal(callback.status, 303);
+      const snapshot = await platform.request("/api/v1/platform/integration-settings/microsoft");
+      assert.equal(snapshot.data.data.status, "action_required");
+      assert.equal(snapshot.data.data.safeStatusCode, expected);
+      assert.equal(JSON.stringify(snapshot.data).includes(microsoftSecret), false);
+    }
+    assert.equal((await platformMicrosoftCallback()).status, 303);
+    assert.equal((await platform.request("/api/v1/platform/integration-settings/microsoft")).data.data.status, "verified");
+  });
+
+  await check("Platform Microsoft credential rotates, disables, enables, and re-verifies without exposing versions", async () => {
+    const rotated = await platform.request("/api/v1/platform/integration-settings/microsoft", {
+      method: "POST",
+      body: { action: "save", currentPassword: platformPassword, environment: "test", config: microsoftPlatformConfig, secrets: { clientSecret: "microsoft-secret-value-scenario-2!" } },
+    });
+    assert.equal(rotated.status, 200);
+    assert.equal(rotated.data.data.credential.version, 2);
+    const disabled = await platform.request("/api/v1/platform/integration-settings/microsoft", { method: "POST", body: { action: "disable", currentPassword: platformPassword } });
+    assert.equal(disabled.status, 200);
+    assert.ok(disabled.data.data.disabledAt);
+    const blocked = await platform.request("/api/v1/platform/integration-settings/microsoft", { method: "POST", body: { action: "oauth_start" } });
+    assert.equal(blocked.status, 409);
+    const enabled = await platform.request("/api/v1/platform/integration-settings/microsoft", { method: "POST", body: { action: "enable", currentPassword: platformPassword } });
+    assert.equal(enabled.status, 200);
+    assert.equal(enabled.data.data.status, "saved");
+    assert.equal((await platformMicrosoftCallback()).status, 303);
+    assert.equal((await platform.request("/api/v1/platform/integration-settings/microsoft")).data.data.status, "verified");
+  });
+
   await check("tenant Admin cannot call Platform Company Administration APIs", async () => {
     const response = await adminA.request("/api/v1/platform/companies");
     assert.equal(response.status, 403);
@@ -875,16 +958,16 @@ try {
           identity_id, company_id, membership_id, token_ciphertext, token_key_version, state
         ) VALUES (?, ?, ?, 'encrypted-google-token', 1, 'healthy')
       `).run(syncMember.identityId, provisionedCompanyId, syncMember.membershipId);
-      database.prepare(`
+      const microsoftConnectionId = Number(database.prepare(`
         INSERT INTO microsoft_connection (
           company_id, tenant_id_ciphertext, drive_id_ciphertext, root_item_id_ciphertext,
           token_ciphertext, token_key_version, service_type, state
         ) VALUES (?, 'tenant', 'drive', 'root', 'token', 1, 'sharepoint', 'healthy')
-      `).run(provisionedCompanyId);
+      `).run(provisionedCompanyId).lastInsertRowid);
       database.prepare(`
-        INSERT INTO project_folder_mapping (project_id, kind, drive_id_ciphertext, item_id_ciphertext, display_name)
-        VALUES (?, 'common', 'drive', 'item', 'Private Preservation Folder')
-      `).run(provisionedProjectId);
+        INSERT INTO project_folder_mapping (project_id, connection_id, kind, drive_id_ciphertext, item_id_ciphertext, display_name)
+        VALUES (?, ?, 'common', 'drive', 'item', 'Private Preservation Folder')
+      `).run(provisionedProjectId, microsoftConnectionId);
     } finally { database.close(); }
 
     const response = await platform.request(`/api/v1/platform/companies/${provisionedCompanyId}/suspend`, { method: "POST", body: {} });
@@ -1172,6 +1255,97 @@ try {
     assert.ok(projectBId);
   });
 
+  async function companyMicrosoftCallback(client, body = { serviceType: "onedrive_business" }) {
+    const started = await client.request("/api/microsoft-storage", { method: "POST", body: { action: "oauth_start", ...body } });
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const target = new URL(started.data.data.authorizationUrl);
+    return client.request(`${target.pathname}${target.search}`);
+  }
+
+  await check("company Admin connects Microsoft Storage through the verified platform application", async () => {
+    const before = await adminA.request("/api/microsoft-storage");
+    assert.equal(before.status, 200);
+    assert.equal(before.data.data.state, "connection_required");
+    assert.equal(before.data.data.platform.status, "verified");
+    const callback = await companyMicrosoftCallback(adminA);
+    assert.equal(callback.status, 303);
+    const snapshot = await adminA.request("/api/microsoft-storage");
+    assert.equal(snapshot.status, 200);
+    assert.equal(snapshot.data.data.state, "healthy");
+    assert.equal(snapshot.data.data.serviceType, "onedrive_business");
+    assert.equal(snapshot.data.data.grantedScope, "Files.ReadWrite");
+    for (const hidden of ["refresh", "token", "driveId", "rootItem", "fake-drive", "fake-account"]) assert.equal(JSON.stringify(snapshot.data).includes(hidden), false, hidden);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const row = database.prepare("SELECT * FROM microsoft_connection WHERE company_id = ?").get(companyAId);
+      for (const [field, plain] of [["token_ciphertext", "fake-microsoft-refresh-token"], ["drive_id_ciphertext", "fake-drive"], ["root_item_id_ciphertext", "fake-root"], ["account_id_ciphertext", "fake-account"]]) {
+        assert.ok(row[field] && !row[field].includes(plain), field);
+      }
+    } finally { database.close(); }
+  });
+
+  await check("company root selection uses an opaque protected choice and leaves existing mappings in place", async () => {
+    const listed = await adminA.request("/api/microsoft-storage", { method: "POST", body: { action: "root_choices" } });
+    assert.equal(listed.status, 200, JSON.stringify(listed.data));
+    assert.ok(listed.data.data.choices.length >= 2);
+    assert.equal(JSON.stringify(listed.data).includes("fake-item"), false);
+    const selected = await adminA.request("/api/microsoft-storage", { method: "POST", body: { action: "select_root", choice: listed.data.data.choices[1].choice, confirmed: true } });
+    assert.equal(selected.status, 200, JSON.stringify(selected.data));
+    assert.equal(selected.data.data.display.rootName, "Projects");
+  });
+
+  await check("Project Common and Private folders create and link retry-safely with protected identifiers", async () => {
+    const common = await adminA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "configure", kind: "common", method: "create", confirmed: true } });
+    assert.equal(common.status, 200, JSON.stringify(common.data));
+    const duplicate = await adminA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "configure", kind: "common", method: "create", confirmed: true } });
+    assert.equal(duplicate.status, 200, JSON.stringify(duplicate.data));
+    const choices = await adminA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "choices" } });
+    assert.equal(choices.status, 200);
+    const linked = await adminA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "configure", kind: "private", method: "link", choice: choices.data.data.choices.at(-1).choice, confirmed: true } });
+    assert.equal(linked.status, 200, JSON.stringify(linked.data));
+    const snapshot = await adminA.request(`/api/projects/${projectAId}/folders`);
+    assert.equal(snapshot.status, 200);
+    assert.deepEqual(snapshot.data.data.folders.map(item => item.kind).sort(), ["common", "private"]);
+    for (const hidden of ["webUrl", "driveId", "itemId", "fake-item", "microsoft.example.test"]) assert.equal(JSON.stringify(snapshot.data).includes(hidden), false, hidden);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(database.prepare("SELECT COUNT(*) count FROM project_folder_mapping WHERE project_id = ? AND kind = 'common'").get(projectAId).count, 1);
+      const rows = database.prepare("SELECT drive_id_ciphertext, item_id_ciphertext, web_url_ciphertext FROM project_folder_mapping WHERE project_id = ?").all(projectAId);
+      assert.equal(JSON.stringify(rows).includes("fake-drive"), false);
+      assert.equal(JSON.stringify(rows).includes("microsoft.example.test"), false);
+    } finally { database.close(); }
+  });
+
+  await check("eligible folder opens refresh renamed display metadata while cross-tenant access stays hidden", async () => {
+    const opened = await adminA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "open", kind: "common" } });
+    assert.equal(opened.status, 200, JSON.stringify(opened.data));
+    assert.match(opened.data.data.webUrl, /^https:\/\/microsoft\.example\.test\//);
+    const otherTenantRead = await adminB.request(`/api/projects/${projectAId}/folders`);
+    assert.equal(otherTenantRead.status, 404);
+    const otherTenantWrite = await adminB.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "configure", kind: "common", method: "create", confirmed: true } });
+    assert.equal(otherTenantWrite.status, 404);
+  });
+
+  await check("missing, permission, and disconnected states preserve Microsoft mappings for recovery", async () => {
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try {
+      database.prepare("UPDATE project_folder_mapping SET state = 'missing', last_error_code = 'MICROSOFT_FOLDER_MISSING' WHERE project_id = ? AND kind = 'common'").run(projectAId);
+    } finally { database.close(); }
+    let snapshot = await adminA.request(`/api/projects/${projectAId}/folders`);
+    assert.equal(snapshot.data.data.folders.find(item => item.kind === "common").state, "missing");
+    const relinked = await adminA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "configure", kind: "common", method: "create", confirmed: true } });
+    assert.equal(relinked.status, 200);
+    const disconnected = await adminA.request("/api/microsoft-storage", { method: "POST", body: { action: "disconnect", confirmed: true } });
+    assert.equal(disconnected.status, 200);
+    assert.equal(disconnected.data.data.state, "disconnected");
+    snapshot = await adminA.request(`/api/projects/${projectAId}/folders`);
+    assert.ok(snapshot.data.data.folders.every(item => item.state === "connection_required"));
+    const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try { assert.equal(verify.prepare("SELECT COUNT(*) count FROM project_folder_mapping WHERE project_id = ?").get(projectAId).count, 2); } finally { verify.close(); }
+    assert.equal((await companyMicrosoftCallback(adminA)).status, 303);
+    assert.equal((await adminA.request("/api/microsoft-storage")).data.data.state, "healthy");
+  });
+
   await check("Project v1 create enforces CSRF and every required field", async () => {
     const cookie = [...adminA.cookies].map(([key, value]) => `${key}=${value}`).join("; ");
     const missingCsrf = await fetch(`${baseUrl}/api/v1/projects`, { method: "POST", headers: { "content-type": "application/json", cookie, origin: baseUrl }, body: "{}" });
@@ -1393,6 +1567,16 @@ try {
     assert.match(edit.text, /Project management is restricted/);
   });
 
+  await check("unassigned Employee receives neither Common nor Private Microsoft folder metadata", async () => {
+    const folders = await viewerA.request(`/api/projects/${projectAId}/folders`);
+    assert.equal(folders.status, 200);
+    assert.equal(folders.data.data.commonVisible, false);
+    assert.equal(folders.data.data.privateVisible, false);
+    assert.deepEqual(folders.data.data.folders, []);
+    const settings = await viewerA.request("/api/microsoft-storage");
+    assert.equal(settings.status, 403);
+  });
+
   await check("viewer cannot create projects", async () => {
     const response = await viewerA.request("/api/v1/projects", {
       method: "POST",
@@ -1433,6 +1617,20 @@ try {
     assert.equal((await viewerA.request("/api/me")).status, 401);
     const relogin = await viewerA.request("/api/auth/login", { method: "POST", body: { email: viewerAEmail, password: viewerPassword } });
     assert.equal(relogin.status, 200);
+  });
+
+  await check("assigned Employee receives Common only and can never request Private", async () => {
+    const folders = await viewerA.request(`/api/projects/${projectAId}/folders`);
+    assert.equal(folders.status, 200);
+    assert.equal(folders.data.data.commonVisible, true);
+    assert.equal(folders.data.data.privateVisible, false);
+    assert.deepEqual(folders.data.data.folders.map(item => item.kind), ["common"]);
+    assert.ok(folders.data.data.folders.every(item => item.kind !== "private"));
+    const common = await viewerA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "open", kind: "common" } });
+    assert.equal(common.status, 200, JSON.stringify(common.data));
+    const privateFolder = await viewerA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "open", kind: "private" } });
+    assert.equal(privateFolder.status, 403);
+    assert.equal(JSON.stringify(privateFolder.data).includes("microsoft.example.test"), false);
   });
 
   await check("signed-in Employee displays the approved role name", async () => {

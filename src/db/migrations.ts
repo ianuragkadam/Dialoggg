@@ -1903,7 +1903,221 @@ const migration013: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013];
+const migration014: Migration = {
+  version: 14,
+  name: "microsoft_onedrive_delivery",
+  signature: "platform Microsoft OAuth credentials + company Graph connections + protected stable Project folder mappings v1",
+  up(database) {
+    addColumn(database, "platform_integration_oauth_state", "provider", "provider TEXT NOT NULL DEFAULT 'google' CHECK (provider IN ('google','microsoft'))");
+    database.exec(`
+      ALTER TABLE integration_validation_attempt RENAME TO integration_validation_attempt_v13;
+      ALTER TABLE integration_oauth_state RENAME TO integration_oauth_state_v13;
+      ALTER TABLE platform_integration_oauth_state RENAME TO platform_integration_oauth_state_v13;
+      ALTER TABLE integration_credential_version RENAME TO integration_credential_version_v13;
+      ALTER TABLE integration_config RENAME TO integration_config_v13;
+
+      DROP INDEX idx_integration_validation_config;
+      DROP INDEX idx_integration_oauth_expiry;
+      DROP INDEX idx_platform_oauth_expiry;
+      DROP INDEX ux_integration_credential_active;
+      DROP INDEX ux_integration_platform_provider;
+      DROP INDEX ux_integration_company_provider;
+      DROP INDEX idx_integration_config_status;
+
+      CREATE TABLE integration_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        provider TEXT NOT NULL CHECK (provider IN ('google_platform','microsoft_platform','microsoft_company','resend_platform')),
+        scope_kind TEXT NOT NULL CHECK (scope_kind IN ('platform','company')),
+        company_id INTEGER,
+        environment TEXT NOT NULL DEFAULT 'production' CHECK (environment IN ('test','production')),
+        non_secret_json TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','saved','action_required','verified')),
+        safe_status_code TEXT,
+        credential_version INTEGER NOT NULL DEFAULT 0 CHECK (credential_version >= 0),
+        saved_at TEXT,
+        verified_at TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        disabled_at TEXT,
+        CHECK (
+          (provider IN ('google_platform','microsoft_platform','resend_platform') AND scope_kind = 'platform' AND company_id IS NULL) OR
+          (provider = 'microsoft_company' AND scope_kind = 'company' AND company_id IS NOT NULL)
+        ),
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO integration_config (
+        id, provider, scope_kind, company_id, environment, non_secret_json, status, safe_status_code,
+        credential_version, saved_at, verified_at, updated_at, created_at, disabled_at
+      ) SELECT id, provider, scope_kind, company_id, environment, non_secret_json, status, safe_status_code,
+        credential_version, saved_at, verified_at, updated_at, created_at, disabled_at
+      FROM integration_config_v13;
+
+      CREATE UNIQUE INDEX ux_integration_platform_provider ON integration_config(provider) WHERE company_id IS NULL;
+      CREATE UNIQUE INDEX ux_integration_company_provider ON integration_config(provider, company_id) WHERE company_id IS NOT NULL;
+      CREATE INDEX idx_integration_config_status ON integration_config(status, provider, company_id);
+
+      CREATE TABLE integration_credential_version (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_id INTEGER NOT NULL,
+        version INTEGER NOT NULL CHECK (version > 0),
+        encrypted_envelope TEXT NOT NULL,
+        fingerprint TEXT NOT NULL,
+        last_four TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        retired_at TEXT,
+        UNIQUE (config_id, version),
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE
+      );
+      INSERT INTO integration_credential_version SELECT * FROM integration_credential_version_v13;
+      CREATE UNIQUE INDEX ux_integration_credential_active ON integration_credential_version(config_id) WHERE is_active = 1;
+
+      CREATE TABLE integration_validation_attempt (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_id INTEGER NOT NULL,
+        invitation_id INTEGER,
+        operation TEXT NOT NULL CHECK (operation IN ('oauth','validate','test_email')),
+        status TEXT NOT NULL CHECK (status IN ('started','passed','failed')),
+        error_code TEXT,
+        safe_details_json TEXT NOT NULL DEFAULT '{}',
+        request_id TEXT NOT NULL,
+        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at TEXT,
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE,
+        FOREIGN KEY (invitation_id) REFERENCES integration_setup_invitation(id) ON DELETE SET NULL
+      );
+      INSERT INTO integration_validation_attempt SELECT * FROM integration_validation_attempt_v13;
+      CREATE INDEX idx_integration_validation_config ON integration_validation_attempt(config_id, started_at DESC);
+
+      CREATE TABLE integration_oauth_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        config_id INTEGER NOT NULL,
+        provider TEXT NOT NULL CHECK (provider IN ('google','microsoft')),
+        state_hash TEXT NOT NULL UNIQUE CHECK (length(state_hash) = 64),
+        encrypted_context TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (session_id) REFERENCES integration_setup_session(id) ON DELETE CASCADE,
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE
+      );
+      INSERT INTO integration_oauth_state SELECT * FROM integration_oauth_state_v13;
+      CREATE INDEX idx_integration_oauth_expiry ON integration_oauth_state(expires_at, used_at);
+
+      CREATE TABLE platform_integration_oauth_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        auth_session_id INTEGER NOT NULL,
+        identity_id INTEGER NOT NULL,
+        config_id INTEGER NOT NULL,
+        state_hash TEXT NOT NULL UNIQUE CHECK (length(state_hash) = 64),
+        encrypted_context TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        provider TEXT NOT NULL DEFAULT 'google' CHECK (provider IN ('google','microsoft')),
+        FOREIGN KEY (auth_session_id) REFERENCES auth_session(id) ON DELETE CASCADE,
+        FOREIGN KEY (identity_id) REFERENCES identity(id) ON DELETE CASCADE,
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE
+      );
+      INSERT INTO platform_integration_oauth_state SELECT * FROM platform_integration_oauth_state_v13;
+      CREATE INDEX idx_platform_oauth_expiry ON platform_integration_oauth_state(expires_at, used_at);
+
+      DROP TABLE integration_validation_attempt_v13;
+      DROP TABLE integration_oauth_state_v13;
+      DROP TABLE platform_integration_oauth_state_v13;
+      DROP TABLE integration_credential_version_v13;
+      DROP TABLE integration_config_v13;
+    `);
+
+    addColumn(database, "microsoft_connection", "connected_by_membership_id", "connected_by_membership_id INTEGER REFERENCES company_membership(id)");
+    addColumn(database, "microsoft_connection", "granted_scope", "granted_scope TEXT NOT NULL DEFAULT ''");
+    addColumn(database, "microsoft_connection", "token_expires_at", "token_expires_at TEXT");
+    addColumn(database, "microsoft_connection", "root_display_name", "root_display_name TEXT");
+    addColumn(database, "microsoft_connection", "last_success_at", "last_success_at TEXT");
+    addColumn(database, "microsoft_connection", "last_attempt_at", "last_attempt_at TEXT");
+    addColumn(database, "microsoft_connection", "last_error_code", "last_error_code TEXT");
+    addColumn(database, "microsoft_connection", "disconnected_at", "disconnected_at TEXT");
+    addColumn(database, "project_folder_mapping", "connection_id", "connection_id INTEGER REFERENCES microsoft_connection(id)");
+    addColumn(database, "project_folder_mapping", "token_key_version", "token_key_version INTEGER NOT NULL DEFAULT 1 CHECK (token_key_version > 0)");
+    addColumn(database, "project_folder_mapping", "last_verified_at", "last_verified_at TEXT");
+    addColumn(database, "project_folder_mapping", "last_error_code", "last_error_code TEXT");
+
+    database.exec(`
+      UPDATE platform_integration_oauth_state SET provider = 'google' WHERE provider IS NULL OR provider = '';
+
+      UPDATE microsoft_connection
+      SET connected_by_membership_id = (
+        SELECT cm.id FROM company_membership cm
+        WHERE cm.company_id = microsoft_connection.company_id
+          AND cm.status = 'active' AND cm.role IN ('owner','admin')
+        ORDER BY CASE cm.role WHEN 'owner' THEN 0 ELSE 1 END, cm.id LIMIT 1
+      )
+      WHERE connected_by_membership_id IS NULL;
+
+      UPDATE project_folder_mapping
+      SET connection_id = (
+        SELECT mc.id FROM project p
+        JOIN microsoft_connection mc ON mc.company_id = p.company_id
+        WHERE p.id = project_folder_mapping.project_id
+      )
+      WHERE connection_id IS NULL;
+
+      CREATE TABLE microsoft_oauth_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        auth_session_id INTEGER NOT NULL,
+        identity_id INTEGER NOT NULL,
+        company_id INTEGER NOT NULL,
+        membership_id INTEGER NOT NULL,
+        config_id INTEGER NOT NULL,
+        state_hash TEXT NOT NULL UNIQUE CHECK (length(state_hash) = 64),
+        encrypted_context TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (auth_session_id) REFERENCES auth_session(id) ON DELETE CASCADE,
+        FOREIGN KEY (identity_id) REFERENCES identity(id) ON DELETE CASCADE,
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE,
+        FOREIGN KEY (membership_id) REFERENCES company_membership(id) ON DELETE CASCADE,
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_microsoft_oauth_expiry ON microsoft_oauth_state(expires_at, used_at);
+      CREATE INDEX idx_microsoft_connection_company_state ON microsoft_connection(company_id, state);
+      CREATE INDEX idx_project_folder_connection_state ON project_folder_mapping(connection_id, state, project_id);
+
+      CREATE TRIGGER trg_microsoft_connection_scope_insert
+      BEFORE INSERT ON microsoft_connection
+      WHEN NEW.connected_by_membership_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM company_membership cm JOIN company c ON c.id = cm.company_id
+        WHERE cm.id = NEW.connected_by_membership_id AND cm.company_id = NEW.company_id
+          AND cm.status = 'active' AND cm.role IN ('owner','admin') AND lower(c.status) = 'active'
+      )
+      BEGIN SELECT RAISE(ABORT, 'MICROSOFT_CONNECTION_SCOPE_INVALID'); END;
+
+      CREATE TRIGGER trg_microsoft_connection_company_immutable
+      BEFORE UPDATE OF company_id ON microsoft_connection
+      WHEN NEW.company_id <> OLD.company_id
+      BEGIN SELECT RAISE(ABORT, 'MICROSOFT_CONNECTION_SCOPE_IMMUTABLE'); END;
+
+      CREATE TRIGGER trg_project_folder_scope_insert
+      BEFORE INSERT ON project_folder_mapping
+      WHEN NEW.connection_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM project p JOIN microsoft_connection mc ON mc.company_id = p.company_id
+        WHERE p.id = NEW.project_id AND mc.id = NEW.connection_id
+      )
+      BEGIN SELECT RAISE(ABORT, 'MICROSOFT_FOLDER_SCOPE_INVALID'); END;
+
+      CREATE TRIGGER trg_project_folder_scope_update
+      BEFORE UPDATE OF project_id, connection_id, kind ON project_folder_mapping
+      WHEN NEW.project_id <> OLD.project_id OR NEW.connection_id <> OLD.connection_id OR NEW.kind <> OLD.kind
+      BEGIN SELECT RAISE(ABORT, 'MICROSOFT_FOLDER_SCOPE_IMMUTABLE'); END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

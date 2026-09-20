@@ -164,7 +164,27 @@ export async function refreshGoogleAccessToken(refreshToken: string, config: Rec
   return String(result.access_token);
 }
 
-async function microsoftAccessToken(code: string, verifier: string, config: Record<string, string>, secrets: Record<string, string>) {
+export const MICROSOFT_GRAPH_SCOPE = "Files.ReadWrite";
+
+export type MicrosoftTokenSet = {
+  accessToken: string;
+  refreshToken: string | null;
+  scope: string;
+  expiresIn: number;
+};
+
+export async function exchangeMicrosoftAuthorization(code: string, verifier: string, config: Record<string, string>, secrets: Record<string, string>): Promise<MicrosoftTokenSet> {
+  if (fakeMode()) {
+    if (code === "fake-deny" || code === "fake-denied") throw new IntegrationProviderError("OAUTH_AUTHORIZATION_REJECTED");
+    if (code === "fake-provider-outage") throw new IntegrationProviderError("PROVIDER_UNREACHABLE");
+    if (code === "fake-wrong-callback") throw new IntegrationProviderError("MICROSOFT_REDIRECT_URI_MISMATCH");
+    return {
+      accessToken: "fake-microsoft-access-token",
+      refreshToken: "fake-microsoft-refresh-token",
+      scope: code === "fake-missing-scope" ? "openid profile User.Read" : "openid profile offline_access User.Read Files.ReadWrite",
+      expiresIn: 3600,
+    };
+  }
   const tenant = config.tenantId || "organizations";
   const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
   const body = new URLSearchParams({
@@ -195,11 +215,55 @@ async function microsoftAccessToken(code: string, verifier: string, config: Reco
     body,
   }, "MICROSOFT_TOKEN_REJECTED");
   if (!result.access_token) throw new IntegrationProviderError("MICROSOFT_TOKEN_MISSING");
-  return String(result.access_token);
+  return {
+    accessToken: String(result.access_token),
+    refreshToken: result.refresh_token ? String(result.refresh_token) : null,
+    scope: String(result.scope || ""),
+    expiresIn: Number(result.expires_in || 0),
+  };
+}
+
+export function requireMicrosoftScope(scope: string) {
+  const scopes = new Set(scope.split(/\s+/).filter(Boolean).map(value => value.toLowerCase()));
+  if (!scopes.has(MICROSOFT_GRAPH_SCOPE.toLowerCase())) throw new IntegrationProviderError("MICROSOFT_SCOPE_MISSING");
+}
+
+export async function refreshMicrosoftAccessToken(refreshToken: string, config: Record<string, string>, secrets: Record<string, string>) {
+  if (fakeMode()) {
+    if (refreshToken.includes("revoked")) throw new IntegrationProviderError("MICROSOFT_REFRESH_REVOKED");
+    if (refreshToken.includes("outage")) throw new IntegrationProviderError("PROVIDER_UNREACHABLE");
+    return { accessToken: "fake-microsoft-access-token", expiresIn: 3600, refreshToken: null as string | null };
+  }
+  const tenant = config.tenantId || "organizations";
+  const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`;
+  const body = new URLSearchParams({
+    client_id: config.clientId,
+    client_secret: secrets.clientSecret,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+    scope: "openid profile offline_access User.Read Files.ReadWrite",
+  });
+  const result = await providerJson(tokenUrl, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  }, "MICROSOFT_REFRESH_REJECTED");
+  if (!result.access_token) throw new IntegrationProviderError("MICROSOFT_TOKEN_MISSING");
+  return {
+    accessToken: String(result.access_token),
+    expiresIn: Number(result.expires_in || 0),
+    refreshToken: result.refresh_token ? String(result.refresh_token) : null,
+  };
 }
 
 async function verifyMicrosoftCapability(accessToken: string, config: Record<string, string>) {
+  if (fakeMode()) return { identity: "Fake Microsoft administrator", storageMode: config.storageMode || "onedrive", capability: MICROSOFT_GRAPH_SCOPE };
   const authorization = { authorization: `Bearer ${accessToken}` };
+  const identity = await providerJson(
+    "https://graph.microsoft.com/v1.0/me?$select=id,displayName,userPrincipalName",
+    { headers: authorization }, "MICROSOFT_IDENTITY_REJECTED",
+  );
+  if (!identity.id) throw new IntegrationProviderError("MICROSOFT_IDENTITY_MISSING");
   let rootUrl = "https://graph.microsoft.com/v1.0/me/drive/root";
   if (config.storageMode === "sharepoint") {
     if (!config.sharepointHost || !config.sharepointPath) throw new IntegrationProviderError("SHAREPOINT_LOCATION_REQUIRED");
@@ -222,7 +286,11 @@ async function verifyMicrosoftCapability(accessToken: string, config: Record<str
     method: "DELETE", headers: authorization, cache: "no-store",
   });
   if (!response.ok) throw new IntegrationProviderError("MICROSOFT_TEMP_DELETE_REJECTED");
-  return { storageMode: config.storageMode || "onedrive", capability: "Files.ReadWrite" };
+  return {
+    identity: String(identity.displayName || identity.userPrincipalName || "Microsoft account"),
+    storageMode: config.storageMode || "onedrive",
+    capability: "Files.ReadWrite",
+  };
 }
 
 export async function verifyOauthProvider(input: {
@@ -232,16 +300,14 @@ export async function verifyOauthProvider(input: {
   config: Record<string, string>;
   secrets: Record<string, string>;
 }) {
-  if (fakeMode() && input.provider === "microsoft") {
-    if (input.code !== "fake-success") throw new IntegrationProviderError("FAKE_OAUTH_REJECTED");
-    return { storageMode: input.config.storageMode || "onedrive", capability: "Files.ReadWrite" };
-  }
   if (input.provider === "google") {
     const tokens = await exchangeGoogleAuthorization(input.code, input.verifier, input.config, input.secrets);
     requireGoogleScope(tokens.scope);
     return verifyGoogleCapability(tokens.accessToken);
   }
-  return verifyMicrosoftCapability(await microsoftAccessToken(input.code, input.verifier, input.config, input.secrets), input.config);
+  const tokens = await exchangeMicrosoftAuthorization(input.code, input.verifier, input.config, input.secrets);
+  requireMicrosoftScope(tokens.scope);
+  return verifyMicrosoftCapability(tokens.accessToken, input.config);
 }
 
 export async function validateResend(input: { config: Record<string, string>; secrets: Record<string, string> }) {

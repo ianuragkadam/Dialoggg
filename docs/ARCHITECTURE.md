@@ -27,4 +27,6 @@ Next.js creates standalone output. The post-build script copies public and stati
 
 ## Current boundary
 
-Owner and External/Client roles, Project Types, Templates, complete scheduling rules, Google Calendar API synchronization, and OneDrive are still requirements-led modules. See the progress file before planning changes in those areas.
+The local source now includes persistent Role/tenant enforcement, Project Types, Templates, Resources, Projects, the original Gantt scheduling engine, Events/Calendars, personal one-way Google Calendar delivery, and Microsoft OneDrive for Business/SharePoint folder references. Microsoft uses one encrypted platform Entra application plus a separate company-scoped delegated connection; Project mappings store encrypted stable drive/item identifiers and never make Dialoggg the file store or permission authority.
+
+These later checkpoints remain pending controlled, dependency-ordered production deployment and live provider smoke testing. Resend-backed email delivery, final release-wide permission review, worker scheduling/monitoring, and final mobile/browser UAT remain release work. See `docs/PRODUCT_STATUS.md` and the pending deployment ledger before planning changes.

@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 13/);
+    assert.match(second.stdout, /version 14/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -87,6 +87,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 11, name: "gantt_plan_invariants" },
           { version: 12, name: "event_calendar_invariants" },
           { version: 13, name: "google_calendar_delivery" },
+          { version: 14, name: "microsoft_onedrive_delivery" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -155,6 +156,46 @@ test("integration setup migration enforces invitation, provider scope, version, 
       assert.equal(database.prepare("SELECT COUNT(*) AS count FROM integration_setup_invitation").get().count, 0);
       assert.equal(database.prepare("SELECT COUNT(*) AS count FROM integration_setup_session").get().count, 0);
       assert.equal(database.prepare("SELECT COUNT(*) AS count FROM integration_credential_version").get().count, 0);
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+      database.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Microsoft delivery migration enforces platform credentials and company folder scope", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-microsoft-migration-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const companyOne = Number(database.prepare("INSERT INTO company (name) VALUES ('Microsoft One')").run().lastInsertRowid);
+      const companyTwo = Number(database.prepare("INSERT INTO company (name) VALUES ('Microsoft Two')").run().lastInsertRowid);
+      const typeOne = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type One', 'type one')").run(companyOne).lastInsertRowid);
+      const typeTwo = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Type Two', 'type two')").run(companyTwo).lastInsertRowid);
+      const projectOne = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Project One', '2026-09-20')").run(companyOne, typeOne).lastInsertRowid);
+      const identity = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name) VALUES ('microsoft-owner@example.test', 'hash', 'Owner')").run().lastInsertRowid);
+      const membership = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'owner', 'active')").run(identity, companyOne).lastInsertRowid);
+      const config = Number(database.prepare("INSERT INTO integration_config (provider, scope_kind) VALUES ('microsoft_platform', 'platform')").run().lastInsertRowid);
+      assert.ok(config > 0);
+      assert.throws(() => database.prepare("INSERT INTO integration_config (provider, scope_kind, company_id) VALUES ('microsoft_platform', 'company', ?)").run(companyOne), /CHECK constraint failed/);
+      const connection = Number(database.prepare(`INSERT INTO microsoft_connection (
+        company_id, connected_by_membership_id, tenant_id_ciphertext, drive_id_ciphertext,
+        root_item_id_ciphertext, token_ciphertext, token_key_version, service_type
+      ) VALUES (?, ?, 'tenant', 'drive', 'root', 'token', 1, 'onedrive_business')`).run(companyOne, membership).lastInsertRowid);
+      database.prepare(`INSERT INTO project_folder_mapping (
+        project_id, connection_id, kind, drive_id_ciphertext, item_id_ciphertext
+      ) VALUES (?, ?, 'common', 'drive', 'item')`).run(projectOne, connection);
+      assert.throws(() => database.prepare(`INSERT INTO project_folder_mapping (
+        project_id, connection_id, kind, drive_id_ciphertext, item_id_ciphertext
+      ) VALUES (?, ?, 'private', 'drive', 'item')`).run(
+        Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Cross Project', '2026-09-20')").run(companyTwo, typeTwo).lastInsertRowid), connection,
+      ), /MICROSOFT_FOLDER_SCOPE_INVALID/);
+      assert.equal(database.prepare("SELECT COUNT(*) count FROM microsoft_oauth_state").get().count, 0);
     } finally {
       assert.equal(database.pragma("foreign_key_check").length, 0);
       database.close();

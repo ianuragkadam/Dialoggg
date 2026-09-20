@@ -9,6 +9,7 @@ import {
   finishValidation,
   INTEGRATION_SESSION_COOKIE,
   platformGoogleConfig,
+  platformMicrosoftConfig,
 } from "@/lib/integration-setup";
 import {
   completeGoogleAuthorization,
@@ -18,6 +19,11 @@ import {
   processGoogleOutbox,
 } from "@/lib/google-calendar";
 import { IntegrationProviderError, verifyOauthProvider } from "@/lib/integration-providers";
+import {
+  completeMicrosoftAuthorization,
+  consumeMicrosoftOauthState,
+  MicrosoftStorageError,
+} from "@/lib/microsoft-storage";
 import { recordAudit, requestId } from "@/lib/security";
 
 function redirectPath(path: string, status: "verified" | "action_required" | "invalid") {
@@ -34,7 +40,7 @@ function workshopRedirect(provider: "google" | "microsoft", status: "verified" |
 }
 
 function safeOauthCode(error: unknown) {
-  if (error instanceof GoogleCalendarError || error instanceof IntegrationProviderError) return error.code;
+  if (error instanceof GoogleCalendarError || error instanceof MicrosoftStorageError || error instanceof IntegrationProviderError) return error.code;
   return "OAUTH_CAPABILITY_CHECK_FAILED";
 }
 
@@ -98,9 +104,63 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
   }
 
+  if (route === "microsoft") {
+    const companyOauth = consumeMicrosoftOauthState(state, actor);
+    if (companyOauth) {
+      if (!code || providerError) {
+        recordAudit({ requestId: id, actorIdentityId: companyOauth.actor.identityId, actorMembershipId: companyOauth.actor.membershipId, companyId: companyOauth.actor.companyId, action: "microsoft_storage.oauth", targetType: "microsoft_connection", result: "failure", metadata: { errorCode: "OAUTH_AUTHORIZATION_REJECTED" } });
+        return redirectPath("/settings/microsoft-storage?oauth=microsoft", "action_required");
+      }
+      try {
+        const connected = await completeMicrosoftAuthorization({
+          actor: companyOauth.actor,
+          code,
+          verifier: companyOauth.verifier,
+          serviceType: companyOauth.serviceType,
+          sharepointHost: companyOauth.sharepointHost,
+          sharepointPath: companyOauth.sharepointPath,
+        });
+        recordAudit({ requestId: id, actorIdentityId: companyOauth.actor.identityId, actorMembershipId: companyOauth.actor.membershipId, companyId: companyOauth.actor.companyId, action: "microsoft_storage.oauth", targetType: "microsoft_connection", targetId: connected.connectionId, result: "success" });
+        return redirectPath("/settings/microsoft-storage?oauth=microsoft", "verified");
+      } catch (error) {
+        const errorCode = safeOauthCode(error);
+        recordAudit({ requestId: id, actorIdentityId: companyOauth.actor.identityId, actorMembershipId: companyOauth.actor.membershipId, companyId: companyOauth.actor.companyId, action: "microsoft_storage.oauth", targetType: "microsoft_connection", result: "failure", metadata: { errorCode } });
+        return redirectPath("/settings/microsoft-storage?oauth=microsoft", "action_required");
+      }
+    }
+
+    const platformOauth = consumePlatformOauthState(state, actor, "microsoft");
+    if (platformOauth) {
+      let saved: ReturnType<typeof platformMicrosoftConfig>;
+      try {
+        saved = platformMicrosoftConfig(false);
+        if (saved.id !== platformOauth.configId) throw new Error("OAUTH_CONFIG_MISMATCH");
+      } catch {
+        return redirectPath("/platform/integration-setup?oauth=microsoft", "invalid");
+      }
+      const attempt = beginValidation(saved.id, null, "oauth", id);
+      if (!code || providerError) {
+        finishValidation(attempt, saved.id, "failed", "OAUTH_AUTHORIZATION_REJECTED");
+        recordAudit({ requestId: id, actorIdentityId: actor?.identityId, action: "integration_microsoft.oauth", targetType: "integration_config", targetId: saved.id, result: "failure", metadata: { errorCode: "OAUTH_AUTHORIZATION_REJECTED" } });
+        return redirectPath("/platform/integration-setup?oauth=microsoft", "action_required");
+      }
+      try {
+        const details = await verifyOauthProvider({ provider: "microsoft", code, verifier: platformOauth.verifier, config: saved.config, secrets: saved.secrets });
+        finishValidation(attempt, saved.id, "passed", null, details);
+        recordAudit({ requestId: id, actorIdentityId: actor?.identityId, action: "integration_microsoft.oauth", targetType: "integration_config", targetId: saved.id, result: "success" });
+        return redirectPath("/platform/integration-setup?oauth=microsoft", "verified");
+      } catch (error) {
+        const errorCode = safeOauthCode(error);
+        finishValidation(attempt, saved.id, "failed", errorCode);
+        recordAudit({ requestId: id, actorIdentityId: actor?.identityId, action: "integration_microsoft.oauth", targetType: "integration_config", targetId: saved.id, result: "failure", metadata: { errorCode } });
+        return redirectPath("/platform/integration-setup?oauth=microsoft", "action_required");
+      }
+    }
+  }
+
   const consumed = consumeOauthState(state, request.cookies.get(INTEGRATION_SESSION_COOKIE)?.value, route);
   if (!consumed) return workshopRedirect(route, "invalid");
-  const provider = route === "google" ? "google_platform" : "microsoft_company";
+  const provider = route === "google" ? "google_platform" : "microsoft_platform";
   let saved: ReturnType<typeof configForProvider>;
   try {
     saved = configForProvider(consumed.session, provider);

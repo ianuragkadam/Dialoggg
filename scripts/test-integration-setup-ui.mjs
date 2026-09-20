@@ -109,15 +109,16 @@ try {
     await google.getByText("Verified", { exact: true }).first().waitFor();
   });
 
-  await check("Microsoft company setup verifies through a fake OAuth capability check", async () => {
-    await page.getByLabel("Tenant / directory ID *").fill("11111111-1111-1111-1111-111111111111");
-    await page.getByLabel("Application / client ID *").fill("microsoft-client-success");
-    await page.getByLabel("Storage mode *").selectOption("onedrive");
-    await page.getByLabel("Company root name *").fill("Sport Court Operations");
-    await page.locator("details").filter({ hasText: "Microsoft OneDrive / SharePoint" }).getByLabel("Client secret *").fill("microsoft-secret-value-4321");
-    await page.locator("details").filter({ hasText: "Microsoft OneDrive / SharePoint" }).getByRole("button", { name: "Save credential" }).click();
+  await check("Microsoft platform setup verifies through a fake OAuth and Graph capability check", async () => {
+    const microsoft = page.locator("details").filter({ hasText: "Microsoft OAuth / Graph application" });
+    await microsoft.getByLabel("Application name *").fill("Dialoggg Microsoft");
+    await microsoft.getByLabel("Tenant / directory ID *").fill("11111111-1111-4111-8111-111111111111");
+    await microsoft.getByLabel("Application / client ID *").fill("22222222-2222-4222-8222-222222222222");
+    await microsoft.getByLabel("Verified publisher domain *").fill("verified.example.test");
+    await microsoft.getByLabel("Client secret value *").fill("microsoft-secret-value-4321");
+    await microsoft.getByRole("button", { name: "Save credential" }).click();
     await page.getByRole("button", { name: "Connect and verify Microsoft" }).click();
-    await page.locator("details").filter({ hasText: "Microsoft OneDrive / SharePoint" }).getByText("Verified", { exact: true }).waitFor();
+    await microsoft.getByText("Verified", { exact: true }).waitFor();
   });
 
   await check("Resend exact-domain validation and confirmed test email complete safely", async () => {
@@ -156,8 +157,8 @@ try {
     for (const token of [expiredToken, revokedToken]) { const deniedContext = await browser.newContext(); const denied = await deniedContext.newPage(); await denied.goto(`${baseUrl}/integration-setup#token=${token}`); await denied.getByRole("heading", { name: "Private link required" }).waitFor(); assert.equal(denied.url(), `${baseUrl}/integration-setup`); await deniedContext.close(); }
   });
 
-  await check("company-only invitation cannot see platform Google or Resend setup", async () => {
-    const scopedContext = await browser.newContext(); const scoped = await scopedContext.newPage(); await scoped.goto(`${baseUrl}/integration-setup#token=${companyOnlyToken}`); await scoped.getByRole("heading", { name: "Connect Dialoggg securely" }).waitFor(); const body = await scoped.locator("body").innerText(); assert.match(body, /Microsoft OneDrive \/ SharePoint/); assert.doesNotMatch(body, /Google Calendar/); assert.doesNotMatch(body, /Resend email/); await scopedContext.close();
+  await check("company-only invitation exposes no platform credentials and directs storage setup to authenticated settings", async () => {
+    const scopedContext = await browser.newContext(); const scoped = await scopedContext.newPage(); await scoped.goto(`${baseUrl}/integration-setup#token=${companyOnlyToken}`); await scoped.getByRole("heading", { name: "Connect Dialoggg securely" }).waitFor(); const body = await scoped.locator("body").innerText(); assert.match(body, /0 of 0 verified/); assert.match(body, /Settings → Microsoft Storage/); assert.doesNotMatch(body, /Google Calendar/); assert.doesNotMatch(body, /Resend email/); assert.doesNotMatch(body, /Microsoft OAuth \/ Graph application/); await scopedContext.close();
   });
 
   await check("ciphertext tampering fails closed with a structured redacted error", async () => {
@@ -179,7 +180,7 @@ try {
     const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 } }); const mobile = await mobileContext.newPage(); await mobile.goto(`${baseUrl}/integration-setup#token=${workshopToken}`); await mobile.getByRole("heading", { name: "Connect Dialoggg securely" }).waitFor(); const size = await mobile.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth })); assert.ok(size.scrollWidth <= size.width + 1, JSON.stringify(size)); await mobile.keyboard.press("Tab"); assert.notEqual(await mobile.evaluate(() => document.activeElement?.tagName), "BODY"); await mobileContext.close();
   });
 
-  await check("Platform Administrator explicitly authorizes and rotates one-time workshop/review links", async () => {
+  await check("Platform Administrator explicitly authorizes and rotates platform-only workshop/review links", async () => {
     const loginResponse = await login(baseUrl, platformEmail, platformPassword);
     const combined = loginResponse.headers.get("set-cookie") || "";
     const session = combined.match(/dialoggg_session=([^;]+)/)?.[1]; const csrf = combined.match(/dialoggg_csrf=([^;]+)/)?.[1]; assert.ok(session && csrf);
@@ -187,7 +188,7 @@ try {
       { name: "dialoggg_session", value: session, domain: "127.0.0.1", path: "/", httpOnly: true, secure: false, sameSite: "Lax" },
       { name: "dialoggg_csrf", value: csrf, domain: "127.0.0.1", path: "/", httpOnly: false, secure: false, sameSite: "Strict" },
     ]);
-    const admin = await adminContext.newPage(); await admin.goto(`${baseUrl}/platform/integration-setup`); await admin.getByRole("heading", { name: "Secure integration setup access" }).waitFor(); await admin.getByLabel("Access scope").selectOption("platform_and_company"); const issue = admin.getByRole("button", { name: "Issue and rotate links" }); assert.equal(await issue.isDisabled(), true); await admin.getByLabel(/I explicitly authorize access to platform credentials/).check(); await issue.click(); await admin.getByRole("heading", { name: "Copy these links now" }).waitFor(); const workshopUrl = await admin.getByLabel("Scott workshop link").inputValue(); const reviewUrl = await admin.getByLabel("Internal review link").inputValue(); assert.match(workshopUrl, new RegExp(`^${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/integration-setup#token=`)); assert.match(reviewUrl, /\/integration-setup-review#token=/); assert.notEqual(workshopUrl, reviewUrl);
+    const admin = await adminContext.newPage(); await admin.goto(`${baseUrl}/platform/integration-setup`); await admin.getByRole("heading", { name: "Secure integration setup access" }).waitFor(); const body = await admin.locator("body").innerText(); assert.match(body, /Platform providers only/); assert.match(body, /Settings → Microsoft Storage/); assert.equal(await admin.getByLabel("Access scope").count(), 0); const issue = admin.getByRole("button", { name: "Issue and rotate links" }); assert.equal(await issue.isDisabled(), true); await admin.getByLabel(/I explicitly authorize access to platform credentials/).check(); await issue.click(); await admin.getByRole("heading", { name: "Copy these links now" }).waitFor(); const workshopUrl = await admin.getByLabel("Scott workshop link").inputValue(); const reviewUrl = await admin.getByLabel("Internal review link").inputValue(); assert.match(workshopUrl, new RegExp(`^${baseUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/integration-setup#token=`)); assert.match(reviewUrl, /\/integration-setup-review#token=/); assert.notEqual(workshopUrl, reviewUrl);
     const db = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true }); try { const stored = JSON.stringify(db.prepare("SELECT token_hash FROM integration_setup_invitation").all()); assert.doesNotMatch(stored, new RegExp(workshopUrl.split("#token=")[1])); assert.doesNotMatch(stored, new RegExp(reviewUrl.split("#token=")[1])); } finally { db.close(); }
     await adminContext.close();
   });

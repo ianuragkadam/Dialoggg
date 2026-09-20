@@ -65,7 +65,7 @@ export default function ProjectTabs({
         )}
         {tab === "calendar"  && <ProjectCalendar projectId={project.id} canManage={canEdit} projectName={project.name} />}
         {tab === "resources" && <ResourceSchedule projectId={project.id} />}
-        {tab === "folders" && <ProjectFoldersPrototype projectName={project.name} canManage={canManage} canEdit={canEdit} assigned={assigned} />}
+        {tab === "folders" && <ProjectFoldersPrototype projectId={project.id} projectName={project.name} canManage={canManage} canEdit={canEdit} assigned={assigned} />}
       </div>
     </div>
   );

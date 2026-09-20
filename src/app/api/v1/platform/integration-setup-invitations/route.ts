@@ -30,15 +30,9 @@ export async function POST(request: NextRequest) {
   let body: any;
   try { body = await request.json(); } catch { return apiError(400, "INVALID_JSON", "Enter valid invitation details.", id); }
   const scopeKind = body.scopeKind as InvitationScope;
-  if (!(["platform", "company", "platform_and_company"] as string[]).includes(scopeKind)) return apiError(400, "SCOPE_INVALID", "Choose a valid invitation scope.", id);
-  const companyId = scopeKind === "platform" ? null : Number(body.companyId);
-  if (scopeKind !== "platform") {
-    const company = Number.isInteger(companyId) && companyId > 0
-      ? db.prepare("SELECT id FROM company WHERE id = ? AND lower(status) = 'active'").get(companyId)
-      : null;
-    if (!company) return apiError(400, "COMPANY_INVALID", "Choose an active company.", id);
-  }
-  if (scopeKind !== "company" && body.authorizePlatformSecrets !== true) {
+  if (scopeKind !== "platform") return apiError(400, "SCOPE_INVALID", "New setup links are platform-provider only. Company Microsoft connections are managed in authenticated company settings.", id);
+  const companyId = null;
+  if (body.authorizePlatformSecrets !== true) {
     return apiError(400, "PLATFORM_SECRET_AUTHORIZATION_REQUIRED", "Explicitly authorize platform credential access.", id);
   }
   const days = Math.min(30, Math.max(1, Number(body.expiresInDays) || 7));
