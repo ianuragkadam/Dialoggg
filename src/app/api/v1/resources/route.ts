@@ -13,6 +13,7 @@ import {
 } from "@/lib/resources";
 import { RESOURCE_CATEGORIES, type ResourceCategoryUi } from "@/lib/resources-ui";
 import { recordAudit, requestId } from "@/lib/security";
+import { queueGoogleReconciliation } from "@/lib/google-calendar-queue";
 
 async function requireViewer(traceId: string) {
   const actor = await getCurrentActor();
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
       phone,
       linkedMembershipId: membershipId,
     });
+    queueGoogleReconciliation(actor.companyId!, "resource.create");
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: "resource.create", targetType: "resource", targetId: resource.id, result: "success" });
     return apiSuccess({ resource }, traceId, { status: 201 });
   } catch (error) {

@@ -6,6 +6,7 @@ import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
 import { getCompanyUser, setProjectAssignments, targetMembership } from "@/lib/user-management";
+import { queueGoogleReconciliation } from "@/lib/google-calendar-queue";
 
 function idFrom(value: string) {
   const id = Number(value);
@@ -39,6 +40,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const user = setProjectAssignments(actor, target.id, projectIds);
     if (!user) return apiError(403, "ACTION_FORBIDDEN", "You cannot change this User's Project assignments.", traceId);
     revokeIdentitySessions(target.identity_id, "project_assignments_changed");
+    queueGoogleReconciliation(actor.companyId!, "membership.projects.update");
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: "membership.projects.update", targetType: "company_membership", targetId: target.id, result: "success", metadata: { projectIds: projectIds.join(","), projectCount: projectIds.length } });
     return apiSuccess({ user, projects: user.projects }, traceId);
   } catch (error) {

@@ -38,7 +38,7 @@ export default function IntegrationInvitationAdmin({ companies }: { companies: A
     setMessage("Fresh links issued. Older links with this scope are revoked.");
   }
 
-  return <main className="mx-auto max-w-4xl space-y-6 p-6">
+  return <section className="space-y-6">
     <header>
       <p className="text-sm font-semibold uppercase tracking-wide text-blue-700">Platform administration</p>
       <h1 className="text-3xl font-bold">Secure integration setup access</h1>
@@ -70,5 +70,5 @@ export default function IntegrationInvitationAdmin({ companies }: { companies: A
       <label className="block font-semibold">Scott workshop link<input readOnly className="mt-1 block w-full rounded border bg-white p-2 font-mono text-xs" value={links.workshopUrl} onFocus={event => event.currentTarget.select()} /></label>
       <label className="block font-semibold">Internal review link<input readOnly className="mt-1 block w-full rounded border bg-white p-2 font-mono text-xs" value={links.reviewUrl} onFocus={event => event.currentTarget.select()} /></label>
     </section>}
-  </main>;
+  </section>;
 }

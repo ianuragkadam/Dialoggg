@@ -22,7 +22,13 @@ Each issue/rotation creates two different random links: a writable workshop and 
 
 `INTEGRATION_PROVIDER_MODE=fake` is test-only. Never set it in a deployed environment. Google, Microsoft, and Resend credential values are entered in the workshop and encrypted in SQLite; they are not deployment variables.
 
-Schema migration v8, `secure_integration_setup_workshop`, adds scoped invitations, short-lived workshop sessions, provider-neutral configuration, immutable credential versions, validation attempts, and single-use OAuth state. Back up and migrate the production database before serving the new routes.
+Schema migration v8, `secure_integration_setup_workshop`, adds scoped invitations, short-lived workshop sessions, provider-neutral configuration, immutable credential versions, validation attempts, and single-use OAuth state. Schema v13, `google_calendar_delivery`, adds permanent Platform Google state, membership-scoped personal connections, encrypted personal authorization context, mappings, and sync-run health. Back up and migrate the production database in dependency order before serving either checkpoint.
+
+## Permanent Platform Google settings
+
+A Platform Administrator can manage the active Google OAuth application at `/platform/integration-setup` without issuing a workshop invitation or editing an environment file. The same provider-neutral configuration and versioned AES-256-GCM credential store is reused; there is no second secret system.
+
+Save, secret rotation, disable, enable, and revoke require the current Platform Administrator password. The client secret field is write-only. Safe reads show configured state, credential fingerprint/version, non-secret Google Cloud metadata, callback URI, last verification, disabled state, and a provider-safe status only. Saving or enabling demotes the configuration to verification required. **Valid** requires a fresh OAuth callback and Calendar capability check. Revoke retires the active credential locally; complete provider-side revocation in Google Cloud when ending the application credential.
 
 ## Issuing Scott's links
 
@@ -37,7 +43,7 @@ Issuing a new pair revokes the previous unrevoked pair with the same scope and c
 
 ## Provider verification
 
-Google uses an authorization-code flow with PKCE, a one-time hashed state, the exact derived callback URI, offline access, and the narrow `calendar.app.created` scope. Verification must exchange the code and create or find the secondary `Dialoggg` calendar, then read it. The temporary authorization tokens used during the capability check are discarded.
+Google uses an authorization-code flow with PKCE, a one-time hashed state, the exact derived callback URI, offline access, and the narrow `calendar.app.created` scope. Platform verification exchanges the code and creates, reads, and deletes a temporary Calendar; its authorization tokens are discarded. A personal User authorization separately stores an encrypted refresh token, creates or reuses that connection's dedicated `Dialoggg` calendar, and starts reconciliation.
 
 Microsoft uses authorization code with PKCE and delegated `openid profile offline_access User.Read Files.ReadWrite`. OneDrive verification discovers the root. SharePoint verification also discovers the configured site. Both perform a temporary small write and immediate delete. Broader tenant-wide SharePoint application permissions are not requested.
 
@@ -56,4 +62,4 @@ Resend validation performs a read-only domain listing with the stored API key an
 
 Company-scoped Microsoft setup cascades when the company is deleted. Invitation sessions and OAuth states cascade with their parent invitations. Credential history is retained as ciphertext for rotation evidence; retired plaintext is never recoverable. A future retention job may purge expired sessions, OAuth states, validation details, and retired ciphertext after the approved audit window.
 
-The workshop verifies configuration and capabilities. It does not yet implement ongoing personal Google Calendar synchronization, Microsoft Project-folder mapping, Resend outbox delivery migration, provider webhooks, or background token refresh. Those remain separate product integration modules.
+The workshop and permanent Platform page verify configuration and capabilities. Personal Google Calendar token refresh, Task/Event eligibility, stable mappings, outbox reconciliation, retry/dead-letter health, disconnect cleanup/retention, and explicit post-restoration resume are implemented locally in schema v13. Microsoft Project-folder mapping, Resend outbox delivery migration, and provider webhooks remain separate product integration modules. Production worker scheduling and live Google account smoke testing remain controlled deployment work.

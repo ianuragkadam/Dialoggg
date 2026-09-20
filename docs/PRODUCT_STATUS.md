@@ -45,7 +45,10 @@ Last verified: September 20, 2026
 - Events and Calendars are persistent locally on schema v12. One canonical tenant-scoped Event series supports optional Project rollup, multiple Resources, all-day/timed company-zone scheduling, daily/weekly/monthly recurrence, date/count/open ends, occurrence replacement/cancellation, entire-series update/soft-delete, optimistic versions, audited writes, and durable conflict acknowledgements.
 - Project, Master, and Resource Calendars plus iCalendar expand the same Event series/exceptions and shared weekend-aware Task schedule. Event drag and series/occurrence edits explicitly confirm Resource conflicts; Employee is read-only and External/Client is assignment- and visibility-scoped.
 - Verification passes 32/32 unit/foundation/migration tests, 149/149 scenarios, 16/16 focused Calendar/Event browser checks, and 158/158 browser checks across all eleven suites. TypeScript, the 60-page production build, standalone packaging, and locked npm 10.8.2 production/full audits are green with zero vulnerabilities.
-- Personal Google Calendar UI at `/account/google-calendar` with one-way delivery, a dedicated **Dialoggg** calendar, safe item previews, health/retry/failure states, disconnect choices, and explicit post-restoration resume
+- Personal Google Calendar delivery is implemented locally on schema v13. Each company membership can authorize one personal connection using PKCE, single-use state, offline access, encrypted refresh-token/calendar-ID envelopes, and the least-privilege `calendar.app.created` scope. Dialoggg creates one dedicated **Dialoggg** calendar and remains the one-way source of truth.
+- Internal delivery follows the User's one-to-one linked Resource; External/Client delivery is assigned-Project and external-visibility scoped. Stable deterministic mappings reconcile eligible Task/Event occurrences without duplicates, mutation hooks enqueue company connections, transient failures back off for up to 24 hours before dead-lettering, and safe health supports retry plus explicit resume after company restoration.
+- Permanent Platform Google settings at `/platform/integration-setup` let the Platform Administrator save/rotate/disable/enable/revoke a write-only encrypted OAuth client secret without an environment file. Current-password reauthentication, safe statuses, callback derivation from `APP_BASE_URL`, and a real OAuth plus temporary Calendar create/read/delete verification gate protect User connections.
+- Google verification passes 32/32 unit/foundation/migration checks, 153/153 production-like scenarios, 14/14 focused browser checks, and 159/159 browser checks across all eleven suites. The schema-v13 production bundle builds 62 pages; production remains unchanged.
 - Company Microsoft Storage UI at `/settings/microsoft-storage` plus each Project's **Common and Private** tab, approved role boundaries, create/link choices, company root, new-tab behavior, and graceful folder failure/recovery states
 - All ten requirements-led UI modules have focused Playwright coverage, production builds, and visible human click QA; the original `GanttChart.tsx` remains the Plan foundation and now persists through the scheduling APIs.
 - Fresh cross-module QA on September 16, 2026 passed 261/261 automated checks and visible Chrome click testing. Seven naming, lifecycle, action, calendar-context, modal-focus, and deployment-reliability defects were fixed; full evidence and remaining release gaps are recorded in `docs/QA_GAP_ANALYSIS_2026-09-16.md`
@@ -56,12 +59,12 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 
 ## Not complete Reboot v1 scope
 
-- Live provider delivery for queued first-Owner invitations and Google synchronization workers/resume controls; Company Administration persistence, audit, authorization, suspension, and per-company pause state are implemented
+- Live provider delivery for queued first-Owner invitations; Company Administration persistence, audit, authorization, suspension, and per-company Google pause state are implemented
 - Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
 - Production deployment and live-volume verification of the locally complete Resource Management schema-v9 checkpoint; Google delivery remains a separate checkpoint
-- Production deployment and live-volume verification of the locally complete Projects/lifecycle schema-v10, Gantt/cascade schema-v11, and Events/Calendars schema-v12 checkpoints
+- Production deployment and live-volume verification of the locally complete Projects/lifecycle schema-v10, Gantt/cascade schema-v11, Events/Calendars schema-v12, and Google Calendar delivery schema-v13 checkpoints
 - Production deployment and live-volume verification of the locally complete Project Templates checkpoint
-- Google OAuth, token protection, background synchronization, mapping/retry/reconciliation, and monitoring; the detailed Google Calendar UI review is complete
+- Live Google Cloud credential entry/verification, controlled production deployment, scheduled worker operation, and live-account smoke testing; OAuth, encrypted tokens, one-way delivery, mapping/retry/reconciliation, monitoring, disconnect, and resume are complete locally
 - Microsoft OAuth/Graph, protected company/folder identifiers, real folder create/link/open/recovery, and authorization enforcement; the detailed Common/Private UI review is complete
 - Final mobile/touch pass and release browser matrix
 

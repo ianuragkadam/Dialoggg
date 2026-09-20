@@ -7,6 +7,7 @@ import { requireCompanyRole } from "@/lib/guard";
 import { createProjectRecord, ProjectValidationError } from "@/lib/projects";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
+import { queueGoogleReconciliation } from "@/lib/google-calendar-queue";
 
 const PROJECT_SELECT = `
   SELECT p.id, p.project_type_id, pt.name AS project_type, p.name, p.status, p.version,
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
       projectTypeId: body.project_type_id, assignmentIds: body.assignment_ids,
     });
     const projectId = project.id;
+    queueGoogleReconciliation(actor.companyId!, "project.create");
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "project.create", targetType: "project", targetId: projectId, result: "success" });
     return NextResponse.json({ id: projectId });
   } catch (error) {

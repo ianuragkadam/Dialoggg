@@ -27,6 +27,7 @@
     "db:backup": "node scripts/backup-database.mjs",
     "db:migrate": "tsx src/db/migrate.ts",
     "email:process": "tsx src/db/process-email-outbox.ts",
+    "google:process": "tsx src/db/process-google-calendar-outbox.ts",
     "db:restore": "node scripts/restore-database.mjs",
     "seed": "tsx src/db/seed.ts"
   },

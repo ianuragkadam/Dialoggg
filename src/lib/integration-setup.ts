@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import db from "@/db";
+import type { Actor } from "@/lib/auth";
 import {
   decryptIntegrationSecret,
   encryptIntegrationSecret,
@@ -49,6 +50,7 @@ type ConfigRow = {
   updated_at: string;
   fingerprint: string | null;
   last_four: string | null;
+  disabled_at: string | null;
 };
 
 export const INTEGRATION_PROVIDERS: IntegrationProvider[] = ["google_platform", "microsoft_company", "resend_platform"];
@@ -186,6 +188,7 @@ export function integrationSnapshot(session: IntegrationSession) {
       } : { configured: false, fingerprint: null, lastFour: null, version: 0 },
       savedAt: row?.saved_at ?? null,
       verifiedAt: row?.verified_at ?? null,
+      disabledAt: row?.disabled_at ?? null,
       updatedAt: row?.updated_at ?? null,
       callbackUri: provider === "google_platform" ? callbackUri("google") : provider === "microsoft_company" ? callbackUri("microsoft") : null,
     };
@@ -301,7 +304,7 @@ export function configForProvider(session: IntegrationSession, provider: Integra
   return { ...row, config: parseJson(row.non_secret_json), secrets: activeIntegrationCredential(row.id) };
 }
 
-export function beginValidation(configId: number, invitationId: number, operation: "oauth" | "validate" | "test_email", requestId: string) {
+export function beginValidation(configId: number, invitationId: number | null, operation: "oauth" | "validate" | "test_email", requestId: string) {
   const result = db.prepare(`
     INSERT INTO integration_validation_attempt (config_id, invitation_id, operation, status, request_id)
     VALUES (?, ?, ?, 'started', ?)
@@ -320,6 +323,113 @@ export function finishValidation(attemptId: number, configId: number, status: "p
       WHERE id = ?
     `).run(status === "passed" ? "verified" : "action_required", errorCode, status === "passed" ? new Date().toISOString() : null, configId);
   })();
+}
+
+function platformSession(): IntegrationSession {
+  return {
+    id: 0,
+    access_kind: "workshop",
+    scope_kind: "platform",
+    company_id: null,
+    label: "Platform Administration",
+    expires_at: "9999-12-31T23:59:59.999Z",
+    completed_at: null,
+    company_name: null,
+    sessionId: 0,
+    csrfHash: "",
+  };
+}
+
+export function platformGoogleSnapshot() {
+  const row = db.prepare(`
+    SELECT ic.*, cv.fingerprint, cv.last_four
+    FROM integration_config ic
+    LEFT JOIN integration_credential_version cv ON cv.config_id = ic.id AND cv.is_active = 1
+    WHERE ic.provider = 'google_platform' AND ic.company_id IS NULL
+  `).get() as ConfigRow | undefined;
+  return {
+    provider: "google_platform" as const,
+    status: row?.status ?? "not_started",
+    safeStatusCode: row?.safe_status_code ?? null,
+    environment: row?.environment ?? "production",
+    config: row ? parseJson(row.non_secret_json) : {},
+    credential: row?.fingerprint ? {
+      configured: true,
+      fingerprint: row.fingerprint,
+      lastFour: row.last_four,
+      version: row.credential_version,
+    } : { configured: false, fingerprint: null, lastFour: null, version: 0 },
+    savedAt: row?.saved_at ?? null,
+    verifiedAt: row?.verified_at ?? null,
+    disabledAt: row?.disabled_at ?? null,
+    callbackUri: callbackUri("google"),
+  };
+}
+
+export function savePlatformGoogleConfig(input: {
+  environment: "test" | "production";
+  config: Record<string, string>;
+  secrets?: Record<string, string>;
+}) {
+  return saveIntegrationConfig({ ...input, session: platformSession(), provider: "google_platform" });
+}
+
+export function platformGoogleConfig(requireVerified = false) {
+  const saved = configForProvider(platformSession(), "google_platform");
+  if (saved.disabled_at) throw new Error("GOOGLE_PLATFORM_DISABLED");
+  if (requireVerified && saved.status !== "verified") throw new Error("GOOGLE_PLATFORM_VERIFICATION_REQUIRED");
+  return saved;
+}
+
+export function setPlatformGoogleEnabled(enabled: boolean) {
+  const row = db.prepare("SELECT id, credential_version FROM integration_config WHERE provider = 'google_platform' AND company_id IS NULL")
+    .get() as { id: number; credential_version: number } | undefined;
+  if (!row) throw new Error("CONFIG_NOT_SAVED");
+  db.prepare(`
+    UPDATE integration_config SET disabled_at = ?, status = ?, safe_status_code = ?, verified_at = NULL,
+      updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(
+    enabled ? null : new Date().toISOString(),
+    enabled && row.credential_version > 0 ? "saved" : "action_required",
+    enabled ? "VERIFICATION_REQUIRED" : "DISABLED",
+    row.id,
+  );
+}
+
+export function revokePlatformGoogleConfig() {
+  return revokeIntegrationProvider(platformSession(), "google_platform");
+}
+
+export function createPlatformOauthState(actor: Actor, configId: number) {
+  if (!actor.isPlatformAdmin || actor.contextType !== "platform") throw new Error("PLATFORM_ADMIN_REQUIRED");
+  const state = randomBytes(32).toString("base64url");
+  const verifier = randomBytes(48).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const context = `platform-oauth:${actor.sessionId}:google`;
+  db.prepare(`
+    INSERT INTO platform_integration_oauth_state (
+      auth_session_id, identity_id, config_id, state_hash, encrypted_context, expires_at
+    ) VALUES (?, ?, ?, ?, ?, datetime('now', '+10 minutes'))
+  `).run(actor.sessionId, actor.identityId, configId, sha256(state), encryptIntegrationSecret({ verifier }, context));
+  return { state, challenge };
+}
+
+export function consumePlatformOauthState(rawState: string, actor: Actor | null) {
+  if (!actor?.isPlatformAdmin || actor.contextType !== "platform") return null;
+  const row = db.prepare(`
+    SELECT id, config_id, encrypted_context FROM platform_integration_oauth_state
+    WHERE state_hash = ? AND auth_session_id = ? AND identity_id = ?
+      AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+  `).get(sha256(rawState), actor.sessionId, actor.identityId) as {
+    id: number;
+    config_id: number;
+    encrypted_context: string;
+  } | undefined;
+  if (!row) return null;
+  const used = db.prepare("UPDATE platform_integration_oauth_state SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL").run(row.id);
+  if (used.changes !== 1) return null;
+  const context = decryptIntegrationSecret(row.encrypted_context, `platform-oauth:${actor.sessionId}:google`);
+  return { configId: row.config_id, verifier: context.verifier };
 }
 
 export function createOauthState(input: { session: IntegrationSession; configId: number; provider: "google" | "microsoft" }) {
@@ -357,7 +467,7 @@ export function revokeIntegrationProvider(session: IntegrationSession, provider:
     db.prepare("UPDATE integration_credential_version SET is_active = 0, retired_at = CURRENT_TIMESTAMP WHERE config_id = ? AND is_active = 1").run(config.id);
     db.prepare(`
       UPDATE integration_config SET credential_version = 0, status = 'not_started', safe_status_code = NULL,
-        verified_at = NULL, saved_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        verified_at = NULL, saved_at = NULL, disabled_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
     `).run(config.id);
   })();
 }

@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 12/);
+    assert.match(second.stdout, /version 13/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -86,6 +86,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 10, name: "project_lifecycle_invariants" },
           { version: 11, name: "gantt_plan_invariants" },
           { version: 12, name: "event_calendar_invariants" },
+          { version: 13, name: "google_calendar_delivery" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);

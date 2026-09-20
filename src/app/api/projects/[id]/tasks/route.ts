@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentActor } from "@/lib/auth";
 import { canViewProject } from "@/lib/authorization";
 import { createPlanTask, getProjectPlan, PlanDomainError } from "@/lib/gantt-cascade";
+import { queueGoogleReconciliation } from "@/lib/google-calendar-queue";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!body) return NextResponse.json({ error: { code: "VALIDATION_FAILED", message: "Check the highlighted fields." } }, { status: 400, headers: noStore });
   try {
     const result = createPlanTask(projectId, actor.companyId, body);
+    queueGoogleReconciliation(actor.companyId, "task.create");
     recordAudit({ requestId: trace, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "task.create", targetType: "task", targetId: result.taskId, result: "success" });
     return NextResponse.json({ id: result.taskId, tid: result.taskId, planVersion: result.plan?.project.planVersion }, { status: 201, headers: noStore });
   } catch (error) { return failure(error); }

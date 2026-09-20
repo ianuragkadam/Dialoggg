@@ -39,6 +39,8 @@ Generate different high-entropy values for the two tokens and store them only in
 
 Google, Microsoft, and Resend setup values are entered through the scoped secure workshop and encrypted in the database; they are not copied into environment files. See [Secure Integration Setup Operations](INTEGRATION_SETUP_OPERATIONS.md). `INTEGRATION_PROVIDER_MODE=fake` is reserved for isolated automated tests and must never be configured in production.
 
+The Platform Administrator can also manage the active Google OAuth application permanently at `/platform/integration-setup`. Google setup requires a Web application client, the displayed callback URI, and the `calendar.app.created` scope. A saved credential is not usable by personal connections until the Platform Administrator completes OAuth and the temporary Calendar create/read/delete capability check. Run due personal-delivery jobs with `npm run google:process`; production scheduling and monitoring must be configured as part of the controlled v13 deployment.
+
 ## Production-like local check
 
 ```powershell
@@ -57,4 +59,4 @@ npm run db:backup -- data/backups/pre-change.db
 npm run db:migrate
 ```
 
-Exercise `npm run db:restore -- <backup.db> --confirm` only against an explicitly isolated data directory during routine verification. Production restore is an incident/change-controlled operation. Schema v9 adds the [Resource Management invariants](evidence/RESOURCE_MANAGEMENT_CHECKPOINT_2026-09-19.md). Schema v10 adds the [Project lifecycle invariants](evidence/PROJECTS_LIFECYCLE_CHECKPOINT_2026-09-19.md), including durable audit history through permanent deletion. Schema v11 adds the [persistent Gantt and cascade invariants](evidence/GANTT_CASCADE_CHECKPOINT_2026-09-20.md). Schema v12 adds the [persistent Events and Calendars invariants](evidence/EVENTS_CALENDARS_CHECKPOINT_2026-09-20.md); deploy it only after v7-v11 and a verified schema-v11 mounted-volume backup.
+Exercise `npm run db:restore -- <backup.db> --confirm` only against an explicitly isolated data directory during routine verification. Production restore is an incident/change-controlled operation. Schema v9 adds the [Resource Management invariants](evidence/RESOURCE_MANAGEMENT_CHECKPOINT_2026-09-19.md). Schema v10 adds the [Project lifecycle invariants](evidence/PROJECTS_LIFECYCLE_CHECKPOINT_2026-09-19.md), including durable audit history through permanent deletion. Schema v11 adds the [persistent Gantt and cascade invariants](evidence/GANTT_CASCADE_CHECKPOINT_2026-09-20.md). Schema v12 adds the [persistent Events and Calendars invariants](evidence/EVENTS_CALENDARS_CHECKPOINT_2026-09-20.md). Schema v13 adds personal Google Calendar delivery and permanent Platform Google OAuth settings; deploy it only after v7-v12 and a verified schema-v12 mounted-volume backup.

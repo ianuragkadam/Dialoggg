@@ -14,6 +14,10 @@ function fakeMode() {
   return process.env.INTEGRATION_PROVIDER_MODE === "fake";
 }
 
+export function integrationProviderIsFake() {
+  return fakeMode();
+}
+
 async function providerJson(url: string, init: RequestInit, failureCode: string) {
   let response: Response;
   try {
@@ -34,7 +38,8 @@ export function oauthAuthorizationUrl(input: {
   if (fakeMode()) {
     const url = new URL(callbackUri(input.provider));
     url.searchParams.set("state", input.state);
-    url.searchParams.set("code", input.config.clientId?.includes("deny") ? "fake-denied" : "fake-success");
+    const behavior = ["deny", "missing-scope", "provider-outage", "wrong-callback"].find(item => input.config.clientId?.includes(item));
+    url.searchParams.set("code", behavior ? `fake-${behavior}` : "fake-success");
     return url.toString();
   }
   if (input.provider === "google") {
@@ -46,6 +51,7 @@ export function oauthAuthorizationUrl(input: {
       scope: "https://www.googleapis.com/auth/calendar.app.created",
       access_type: "offline",
       prompt: "consent",
+      include_granted_scopes: "true",
       state: input.state,
       code_challenge: input.challenge,
       code_challenge_method: "S256",
@@ -68,7 +74,25 @@ export function oauthAuthorizationUrl(input: {
   return url.toString();
 }
 
-async function googleAccessToken(code: string, verifier: string, config: Record<string, string>, secrets: Record<string, string>) {
+export type GoogleTokenSet = {
+  accessToken: string;
+  refreshToken: string | null;
+  scope: string;
+  expiresIn: number;
+};
+
+export async function exchangeGoogleAuthorization(code: string, verifier: string, config: Record<string, string>, secrets: Record<string, string>): Promise<GoogleTokenSet> {
+  if (fakeMode()) {
+    if (code === "fake-deny" || code === "fake-denied") throw new IntegrationProviderError("OAUTH_AUTHORIZATION_REJECTED");
+    if (code === "fake-provider-outage") throw new IntegrationProviderError("PROVIDER_UNREACHABLE");
+    if (code === "fake-wrong-callback") throw new IntegrationProviderError("GOOGLE_REDIRECT_URI_MISMATCH");
+    return {
+      accessToken: "fake-access-token",
+      refreshToken: "fake-refresh-token",
+      scope: code === "fake-missing-scope" ? "openid" : "https://www.googleapis.com/auth/calendar.app.created",
+      expiresIn: 3600,
+    };
+  }
   const body = new URLSearchParams({
     client_id: config.clientId,
     client_secret: secrets.clientSecret,
@@ -83,28 +107,61 @@ async function googleAccessToken(code: string, verifier: string, config: Record<
     body,
   }, "GOOGLE_TOKEN_REJECTED");
   if (!result.access_token) throw new IntegrationProviderError("GOOGLE_TOKEN_MISSING");
-  return String(result.access_token);
+  return {
+    accessToken: String(result.access_token),
+    refreshToken: result.refresh_token ? String(result.refresh_token) : null,
+    scope: String(result.scope || ""),
+    expiresIn: Number(result.expires_in || 0),
+  };
 }
 
-async function verifyGoogleCapability(accessToken: string) {
-  const headers = { authorization: `Bearer ${accessToken}`, "content-type": "application/json" };
-  const listed = await providerJson(
-    "https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=owner&maxResults=250",
-    { headers }, "GOOGLE_CALENDAR_LIST_REJECTED",
-  );
-  let calendar = Array.isArray(listed.items)
-    ? listed.items.find((item: any) => item?.summary === "Dialoggg" && item?.id)
-    : null;
-  if (!calendar) {
-    calendar = await providerJson("https://www.googleapis.com/calendar/v3/calendars", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ summary: "Dialoggg", description: "Schedule items managed by Dialoggg." }),
-    }, "GOOGLE_CALENDAR_CREATE_REJECTED");
+export function requireGoogleScope(scope: string) {
+  const scopes = new Set(scope.split(/\s+/).filter(Boolean));
+  if (!scopes.has("https://www.googleapis.com/auth/calendar.app.created")) {
+    throw new IntegrationProviderError("GOOGLE_SCOPE_MISSING");
   }
+}
+
+export async function verifyGoogleCapability(accessToken: string) {
+  if (fakeMode()) return { calendar: "Temporary Dialoggg verification calendar", capability: "calendar.app.created" };
+  const headers = { authorization: `Bearer ${accessToken}`, "content-type": "application/json" };
+  const calendar = await providerJson("https://www.googleapis.com/calendar/v3/calendars", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ summary: "Dialoggg configuration verification", description: "Temporary capability check. Deleted immediately." }),
+  }, "GOOGLE_CALENDAR_CREATE_REJECTED");
   if (!calendar?.id) throw new IntegrationProviderError("GOOGLE_CALENDAR_MISSING");
   await providerJson(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar.id)}`, { headers }, "GOOGLE_CAPABILITY_REJECTED");
-  return { calendar: "Dialoggg", capability: "calendar.app.created" };
+  let deleted: Response;
+  try {
+    deleted = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar.id)}`, {
+      method: "DELETE", headers, cache: "no-store",
+    });
+  } catch {
+    throw new IntegrationProviderError("PROVIDER_UNREACHABLE");
+  }
+  if (!deleted.ok) throw new IntegrationProviderError(`GOOGLE_TEMP_CALENDAR_DELETE_REJECTED_${deleted.status}`);
+  return { calendar: "Temporary Dialoggg verification calendar", capability: "calendar.app.created" };
+}
+
+export async function refreshGoogleAccessToken(refreshToken: string, config: Record<string, string>, secrets: Record<string, string>) {
+  if (fakeMode()) {
+    if (refreshToken.includes("revoked")) throw new IntegrationProviderError("GOOGLE_REFRESH_REJECTED_400");
+    if (refreshToken.includes("outage")) throw new IntegrationProviderError("PROVIDER_UNREACHABLE");
+    return "fake-access-token";
+  }
+  const result = await providerJson("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: config.clientId,
+      client_secret: secrets.clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  }, "GOOGLE_REFRESH_REJECTED");
+  if (!result.access_token) throw new IntegrationProviderError("GOOGLE_TOKEN_MISSING");
+  return String(result.access_token);
 }
 
 async function microsoftAccessToken(code: string, verifier: string, config: Record<string, string>, secrets: Record<string, string>) {
@@ -175,14 +232,14 @@ export async function verifyOauthProvider(input: {
   config: Record<string, string>;
   secrets: Record<string, string>;
 }) {
-  if (fakeMode()) {
+  if (fakeMode() && input.provider === "microsoft") {
     if (input.code !== "fake-success") throw new IntegrationProviderError("FAKE_OAUTH_REJECTED");
-    return input.provider === "google"
-      ? { calendar: "Dialoggg", capability: "calendar.app.created" }
-      : { storageMode: input.config.storageMode || "onedrive", capability: "Files.ReadWrite" };
+    return { storageMode: input.config.storageMode || "onedrive", capability: "Files.ReadWrite" };
   }
   if (input.provider === "google") {
-    return verifyGoogleCapability(await googleAccessToken(input.code, input.verifier, input.config, input.secrets));
+    const tokens = await exchangeGoogleAuthorization(input.code, input.verifier, input.config, input.secrets);
+    requireGoogleScope(tokens.scope);
+    return verifyGoogleCapability(tokens.accessToken);
   }
   return verifyMicrosoftCapability(await microsoftAccessToken(input.code, input.verifier, input.config, input.secrets), input.config);
 }

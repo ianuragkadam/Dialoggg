@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import db from "@/db";
 import IntegrationInvitationAdmin from "@/components/IntegrationInvitationAdmin";
+import PlatformGoogleSettings from "@/components/PlatformGoogleSettings";
 import ModuleRestricted from "@/components/ModuleRestricted";
 import { getCurrentUser, isPlatformAdmin } from "@/lib/auth";
 
@@ -14,5 +15,8 @@ export default async function IntegrationSetupAccessPage() {
     return <ModuleRestricted title="Platform Administration is restricted" description="Only the separate Platform Administrator can issue private integration setup links." />;
   }
   const companies = db.prepare(`SELECT id, name FROM company WHERE lower(status) = 'active' ORDER BY lower(name), id`).all() as Array<{ id: number; name: string }>;
-  return <IntegrationInvitationAdmin companies={companies} />;
+  return <main className="mx-auto max-w-5xl space-y-6 p-6">
+    <PlatformGoogleSettings />
+    <IntegrationInvitationAdmin companies={companies} />
+  </main>;
 }

@@ -119,3 +119,15 @@ node scripts/test-calendars-events-ui.mjs
 ```
 
 The production-like scenario suite verifies invalid input, create/update/cancel, stale versions, Employee denial, Master-only isolation, durable conflict acknowledgement, shared Gantt Task dates, Project Type filters, tenant isolation, and company/Project/Resource feeds. The September 20 checkpoint passes 32/32 unit/foundation/migration tests, 149/149 scenarios, 16/16 focused Calendar/Event browser checks, and 158/158 browser checks across all eleven UI suites.
+
+## Google Calendar delivery checks
+
+`tests/migrations.test.mjs` proves the schema-v13 connection, single-use OAuth state, mapping, sync-run, index, trigger, and migration-history invariants. The production-like scenario suite saves a write-only encrypted Platform credential, performs the fake OAuth capability callback, authorizes a personal connection, proves encrypted refresh-token/calendar-ID storage and tenant isolation, reconciles eligible Task/Event items, reruns idempotently without duplicate mappings, replays state to prove single use, and verifies explicit retained disconnect behavior.
+
+`scripts/test-google-calendar-ui.mjs` is a real browser suite against an isolated migrated database and the built standalone server. It covers Platform reauthentication, safe save, OAuth verification, secret rotation, disable/enable/retry/revoke, no plaintext in credential or audit rows, personal consent, CSRF rejection, Task/Event delivery, health, idempotent manual sync, safe payload exclusions, remove/retain choice gating, Employee isolation, mobile overflow, and signed-out routing. Run it with Playwright installed or `DIALOGGG_PLAYWRIGHT_PATH` set:
+
+```powershell
+node scripts/test-google-calendar-ui.mjs
+```
+
+The September 20 Google checkpoint passes 32/32 unit/foundation/migration tests, 153/153 scenarios, 14/14 focused Google browser checks, and 159/159 checks across all eleven UI suites. The suite uses `INTEGRATION_PROVIDER_MODE=fake` only in its temporary local server and never calls Google or production.

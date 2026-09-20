@@ -58,12 +58,14 @@ const COMPANY_METADATA_SQL = `
     (SELECT COUNT(DISTINCT gc.id)
       FROM company_membership cm_google
       JOIN google_connection gc ON gc.identity_id = cm_google.identity_id
+        AND gc.company_id = cm_google.company_id AND gc.membership_id = cm_google.id
       WHERE cm_google.company_id = c.id AND cm_google.status = 'active') AS google_connection_count,
     (SELECT COUNT(DISTINCT gc.id)
       FROM company_membership cm_google
       JOIN google_connection gc ON gc.identity_id = cm_google.identity_id
+        AND gc.company_id = cm_google.company_id AND gc.membership_id = cm_google.id
       WHERE cm_google.company_id = c.id AND cm_google.status = 'active'
-        AND gc.state IN ('error', 'connection_required')) AS google_error_count,
+        AND gc.state IN ('action_required', 'connection_required')) AS google_error_count,
     microsoft.state AS microsoft_state
   FROM company c
   LEFT JOIN company_membership owner_membership ON owner_membership.id = (

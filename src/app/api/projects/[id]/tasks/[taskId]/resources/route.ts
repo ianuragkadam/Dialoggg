@@ -4,6 +4,7 @@ import { getCurrentActor } from "@/lib/auth";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
+import { queueGoogleReconciliation } from "@/lib/google-calendar-queue";
 
 function taskBelongsToCompany(projectId: number, taskId: number, companyId: number | null) {
   return !!db.prepare(`
@@ -60,6 +61,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     for (const rid of ids) ins.run(Number(taskId), rid);
   });
   tx();
+  queueGoogleReconciliation(actor.companyId!, "task.resources.update");
 
   recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId: Number(id), action: "task.resources.update", targetType: "task", targetId: Number(taskId), result: "success", metadata: { resourceCount: ids.length } });
 

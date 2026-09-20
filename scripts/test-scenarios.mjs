@@ -205,6 +205,7 @@ try {
       FOLLOW_UP_REQUIREMENTS_REVIEW_TOKEN: followUpReviewToken,
       APP_BASE_URL: baseUrl,
       APP_ENCRYPTION_KEY: testEncryptionKey.toString("base64"),
+      INTEGRATION_PROVIDER_MODE: "fake",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -853,9 +854,15 @@ try {
   });
 
   await check("suspension revokes company sessions, pauses Google, and preserves business and Microsoft records", async () => {
+    const syncMember = bootstrapAccount(dataDirectory, {
+      companyId: provisionedCompanyId,
+      fullName: "Provisioned Sync Employee",
+      email: `provisioned-sync-${suffix}@example.test`,
+      password: "Provisioned-Sync-Test-1!",
+      role: "employee",
+    });
     const database = new Database(path.join(dataDirectory, "dialoggg.db"));
     try {
-      const identity = database.prepare("SELECT identity_id FROM company_membership WHERE id = ?").get(provisionedOwnerMembershipId);
       const legacy = database.prepare("SELECT legacy_user_id FROM company_membership WHERE id = ?").get(provisionedOwnerMembershipId);
       const preservationTypeId = Number(database.prepare(`
         INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Preservation', 'preservation')
@@ -864,9 +871,10 @@ try {
         INSERT INTO project (company_id, project_type_id, name, start_date, created_by) VALUES (?, ?, 'Private Preservation Project', '2026-09-17', ?)
       `).run(provisionedCompanyId, preservationTypeId, legacy.legacy_user_id).lastInsertRowid);
       database.prepare(`
-        INSERT INTO google_connection (identity_id, token_ciphertext, token_key_version, state)
-        VALUES (?, 'encrypted-google-token', 1, 'healthy')
-      `).run(identity.identity_id);
+        INSERT INTO google_connection (
+          identity_id, company_id, membership_id, token_ciphertext, token_key_version, state
+        ) VALUES (?, ?, ?, 'encrypted-google-token', 1, 'healthy')
+      `).run(syncMember.identityId, provisionedCompanyId, syncMember.membershipId);
       database.prepare(`
         INSERT INTO microsoft_connection (
           company_id, tenant_id_ciphertext, drive_id_ciphertext, root_item_id_ciphertext,
@@ -899,7 +907,7 @@ try {
     } finally { verify.close(); }
   });
 
-  await check("restoration re-enables login while Google remains paused for review", async () => {
+  await check("restoration stays paused until a manager without a personal connection explicitly resumes", async () => {
     const response = await platform.request(`/api/v1/platform/companies/${provisionedCompanyId}/restore`, { method: "POST", body: {} });
     assert.equal(response.status, 200, JSON.stringify(response.data));
     assert.equal(response.data.data.status, "active");
@@ -909,9 +917,16 @@ try {
       body: { email: provisionedOwnerEmail, password: provisionedOwnerPassword },
     });
     assert.equal(login.status, 200);
+    const resumed = await provisionedOwner.request("/api/google-calendar", {
+      method: "POST",
+      body: { action: "resume", confirmed: true },
+    });
+    assert.equal(resumed.status, 200, JSON.stringify(resumed.data));
+    assert.equal(resumed.data.data.companySyncState, "active");
+    assert.equal(resumed.data.data.state, "connection_required");
     const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
     try {
-      assert.deepEqual(verify.prepare("SELECT state, pause_reason FROM company_google_sync_state WHERE company_id = ?").get(provisionedCompanyId), { state: "paused", pause_reason: "restored_review_required" });
+      assert.deepEqual(verify.prepare("SELECT state, pause_reason FROM company_google_sync_state WHERE company_id = ?").get(provisionedCompanyId), { state: "active", pause_reason: null });
       assert.equal(verify.prepare("SELECT COUNT(*) AS count FROM audit_event WHERE company_id = ? AND action IN ('company.create','company.suspend','company.restore')").get(provisionedCompanyId).count, 3);
     } finally { verify.close(); }
   });
@@ -1822,6 +1837,104 @@ try {
   await check("master-only Events never appear on a Project Calendar",async()=>{const created=await adminA.request("/api/events",{method:"POST",body:{title:"Internal master meeting",timingMode:"all_day",startDate:"2026-01-13",endDate:"2026-01-13",resourceIds:[]}});assert.equal(created.status,201);const [master,project]=await Promise.all([adminA.request("/api/calendar?start=2026-01-12T00:00:00Z&end=2026-01-14T00:00:00Z"),adminA.request(`/api/projects/${projectAId}/events?start=2026-01-12T00:00:00Z&end=2026-01-14T00:00:00Z`)]);assert.ok(master.data.events.some(item=>item.title==="Internal master meeting"));assert.ok(!project.data.events.some(item=>item.title==="Internal master meeting"));});
 
   await check("Resource Event conflicts require and record Owner or Admin acknowledgement",async()=>{const body={projectId:projectAId,pushToProject:true,title:"Acknowledged site overlap",timingMode:"timed",startDate:"2026-01-06",endDate:"2026-01-06",startTime:"10:00",endTime:"11:00",resourceIds:[resourceAId]};const blocked=await adminA.request("/api/events",{method:"POST",body});assert.equal(blocked.status,409,JSON.stringify(blocked.data));assert.equal(blocked.data.error.code,"RESOURCE_CONFLICT");assert.ok(blocked.data.error.details.conflicts.length>=1);const confirmed=await adminA.request("/api/events",{method:"POST",body:{...body,confirmConflicts:true}});assert.equal(confirmed.status,201,JSON.stringify(confirmed.data));const verify=new Database(path.join(dataDirectory,"dialoggg.db"),{readonly:true});try{assert.ok(verify.prepare("SELECT COUNT(*) count FROM event_conflict_acknowledgement WHERE series_id=?").get(confirmed.data.event.id).count>=1);}finally{verify.close();}});
+
+  await check("Platform Google settings save write-only encrypted credentials and require real OAuth capability verification", async () => {
+    const config = { projectName: "Dialoggg Platform", projectId: "dialoggg-platform-test", clientId: "123456789-dialoggg.apps.googleusercontent.com", supportEmail: "support@example.test", privacyUrl: "https://example.test/privacy", privacyStatus: "verified" };
+    const saved = await platform.request("/api/v1/platform/integration-settings/google", { method: "POST", body: { action: "save", currentPassword: platformPassword, environment: "test", config, secrets: { clientSecret: "google-client-secret-scenario" } } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.data));
+    assert.equal(saved.data.data.status, "saved");
+    assert.equal(saved.data.data.credential.configured, true);
+    assert.equal(Object.hasOwn(saved.data.data, "secrets"), false);
+    const started = await platform.request("/api/v1/platform/integration-settings/google", { method: "POST", body: { action: "oauth_start" } });
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const oauthUrl = new URL(started.data.data.authorizationUrl);
+    const callback = await platform.request(`${oauthUrl.pathname}${oauthUrl.search}`);
+    assert.equal(callback.status, 303);
+    assert.match(callback.headers.get("location") || "", /status=verified/);
+    const verified = await platform.request("/api/v1/platform/integration-settings/google");
+    assert.equal(verified.data.data.status, "verified");
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const stored = JSON.stringify(database.prepare("SELECT encrypted_envelope FROM integration_credential_version WHERE is_active = 1 AND config_id = (SELECT id FROM integration_config WHERE provider = 'google_platform')").all());
+      assert.doesNotMatch(stored, /google-client-secret-scenario/);
+      const audit = JSON.stringify(database.prepare("SELECT metadata_json FROM audit_event WHERE action LIKE 'integration_google.%'").all());
+      assert.doesNotMatch(audit, /google-client-secret-scenario/);
+    } finally { database.close(); }
+  });
+
+  await check("personal Google OAuth uses single-use state, encrypted refresh tokens, and tenant-safe eligible delivery", async () => {
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try { database.prepare("UPDATE resource SET linked_membership_id = ? WHERE id = ? AND company_id = ?").run(adminAMembershipId, resourceAId, companyAId); }
+    finally { database.close(); }
+    const initial = await adminA.request("/api/google-calendar");
+    assert.equal(initial.status, 200);
+    assert.equal(initial.data.data.state, "connection_required");
+    const started = await adminA.request("/api/google-calendar", { method: "POST", body: { action: "oauth_start" } });
+    assert.equal(started.status, 200, JSON.stringify(started.data));
+    const oauthUrl = new URL(started.data.data.authorizationUrl);
+    const callbackPath = `${oauthUrl.pathname}${oauthUrl.search}`;
+    const callback = await adminA.request(callbackPath);
+    assert.equal(callback.status, 303);
+    assert.match(callback.headers.get("location") || "", /status=verified/);
+    const replay = await adminA.request(callbackPath);
+    assert.equal(replay.status, 303);
+    assert.match(replay.headers.get("location") || "", /status=invalid/);
+    const health = await adminA.request("/api/google-calendar");
+    assert.equal(health.data.data.state, "healthy");
+    assert.ok(health.data.data.health.managedItems >= 2, JSON.stringify(health.data));
+    const isolated = await adminB.request("/api/google-calendar");
+    assert.equal(isolated.data.data.state, "connection_required");
+    assert.equal(isolated.data.data.health.managedItems, 0);
+    const platformCompanies = await platform.request("/api/v1/platform/companies");
+    assert.equal(platformCompanies.status, 200);
+    const companyAStatus = platformCompanies.data.data.companies.find(company => company.id === companyAId);
+    const companyBStatus = platformCompanies.data.data.companies.find(company => company.id === companyBId);
+    assert.equal(companyAStatus.googleStatus, "Connected");
+    assert.equal(companyBStatus.googleStatus, "Not connected", "a global identity's Company A connection must not leak into Company B metadata");
+    const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const connection = verify.prepare("SELECT identity_id, company_id, membership_id, token_ciphertext, calendar_id_ciphertext FROM google_connection WHERE identity_id = ? AND company_id = ?").get(adminAIdentityId, companyAId);
+      assert.equal(connection.membership_id, adminAMembershipId);
+      assert.doesNotMatch(connection.token_ciphertext, /fake-refresh-token/);
+      assert.doesNotMatch(connection.calendar_id_ciphertext, /fake-dialoggg-calendar/);
+      assert.equal(verify.prepare("SELECT COUNT(*) count FROM google_connection WHERE company_id = ?").get(companyBId).count, 0);
+    } finally { verify.close(); }
+  });
+
+  await check("Google reconciliation is idempotent and source changes reuse mappings without duplicates", async () => {
+    const before = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    let mappingCount;
+    try { mappingCount = before.prepare("SELECT COUNT(*) count FROM google_item_mapping").get().count; }
+    finally { before.close(); }
+    for (let index = 0; index < 2; index += 1) {
+      const sync = await adminA.request("/api/google-calendar", { method: "POST", body: { action: "sync_now" } });
+      assert.equal(sync.status, 200, JSON.stringify(sync.data));
+    }
+    const after = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(after.prepare("SELECT COUNT(*) count FROM google_item_mapping").get().count, mappingCount);
+      const duplicate = after.prepare("SELECT google_event_id, COUNT(*) count FROM google_item_mapping GROUP BY connection_id, google_event_id HAVING COUNT(*) > 1").get();
+      assert.equal(duplicate, undefined);
+      assert.ok(after.prepare("SELECT COUNT(*) count FROM google_sync_run WHERE status = 'completed'").get().count >= 3);
+    } finally { after.close(); }
+  });
+
+  await check("Google disconnect retains stale mappings only after explicit choice", async () => {
+    const disconnected = await adminA.request("/api/google-calendar", { method: "POST", body: { action: "disconnect", mode: "retain", confirmed: true } });
+    assert.equal(disconnected.status, 200, JSON.stringify(disconnected.data));
+    assert.equal(disconnected.data.data.state, "disconnected");
+    const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.ok(verify.prepare("SELECT COUNT(*) count FROM google_item_mapping WHERE sync_state = 'retained'").get().count > 0);
+      assert.equal(verify.prepare(`
+        SELECT COUNT(*) count FROM outbox_job
+        WHERE kind = 'google_calendar_reconcile' AND status IN ('pending','retry','running')
+          AND json_extract(payload_json, '$.connectionId') = (
+            SELECT id FROM google_connection WHERE identity_id = ? AND company_id = ?
+          )
+      `).get(adminAIdentityId, companyAId).count, 0);
+    } finally { verify.close(); }
+  });
 
   await check("downstream calendars use the shared weekend-aware Task result", async () => {
     const task = await adminA.request(`/api/projects/${projectAId}/tasks`, {

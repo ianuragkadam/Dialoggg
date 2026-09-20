@@ -14,6 +14,7 @@ import {
 } from "@/lib/resources";
 import type { ResourceCategoryUi } from "@/lib/resources-ui";
 import { recordAudit, requestId } from "@/lib/security";
+import { queueGoogleReconciliation } from "@/lib/google-calendar-queue";
 
 function idFrom(value: string) {
   const id = Number(value);
@@ -79,6 +80,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       ...parsedName, category: category as ResourceCategoryUi, email, phone, linkedMembershipId, version,
     });
     if (!resource) return apiError(409, "RESOURCE_VERSION_CONFLICT", "This Resource changed after you opened it. Refresh and try again.", traceId);
+    queueGoogleReconciliation(actor.companyId!, "resource.update");
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: "resource.update", targetType: "resource", targetId: resourceId, result: "success" });
     return apiSuccess({ resource, availableUsers: listAvailableResourceUsers(actor.companyId!, resourceId) }, traceId);
   } catch (error) {
@@ -110,6 +112,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         ? apiError(409, "RESOURCE_VERSION_CONFLICT", "This Resource changed after you opened it. Refresh and try again.", traceId)
         : apiError(404, "RESOURCE_NOT_FOUND", "Resource not found.", traceId);
     }
+    queueGoogleReconciliation(actor.companyId!, `resource.${action}`);
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: `resource.${action}`, targetType: "resource", targetId: resourceId, result: "success" });
     return apiSuccess({ resource }, traceId);
   } catch (error) {

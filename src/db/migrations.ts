@@ -1731,7 +1731,179 @@ const migration012: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012];
+const migration013: Migration = {
+  version: 13,
+  name: "google_calendar_delivery",
+  signature: "company-scoped personal Google connections + single-use OAuth state + idempotent mappings + retry/dead-letter health v1",
+  up(database) {
+    addColumn(database, "integration_config", "disabled_at", "disabled_at TEXT");
+
+    database.exec(`
+      ALTER TABLE google_item_mapping RENAME TO google_item_mapping_v12;
+      ALTER TABLE google_connection RENAME TO google_connection_v12;
+
+      CREATE TABLE google_connection (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        identity_id INTEGER NOT NULL,
+        company_id INTEGER NOT NULL,
+        membership_id INTEGER NOT NULL,
+        token_ciphertext TEXT NOT NULL,
+        token_key_version INTEGER NOT NULL DEFAULT 1 CHECK (token_key_version > 0),
+        calendar_id_ciphertext TEXT,
+        granted_scope TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT 'connection_required'
+          CHECK (state IN ('connection_required','connecting','healthy','paused','action_required','disconnected')),
+        pause_reason TEXT,
+        disconnect_mode TEXT CHECK (disconnect_mode IN ('remove','retain')),
+        last_success_at TEXT,
+        last_attempt_at TEXT,
+        last_error_code TEXT,
+        last_reconciled_at TEXT,
+        retry_after TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (identity_id, company_id),
+        FOREIGN KEY (identity_id) REFERENCES identity(id) ON DELETE CASCADE,
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE,
+        FOREIGN KEY (membership_id) REFERENCES company_membership(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO google_connection (
+        id, identity_id, company_id, membership_id, token_ciphertext, token_key_version,
+        calendar_id_ciphertext, state, last_success_at, last_error_code, created_at, updated_at
+      )
+      SELECT gc.id, gc.identity_id, cm.company_id, cm.id, gc.token_ciphertext,
+        CASE WHEN gc.token_key_version > 0 THEN gc.token_key_version ELSE 1 END,
+        gc.calendar_id_ciphertext,
+        CASE gc.state WHEN 'healthy' THEN 'action_required' WHEN 'paused' THEN 'paused'
+          WHEN 'disconnected' THEN 'disconnected' ELSE 'connection_required' END,
+        gc.last_success_at,
+        CASE WHEN gc.state = 'healthy' THEN 'RECONNECT_REQUIRED_AFTER_SCHEMA_UPGRADE' ELSE gc.last_error_code END,
+        gc.created_at, gc.updated_at
+      FROM google_connection_v12 gc
+      JOIN company_membership cm ON cm.id = (
+        SELECT selected.id FROM company_membership selected
+        WHERE selected.identity_id = gc.identity_id AND selected.status = 'active'
+        ORDER BY selected.id LIMIT 1
+      );
+
+      CREATE TABLE google_item_mapping (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        connection_id INTEGER NOT NULL,
+        source_type TEXT NOT NULL CHECK (source_type IN ('task','event')),
+        source_id TEXT NOT NULL,
+        occurrence_key TEXT NOT NULL DEFAULT '',
+        google_event_id TEXT NOT NULL,
+        google_etag TEXT,
+        source_version INTEGER NOT NULL CHECK (source_version >= 0),
+        payload_hash TEXT NOT NULL CHECK (length(payload_hash) = 64),
+        sync_state TEXT NOT NULL DEFAULT 'pending'
+          CHECK (sync_state IN ('pending','created','updated','deleted','retained','error')),
+        last_error_code TEXT,
+        last_synced_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (connection_id, source_type, source_id, occurrence_key),
+        UNIQUE (connection_id, google_event_id),
+        FOREIGN KEY (connection_id) REFERENCES google_connection(id) ON DELETE CASCADE
+      );
+
+      INSERT OR IGNORE INTO google_item_mapping (
+        id, connection_id, source_type, source_id, occurrence_key, google_event_id,
+        source_version, payload_hash, sync_state, updated_at
+      )
+      SELECT gim.id, gim.connection_id,
+        CASE WHEN gim.source_type = 'task' THEN 'task' ELSE 'event' END,
+        gim.source_id, gim.occurrence_key, gim.google_event_id,
+        MAX(0, gim.source_version), lower(gim.payload_hash),
+        CASE gim.sync_state WHEN 'created' THEN 'created' WHEN 'updated' THEN 'updated'
+          WHEN 'deleted' THEN 'deleted' ELSE 'pending' END,
+        gim.updated_at
+      FROM google_item_mapping_v12 gim
+      JOIN google_connection gc ON gc.id = gim.connection_id
+      WHERE length(gim.payload_hash) = 64;
+
+      DROP TABLE google_item_mapping_v12;
+      DROP TABLE google_connection_v12;
+
+      CREATE INDEX idx_google_connection_company_state
+        ON google_connection(company_id, state, identity_id);
+      CREATE INDEX idx_google_mapping_connection_state
+        ON google_item_mapping(connection_id, sync_state, updated_at);
+
+      CREATE TABLE google_oauth_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        auth_session_id INTEGER NOT NULL,
+        identity_id INTEGER NOT NULL,
+        company_id INTEGER NOT NULL,
+        membership_id INTEGER NOT NULL,
+        state_hash TEXT NOT NULL UNIQUE CHECK (length(state_hash) = 64),
+        encrypted_context TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (auth_session_id) REFERENCES auth_session(id) ON DELETE CASCADE,
+        FOREIGN KEY (identity_id) REFERENCES identity(id) ON DELETE CASCADE,
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE,
+        FOREIGN KEY (membership_id) REFERENCES company_membership(id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_google_oauth_expiry ON google_oauth_state(expires_at, used_at);
+
+      CREATE TABLE platform_integration_oauth_state (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        auth_session_id INTEGER NOT NULL,
+        identity_id INTEGER NOT NULL,
+        config_id INTEGER NOT NULL,
+        state_hash TEXT NOT NULL UNIQUE CHECK (length(state_hash) = 64),
+        encrypted_context TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (auth_session_id) REFERENCES auth_session(id) ON DELETE CASCADE,
+        FOREIGN KEY (identity_id) REFERENCES identity(id) ON DELETE CASCADE,
+        FOREIGN KEY (config_id) REFERENCES integration_config(id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_platform_oauth_expiry ON platform_integration_oauth_state(expires_at, used_at);
+
+      CREATE TABLE google_sync_run (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        connection_id INTEGER NOT NULL,
+        trigger_kind TEXT NOT NULL CHECK (trigger_kind IN ('connect','change','manual','resume','retry','worker')),
+        status TEXT NOT NULL CHECK (status IN ('started','completed','failed','dead')),
+        created_count INTEGER NOT NULL DEFAULT 0,
+        updated_count INTEGER NOT NULL DEFAULT 0,
+        deleted_count INTEGER NOT NULL DEFAULT 0,
+        unchanged_count INTEGER NOT NULL DEFAULT 0,
+        error_code TEXT,
+        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        completed_at TEXT,
+        FOREIGN KEY (connection_id) REFERENCES google_connection(id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_google_sync_run_connection ON google_sync_run(connection_id, started_at DESC);
+
+      CREATE TRIGGER trg_google_connection_scope_insert
+      BEFORE INSERT ON google_connection
+      WHEN NOT EXISTS (
+        SELECT 1 FROM company_membership cm JOIN company c ON c.id = cm.company_id
+        WHERE cm.id = NEW.membership_id AND cm.identity_id = NEW.identity_id
+          AND cm.company_id = NEW.company_id AND cm.status = 'active' AND lower(c.status) = 'active'
+      )
+      BEGIN SELECT RAISE(ABORT, 'GOOGLE_CONNECTION_SCOPE_INVALID'); END;
+
+      CREATE TRIGGER trg_google_connection_scope_update
+      BEFORE UPDATE OF identity_id, company_id, membership_id ON google_connection
+      WHEN NEW.identity_id <> OLD.identity_id OR NEW.company_id <> OLD.company_id OR NEW.membership_id <> OLD.membership_id
+      BEGIN SELECT RAISE(ABORT, 'GOOGLE_CONNECTION_SCOPE_IMMUTABLE'); END;
+
+      CREATE TRIGGER trg_google_mapping_scope_insert
+      BEFORE INSERT ON google_item_mapping
+      WHEN trim(NEW.source_id) = '' OR trim(NEW.google_event_id) = ''
+      BEGIN SELECT RAISE(ABORT, 'GOOGLE_MAPPING_INVALID'); END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

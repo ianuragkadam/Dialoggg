@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deletePlanTask, PlanDomainError, updatePlanTask } from "@/lib/gantt-cascade";
+import { queueGoogleReconciliation } from "@/lib/google-calendar-queue";
 import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
@@ -30,6 +31,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!body) return NextResponse.json({ error: { code: "VALIDATION_FAILED", message: "Check the highlighted fields." } }, { status: 400, headers: noStore });
   try {
     const plan = updatePlanTask(scoped.projectId, scoped.taskId, scoped.actor.companyId!, body);
+    queueGoogleReconciliation(scoped.actor.companyId!, "task.update");
     recordAudit({ requestId: trace, actorIdentityId: scoped.actor.identityId, actorMembershipId: scoped.actor.membershipId, companyId: scoped.actor.companyId!, projectId: scoped.projectId, action: "task.update", targetType: "task", targetId: scoped.taskId, result: "success" });
     return NextResponse.json({ ok: true, planVersion: plan?.project.planVersion }, { headers: noStore });
   } catch (error) { return failure(error); }
@@ -43,6 +45,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (!body) return NextResponse.json({ error: { code: "DELETE_CONFIRMATION_REQUIRED", message: "Refresh the Plan and confirm Task deletion." } }, { status: 400, headers: noStore });
   try {
     const plan = deletePlanTask(scoped.projectId, scoped.taskId, scoped.actor.companyId!, Number(body.planVersion), Number(body.version));
+    queueGoogleReconciliation(scoped.actor.companyId!, "task.delete");
     recordAudit({ requestId: trace, actorIdentityId: scoped.actor.identityId, actorMembershipId: scoped.actor.membershipId, companyId: scoped.actor.companyId!, projectId: scoped.projectId, action: "task.delete", targetType: "task", targetId: scoped.taskId, result: "success" });
     return NextResponse.json({ ok: true, planVersion: plan?.project.planVersion }, { headers: noStore });
   } catch (error) { return failure(error); }
