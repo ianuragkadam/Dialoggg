@@ -16,6 +16,13 @@ const nextConfig = {
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
       },
+      {
+        source: "/api/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "Pragma", value: "no-cache" },
+        ],
+      },
     ];
   },
 };

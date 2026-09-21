@@ -24,6 +24,19 @@ Scenario data is isolated in the operating system's temporary directory and remo
 
 Before release, perform browser checks at desktop and narrow/mobile widths for Login, Projects, project tabs, Gantt, and calendar views. Record the command output and Railway deployment identifier in the progress file.
 
+## Final release security and browser matrix
+
+`tests/release-security.test.mjs` inventories all API routes and fails when a new read or mutation handler is added without the reviewed actor/session or origin/CSRF boundary. It also enforces the central non-cache policy and rejects forwarded-host/protocol trust anywhere in application source.
+
+After a successful build and standalone packaging, run the release matrix with a Playwright package path:
+
+```powershell
+$env:DIALOGGG_PLAYWRIGHT_PATH = '<playwright-package-directory>'
+node scripts/test-release-matrix-ui.mjs
+```
+
+The script uses an isolated migrated database and synthetic accounts. It exercises company and Platform Administration routes in installed Chrome and Edge at desktop (1440×1000) and phone (390×844) widths, checks HSTS, keyboard entry, page overflow, fatal responses, page errors, and console/server failures, then removes the temporary data. It never calls Railway, Google, Microsoft, or Resend.
+
 ## Project Types UI Playwright check
 
 The UI-only Project Types module has a focused browser script at `scripts/test-project-types-ui.mjs`. It starts the built application against a temporary database, creates isolated test Users, and checks the complete Admin and Employee experience at desktop and mobile widths.

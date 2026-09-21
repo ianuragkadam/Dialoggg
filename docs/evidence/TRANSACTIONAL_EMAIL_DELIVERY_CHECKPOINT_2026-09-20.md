@@ -80,3 +80,11 @@ This checkpoint is deployment order 12 after the live schema-v14 release. The au
 8. record deployment ID, image digest, backup identities, migration checksum, readiness/log results, live redaction/authorization/persistence results, and the remaining rollback position before cross-module hardening.
 
 Provider webhooks and production worker scheduling/alerting remain operational release configuration. They are not prerequisites for the v15 schema migration itself and must not be represented as live until configured and verified.
+
+## Production release evidence — 21 September 2026
+
+The user authorized exactly commit `1c9fba8` and schema v14→v15. Railway backup `pre-v15-1c9fba8` (`78aea00b-0e02-4732-81c2-2c9d04b364e7`, external snapshot `vs_1789902997531_tsobpwcx5iw9hney`) was verified before mutation. The isolated archive SHA-256 was `C17E2D590F98B52D3A02FC04AF13756B4C6FA74A272C4821F0E64493F48C257E`.
+
+Railway deployment `079691a9-89a8-4a9a-abf6-03b67065f5d9` reached `SUCCESS` with image digest `sha256:c0d2683e4dc8fdb7652d3f3cbaadcae265132127cb28abe27033cdd6e3544bb8`. Startup created and verified `/data/backups/pre-migration-v14-2026-09-21T04-09-59-392Z.db` with SHA-256 `80c5c872f465c629d2a578d5e52df5916b59c832f3a8794e53ecf5278d781f2e`, applied only migration 15 (`transactional_email_delivery`, checksum `aa2dc0024a644975d293354bacb0dea84f6ee34238f0c3c21145ca9e6f58bfc0`), and reported schema v15 current.
+
+The authorized restart initially produced a transient Railway instance-start failure after the expected SIGTERM. A retry restored the same deployment and its replacement instance is `RUNNING`; restart logs report schema v15 already current, proving migration idempotency. `/api/health/ready` returned HTTP 200 with `{"status":"ready"}`. `/login` returned 200, `/projects` redirected to `/login`, `/api/v1/me` returned 401, and the Platform Resend settings API denied signed-out access. No stored credential was inspected and no authenticated production QA record or email was created.

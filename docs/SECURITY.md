@@ -30,14 +30,14 @@
 - Company Microsoft connections require an active company Owner/Admin and single-use PKCE state. Refresh tokens plus tenant/account/site/drive/root identifiers are context-bound AES-256-GCM ciphertext. Root and folder choices are short-lived opaque encrypted values; browser DTOs, audit metadata, logs, and safe errors omit raw tokens, drive IDs, item IDs, URLs, and provider bodies.
 - Schema-v14 triggers and indexes enforce company/connection/Project scope for Microsoft connections and folder mappings. Owner/Admin may manage Common and Private; assigned Employee/External may receive Common only; unassigned Users receive neither. Private metadata is omitted rather than masked. Disconnect, Project lifecycle, and company lifecycle preserve mappings and never invoke Microsoft rename/move/delete or permission mutation.
 - Company, Project, and Resource iCalendar subscription URLs derive from the canonical application origin and are returned only in non-cacheable authenticated responses. Bearer feeds enforce exact token formats, send `private, no-store`, and escape CR/LF text before serialization.
+- Every `/api/*` response receives the central `private, no-store, max-age=0` and `Pragma: no-cache` policy. Route-specific controls may tighten this policy but cannot rely on framework cache defaults for identity, tenant, integration, or bearer data.
+- The 21 September 2026 release audit inventories all 73 API route files, 50 GET exports, and 69 state-changing method exports. Automated policy checks require every non-bearer read to resolve to an actor/session guard and every mutation to resolve to the shared origin/CSRF boundary, a reviewed re-export, or the intentionally disabled registration endpoint. The 170-scenario suite proves Role and tenant denial across the persistent domains.
+- Abuse budgets were reviewed by operation. Anonymous credential/token and Integration Setup entry points plus password reauthentication retain database-backed limits; authenticated business mutations additionally require a valid session, origin, CSRF token, Role/tenant scope, bounded validation, and where applicable optimistic versions. Provider worker retries remain separately bounded and dead-lettered.
 
 ## Known gaps before final release
 
-- The fixed Role model, membership invitations, password reset, Resource authorization, and core Project visibility are implemented; a final route-by-route permission audit is still required as remaining modules become persistent.
 - Multi-factor authentication, end-user session management, and verified self-service login-email change are not implemented.
-- Login, forgot/reset password, invitation acceptance, account-password reauthentication, and integration invitation/validation paths have bounded abuse controls. The remaining authenticated mutation surface still needs a final per-action abuse-budget review before release.
 - Questionnaire URL tokens grant access to anyone who possesses the link; they must be treated as passwords and rotated if disclosed.
-- A full route-by-route tenant-isolation review is required as new modules are added.
 - Dependency audit findings must remain at zero or be triaged for reachability before each release.
 - Content Security Policy is not yet enabled because third-party Gantt and calendar assets need a tested policy.
 - TypeScript strict mode remains future hardening work.

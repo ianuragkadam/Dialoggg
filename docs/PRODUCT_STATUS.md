@@ -1,6 +1,6 @@
 # Product Status
 
-Last verified: September 20, 2026
+Last verified: September 21, 2026
 
 ## Complete foundations
 
@@ -57,8 +57,10 @@ Last verified: September 20, 2026
 - Commit `40760e5` is live in Railway production as deployment `52834a22-8621-4df3-8199-ccbc7c6f9cca`. A verified manual volume backup plus automatic in-volume schema-v6 backup preceded migrations 7–14; startup and the authorized restart both reported schema v14 current, and public readiness returned HTTP 200.
 - Transactional email delivery is complete locally on schema v15. Invitation, password-reset, and operational jobs retain encrypted payloads and add explicit expiry, provider/config attribution, encrypted provider receipts, transactional attempt evidence, bounded retry/backoff, dead-letter/manual retry, configuration deferral, and stale-worker recovery.
 - Permanent Platform Resend settings now support password-protected save/rotation/disable/enable/revoke, read-only exact-domain/DNS/SPF/DKIM verification, an explicitly confirmed test recipient, secret redaction, safe delivery health, and tenant-Admin denial. Delivery no longer depends on `RESEND_API_KEY` or `EMAIL_FROM` environment variables.
-- Email verification passes 35/35 unit/foundation/migration checks, 167/167 production-like scenarios, 17/17 secure Integration Setup browser checks, and 161/161 browser checks across all eleven suites. TypeScript, the 65-page production build, standalone packaging, and unchanged locked npm 10.8.2 production/full audits are green with zero vulnerabilities. Schema v15 awaits its controlled production backup/deployment gate.
-- Cross-module security hardening is complete locally after schema v15: one canonical production origin replaces forwarded-host trust; login/logout/questionnaire/Integration Setup writes enforce that origin; password inputs are bounded at bcrypt's 72-byte limit; account-password reauthentication is rate-limited; private iCalendar feeds are exact-format, non-cacheable, and line-injection-safe; HSTS is enabled; and `npm start` validates the HTTPS origin, persistent volume, encryption key, and real provider mode before migration. Verification passes TypeScript, 40/40 unit/foundation/migration/configuration tests, 170/170 scenarios, 17/17 final focused Integration Setup browser checks, 161/161 complete browser checks, the 65-page production build, and standalone packaging. This schema-neutral checkpoint is documented in `docs/evidence/CROSS_MODULE_SECURITY_HARDENING_CHECKPOINT_2026-09-20.md` and is not deployed.
+- Email verification passes 35/35 unit/foundation/migration checks, 167/167 production-like scenarios, 17/17 secure Integration Setup browser checks, and 161/161 browser checks across all eleven suites. TypeScript, the 65-page production build, standalone packaging, and unchanged locked npm 10.8.2 production/full audits are green with zero vulnerabilities.
+- Commit `1c9fba8` is live in Railway production as deployment `079691a9-89a8-4a9a-abf6-03b67065f5d9` on schema v15. The verified Railway snapshot and automatic in-volume schema-v14 backup preceded migration 15; startup and restart idempotency, `/api/health/ready`, and signed-out route/API protections were verified. Real Resend credential/domain and approved live-recipient delivery remain external operational gates.
+- Cross-module security hardening is complete locally after schema v15: one canonical production origin replaces forwarded-host trust; login/logout/questionnaire/Integration Setup writes enforce that origin; password inputs are bounded at bcrypt's 72-byte limit; account-password reauthentication is rate-limited; every API response is explicitly private/non-cacheable; private iCalendar feeds are exact-format and line-injection-safe; HSTS is enabled; and `npm start` validates the HTTPS origin, persistent volume, encryption key, and real provider mode before migration.
+- Final release QA inventories all 73 API routes, 50 read methods, and 69 mutation methods; completes the route-by-route actor/session/origin/CSRF and abuse-budget review; and passes TypeScript, 42/42 unit/foundation/migration/configuration/security tests, 170/170 scenarios, 161/161 module browser checks, and an 8/8 Chrome/Edge desktop/phone matrix. A fresh v1→v15 database verifies integrity `ok` with zero foreign-key violations; the production launcher reaches ready from a clean schema; the 65-page build and standalone packaging pass. Evidence is `docs/evidence/FINAL_RELEASE_QA_CHECKPOINT_2026-09-21.md`. This schema-neutral checkpoint is not deployed.
 - All ten requirements-led UI modules have focused Playwright coverage, production builds, and visible human click QA; the original `GanttChart.tsx` remains the Plan foundation and now persists through the scheduling APIs.
 - Fresh cross-module QA on September 16, 2026 passed 261/261 automated checks and visible Chrome click testing. Seven naming, lifecycle, action, calendar-context, modal-focus, and deployment-reliability defects were fixed; full evidence and remaining release gaps are recorded in `docs/QA_GAP_ANALYSIS_2026-09-16.md`
 
@@ -69,12 +71,10 @@ Scott completed all 55 original workshop questions and all 19 follow-up question
 ## Not complete Reboot v1 scope
 
 - Approved real Resend account/domain entry, one controlled live recipient test, production worker scheduling/alerting, and webhook operations; durable invitation/reset/operational delivery is complete locally
-- Final persistent Owner, Admin, Employee (Internal), and External/Client permissions; the complete UI review module is implemented
-- Live-account verification of the deployed Resource, Project, Gantt, Event/Calendar, Google, and Microsoft checkpoints; schemas v7–v14 are live and readiness-verified
-- Production deployment and live-volume verification of the locally complete transactional-email schema-v15 checkpoint
-- Production deployment and live-volume verification of the locally complete Project Templates checkpoint
+- Final business acceptance of the implemented Owner, Admin, Employee (Internal), and External/Client permission model; the route/tenant audit and automated Role matrix are complete
+- Live-account verification of the deployed Resource, Project, Gantt, Event/Calendar, Google, Microsoft, and email checkpoints; schemas v7–v15 are live and readiness-verified
 - Live Google Cloud credential entry/verification, scheduled worker operation, and live-account smoke testing; OAuth, encrypted tokens, one-way delivery, mapping/retry/reconciliation, monitoring, disconnect, and resume are implemented and deployed
 - Real Microsoft Entra/Graph credential entry and approved-tenant live OneDrive/SharePoint smoke testing; OAuth, encryption, root/folder mapping, create/link/open/recovery, lifecycle preservation, and authorization enforcement are implemented and deployed
-- Final mobile/touch pass and release browser matrix
+- Safari, mobile Safari, physical mobile Chrome, screen-reader, contrast, zoom, and formal accessibility release matrix; local Chrome/Edge desktop/phone automation is complete
 
 The current application is a tested prototype and requirements platform, not the completed Reboot v1 release.

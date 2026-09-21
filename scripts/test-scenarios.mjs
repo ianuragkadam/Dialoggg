@@ -309,6 +309,10 @@ try {
     assert.equal(response.headers.get("x-frame-options"), "DENY");
     assert.equal(response.headers.get("referrer-policy"), "no-referrer");
     assert.match(response.headers.get("strict-transport-security") || "", /max-age=63072000/);
+    const api = await anonymous.request("/api/me");
+    assert.match(api.headers.get("cache-control") || "", /private/);
+    assert.match(api.headers.get("cache-control") || "", /no-store/);
+    assert.equal(api.headers.get("pragma"), "no-cache");
   });
 
   await check("canonical origin rejects missing and forged login origins", async () => {
