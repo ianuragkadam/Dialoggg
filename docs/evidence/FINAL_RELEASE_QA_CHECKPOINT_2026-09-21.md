@@ -64,9 +64,11 @@ The eleven-suite total is Project Types 14, Templates 15, Company Administration
 
 ## Production and authorization boundary
 
-Production remains on commit `1c9fba8`, deployment `079691a9-89a8-4a9a-abf6-03b67065f5d9`, schema v15. Backup `78aea00b-0e02-4732-81c2-2c9d04b364e7` and the automatic in-volume v14 backup SHA-256 `80c5c872f465c629d2a578d5e52df5916b59c832f3a8794e53ecf5278d781f2e` are the retained evidence for that completed migration.
+The user authorized deployment of this final checkpoint. Fresh Railway backup `pre-final-71fdcea` is retained as backup `59557f7c-f9e9-4ba3-a395-3b99330f3c29` (external snapshot `vs_1789967758519_rdtvlk19vkl1h226`, 1059 MB, no expiry). The exact clean archive SHA-256 was `79E179C3936274D69B69BE75EEFD3477A6DC7D6BE9931CD93338F8067C264981`; it excluded the eight user-owned pre-development changes.
 
-This final-QA checkpoint must not be deployed without a new verified production backup and separate explicit user authorization naming the final commit. A release must then verify build/start logs, schema v15 idempotency, readiness, signed-out protections, authenticated Role/tenant smoke tests, data persistence, and rollback position.
+Commit `71fdcea` is live as Railway deployment `f23e0f82-6b62-4f03-a88b-40ee60af9503`, image digest `sha256:2ecaabada63bfd86dbebbfd553fb29747e1573da2039af724fd1a14e82f95c61`. The 65-page build and standalone packaging completed successfully. Initial startup and the explicit restart both reported schema v15 already current; restart Ready time was 488 ms. `/api/health/ready` returned HTTP 200, `/projects` redirected to Login, module APIs returned 401, Platform provider settings returned 403, a forged-origin login POST returned 403, all API checks carried private/no-store and HSTS, the persistent volume remained READY at 1058.889728 MB, and no HTTP 5xx was observed. The expected SIGTERM from the explicit restart is dispositioned as normal process replacement. No stored credential was inspected and no authenticated production record was created.
+
+Production-authenticated Role/tenant workflows were not exercised because no separate authorization to use stored credentials or create production QA records was granted. Their automated local gates remain green; real provider/account tests remain external gates below.
 
 ## External release gates
 
