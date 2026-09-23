@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ActionFeedback, { type FeedbackKind } from "@/components/ActionFeedback";
 
 type Snapshot = {
   status: string;
@@ -37,12 +38,13 @@ export default function PlatformGoogleSettings() {
   const [clientSecret, setClientSecret] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [message, setMessage] = useState("Loading Google settings…");
+  const [feedbackKind, setFeedbackKind] = useState<FeedbackKind>("info");
   const [busy, setBusy] = useState(false);
 
   async function load() {
     const response = await fetch("/api/v1/platform/integration-settings/google", { cache: "no-store" });
     const result = await response.json();
-    if (!response.ok) { setMessage(result.error?.message || "Google settings are unavailable."); return; }
+    if (!response.ok) { setFeedbackKind("error"); setMessage(result.error?.message || "Google settings are unavailable."); return; }
     const next = result.data as Snapshot;
     setSnapshot(next); setConfig({ privacyStatus: "draft", ...next.config }); setEnvironment(next.environment); setMessage("");
   }
@@ -50,7 +52,7 @@ export default function PlatformGoogleSettings() {
   useEffect(() => { void load(); }, []);
 
   async function action(name: string, extra: Record<string, unknown> = {}) {
-    setBusy(true); setMessage(name === "save" ? "Saving encrypted Google settings…" : "Updating Google settings…");
+    setBusy(true); setFeedbackKind("info"); setMessage(name === "save" ? "Saving encrypted Google settings…" : "Updating Google settings…");
     try {
       const response = await fetch("/api/v1/platform/integration-settings/google", {
         method: "POST",
@@ -58,12 +60,13 @@ export default function PlatformGoogleSettings() {
         body: JSON.stringify({ action: name, currentPassword, ...extra }),
       });
       const result = await response.json();
-      if (!response.ok) { setMessage(result.error?.message || "Google settings could not be updated."); return; }
+      if (!response.ok) { setFeedbackKind("error"); setMessage(result.error?.message || "Google settings could not be updated."); return; }
       if (result.data?.authorizationUrl) { window.location.assign(result.data.authorizationUrl); return; }
       const next = result.data as Snapshot;
       setSnapshot(next); setConfig({ privacyStatus: "draft", ...next.config }); setEnvironment(next.environment); setClientSecret(""); setCurrentPassword("");
-      setMessage(name === "save" ? "Saved encrypted settings. Complete real OAuth verification before User connections are enabled." : "Google settings updated.");
-    } finally { setBusy(false); }
+      setFeedbackKind("success"); setMessage(name === "save" ? "Saved encrypted settings. Complete real OAuth verification before User connections are enabled." : "Google settings updated.");
+    } catch { setFeedbackKind("error"); setMessage("Google settings are temporarily unavailable. Try again."); }
+    finally { setBusy(false); }
   }
 
   const status = label(snapshot);
@@ -93,7 +96,7 @@ export default function PlatformGoogleSettings() {
       <button disabled={busy || !snapshot?.credential.configured} onClick={() => void action("retry")} className="rounded border px-4 py-2 text-sm font-bold">Retry verification</button>
       <button disabled={busy || !snapshot?.credential.configured} onClick={() => window.confirm("Revoke the active Google client secret version?") && void action("revoke")} className="rounded border border-red-300 px-4 py-2 text-sm font-bold text-red-800 disabled:opacity-40">Revoke</button>
     </div>
-    <p role="status" aria-live="polite" className="text-sm text-slate-700">{message}</p>
+    <ActionFeedback message={message} kind={feedbackKind} />
   </section>;
 }
 

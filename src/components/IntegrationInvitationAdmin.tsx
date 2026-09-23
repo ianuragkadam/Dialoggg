@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ActionFeedback, { type FeedbackKind } from "@/components/ActionFeedback";
 
 function csrfToken() {
   return document.cookie.split("; ").find(item => item.startsWith("dialoggg_csrf="))?.split("=").slice(1).join("=") || "";
@@ -10,6 +11,7 @@ export default function IntegrationInvitationAdmin() {
   const [authorized, setAuthorized] = useState(false);
   const [links, setLinks] = useState<{ workshopUrl: string; reviewUrl: string; expiresAt: string } | null>(null);
   const [message, setMessage] = useState("");
+  const [feedbackKind, setFeedbackKind] = useState<FeedbackKind>("info");
 
   function randomToken() {
     const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -22,7 +24,7 @@ export default function IntegrationInvitationAdmin() {
   }
 
   async function issue() {
-    setMessage("Issuing fresh links…");
+    setFeedbackKind("info"); setMessage("Issuing fresh links…");
     const workshopToken = randomToken();
     const reviewToken = randomToken();
     const response = await fetch("/api/v1/platform/integration-setup-invitations", {
@@ -31,9 +33,9 @@ export default function IntegrationInvitationAdmin() {
       body: JSON.stringify({ scopeKind: "platform", companyId: null, expiresInDays: 7, authorizePlatformSecrets: authorized, label: "Scott integration setup", workshopTokenHash: await tokenHash(workshopToken), reviewTokenHash: await tokenHash(reviewToken) }),
     });
     const result = await response.json();
-    if (!response.ok) { setMessage(result.error?.message || "Links could not be issued."); return; }
+    if (!response.ok) { setFeedbackKind("error"); setMessage(result.error?.message || "Links could not be issued."); return; }
     setLinks({ workshopUrl: `${result.data.baseUrl}/integration-setup#token=${workshopToken}`, reviewUrl: `${result.data.baseUrl}/integration-setup-review#token=${reviewToken}`, expiresAt: result.data.expiresAt });
-    setMessage("Fresh links issued. Older links with this scope are revoked.");
+    setFeedbackKind("success"); setMessage("Fresh links issued. Older links with this scope are revoked.");
   }
 
   return <section className="space-y-6">
@@ -49,7 +51,7 @@ export default function IntegrationInvitationAdmin() {
         <span><strong>I explicitly authorize access to platform credentials.</strong><br /><span className="text-sm">Platform Google, Microsoft, and Resend credentials are never available to ordinary company Owners or Admins.</span></span>
       </label>
       <button className="rounded bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-50" disabled={!authorized} onClick={() => void issue()}>Issue and rotate links</button>
-      <p role="status" aria-live="polite" className="text-sm text-slate-700">{message}</p>
+      <ActionFeedback message={message} kind={feedbackKind} />
     </section>
     {links && <section className="space-y-3 rounded-xl border border-green-300 bg-green-50 p-5">
       <h2 className="text-xl font-bold">Copy these links now</h2>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { authenticatedFetch } from "@/lib/client-fetch";
+import PaginationControls, { pageItems } from "@/components/PaginationControls";
 
 type AffectedProject = { id: number; name: string };
 type ProjectTypeItem = {
@@ -53,18 +54,21 @@ export default function ProjectTypesPrototype({ initialItems }: { initialItems: 
   const [discardOpen, setDiscardOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [page, setPage] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastTriggerRef = useRef<HTMLElement | null>(null);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleItems = useMemo(() => items
+  const filteredItems = useMemo(() => items
     .filter(item => item.name.toLocaleLowerCase().includes(normalizedQuery))
     .sort((a, b) => a.name.localeCompare(b.name)), [items, normalizedQuery]);
+  const visibleItems = pageItems(filteredItems, page);
   const assignedProjects = items.reduce((total, item) => total + item.projectCount, 0);
   const modalOpen = !!editor || !!deleteTarget || !!blockedTarget || discardOpen;
 
   useEffect(() => { if (editor && !discardOpen) window.setTimeout(() => inputRef.current?.focus(), 0); }, [editor, discardOpen]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 4500); return () => window.clearTimeout(timer); }, [toast]);
+  useEffect(() => { setPage(1); }, [normalizedQuery]);
   useEffect(() => {
     if (!modalOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -175,6 +179,7 @@ export default function ProjectTypesPrototype({ initialItems }: { initialItems: 
         <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[720px]"><thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Project Type</th><th className="px-5 py-3">Used by</th><th className="px-5 py-3">Last updated</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-200">{visibleItems.map(item => <tr key={item.id}><td className="px-5 py-4 font-semibold">{item.name}</td><td className="px-5 py-4 text-sm text-blue-700">{projectCountLabel(item.projectCount)}</td><td className="px-5 py-4 text-sm text-slate-500">{item.updatedLabel}</td><td className="px-5 py-4">{actionButtons(item)}</td></tr>)}</tbody></table></div>
         <div className="divide-y divide-slate-200 md:hidden">{visibleItems.map(item => <article key={item.id} className="space-y-4 p-4"><div className="flex items-start justify-between gap-4"><div><h3 className="font-bold">{item.name}</h3><p className="mt-1 text-sm font-semibold text-blue-700">{projectCountLabel(item.projectCount)}</p></div><span className="text-xs text-slate-500">{item.updatedLabel}</span></div>{actionButtons(item)}</article>)}</div>
       </>}
+      <PaginationControls page={page} totalItems={filteredItems.length} onPageChange={setPage} label="Project Types" />
     </section>
     <section aria-labelledby="project-type-rules" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 id="project-type-rules" className="font-bold">How Project Types work</h2><ul className="mt-3 grid gap-3 text-sm leading-6 text-slate-600 md:grid-cols-3"><li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">One type per Project</strong>Every Project must always have exactly one Project Type.</li><li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Company-specific</strong>Each company sees and manages only its own Project Types.</li><li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Safe deletion</strong>A type in use cannot be deleted until its Projects are reassigned.</li></ul></section>
     {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-sm rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl"><span aria-hidden="true" className="mr-2 text-emerald-400">✓</span>{toast}</div>}

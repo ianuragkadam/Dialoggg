@@ -27,12 +27,15 @@ export default async function AccountPage() {
           </>
         )}
       </div>
-      <div className="rounded border border-blue-200 bg-white p-6 shadow-sm">
+      {company ? <div className="rounded border border-blue-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><h2 className="font-semibold">Google Calendar</h2><p className="mt-1 text-sm text-gray-600">Manage your personal one-way Dialoggg calendar connection and synchronization health.</p></div>
           <Link href="/account/google-calendar" className="rounded bg-blue-700 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-blue-800">Manage Google Calendar</Link>
         </div>
-      </div>
+      </div> : <div className="rounded border border-blue-200 bg-blue-50 p-6 text-blue-950 shadow-sm">
+        <h2 className="font-semibold">Google Calendar requires a company context</h2>
+        <p className="mt-1 text-sm">Platform Administration does not own a personal company schedule. Switch to one of your company memberships before managing a personal Google Calendar connection.</p>
+      </div>}
       <ChangePasswordForm />
     </div>
   );

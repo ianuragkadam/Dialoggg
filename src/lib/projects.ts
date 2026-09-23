@@ -15,6 +15,7 @@ export function validateProjectInput(input: Record<string, unknown>, companyId: 
   for (const [key, label] of required) if (!String(input[key] ?? "").trim()) fields[key] = `Enter the ${label}.`;
   if (String(input.name ?? "").trim().length > 100) fields.name = "Use 100 characters or fewer.";
   if (String(input.clientEmail ?? "").trim() && !/^\S+@\S+\.\S+$/.test(String(input.clientEmail).trim())) fields.clientEmail = "Enter a valid Client Email.";
+  if (String(input.phone ?? "").trim() && !/^\d{1,10}$/.test(String(input.phone).trim())) fields.phone = "Use digits only, up to 10 digits.";
   if (!validDate(String(input.startDate ?? ""))) fields.startDate = "Choose a valid Project Start Date.";
   if (!activeProjectTypeId(input.projectTypeId, companyId)) fields.projectTypeId = "Choose a valid company Project Type.";
   return fields;

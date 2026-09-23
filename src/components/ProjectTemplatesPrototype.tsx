@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { authenticatedFetch } from "@/lib/client-fetch";
 import type { ProjectTemplateUiItem } from "@/lib/project-templates-ui";
+import PaginationControls, { pageItems } from "@/components/PaginationControls";
 
 type ApiError = { error?: { message?: string; fields?: Record<string, string> } };
 
@@ -28,14 +29,16 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [pageError, setPageError] = useState("");
+  const [page, setPage] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleItems = useMemo(
+  const filteredItems = useMemo(
     () => items.filter(item => `${item.name} ${item.sourceProject}`.toLocaleLowerCase().includes(normalizedQuery)),
     [items, normalizedQuery],
   );
+  const visibleItems = pageItems(filteredItems, page);
   const totalTasks = items.reduce((sum, item) => sum + item.taskCount, 0);
   const modalOpen = !!renameTarget || !!deleteTarget || discardOpen;
 
@@ -48,6 +51,8 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
     const timer = window.setTimeout(() => setToast(""), 4500);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => { setPage(1); }, [normalizedQuery]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -226,6 +231,7 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
             ))}
           </div>
         )}
+        <PaginationControls page={page} totalItems={filteredItems.length} onPageChange={setPage} label="Templates" />
       </section>
 
       <section aria-labelledby="template-rules" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

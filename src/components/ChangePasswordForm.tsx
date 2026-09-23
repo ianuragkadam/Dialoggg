@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
 import { MAX_PASSWORD_BYTES, MIN_PASSWORD_CHARACTERS, passwordByteLength } from "@/lib/password-policy";
+import PasswordField from "@/components/PasswordField";
 
 export default function ChangePasswordForm() {
   const [cur, setCur] = useState("");
@@ -28,19 +29,11 @@ export default function ChangePasswordForm() {
     }
   }
 
-  const field = "w-full px-3 py-2 border rounded text-sm focus:ring-2 focus:ring-blue-500 outline-none";
-
   return (
     <form onSubmit={submit} className="bg-white border rounded shadow-sm p-6 space-y-3 max-w-md">
       <h2 className="font-semibold">Change Password</h2>
-      <div>
-        <label htmlFor="current-password" className="block text-sm font-medium mb-1">Current Password</label>
-        <input id="current-password" name="current-password" autoComplete="current-password" type="password" value={cur} onChange={e => setCur(e.target.value)} className={field} required />
-      </div>
-      <div>
-        <label htmlFor="new-password" className="block text-sm font-medium mb-1">New Password</label>
-        <input id="new-password" name="new-password" autoComplete="new-password" type="password" value={next} onChange={e => setNext(e.target.value)} className={field} placeholder={`${MIN_PASSWORD_CHARACTERS}–${MAX_PASSWORD_BYTES} UTF-8 bytes`} required />
-      </div>
+      <PasswordField id="current-password" label="Current Password" required autoComplete="current-password" value={cur} onChange={setCur} />
+      <PasswordField id="new-password" label="New Password" required autoComplete="new-password" value={next} onChange={setNext} placeholder={`${MIN_PASSWORD_CHARACTERS}–${MAX_PASSWORD_BYTES} UTF-8 bytes`} />
       {msg && <div className={`text-sm ${msg.ok ? "text-green-700" : "text-red-600"}`}>{msg.text}</div>}
       <button type="submit" disabled={saving} className="bg-blue-700 text-white px-5 py-2 rounded font-semibold hover:bg-blue-800 disabled:opacity-60">
         {saving ? "Saving…" : "Update Password"}

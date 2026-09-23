@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import PasswordField from "@/components/PasswordField";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
@@ -50,18 +51,7 @@ export default function LoginForm() {
               className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
-          <div>
-            <label htmlFor="login-password" className="block text-sm font-medium mb-1">Password</label>
-            <input
-              id="login-password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={event => setPassword(event.target.value)}
-              className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none"
-            />
-          </div>
+          <PasswordField id="login-password" label="Password" required autoComplete="current-password" value={password} onChange={setPassword} className="w-full rounded border px-3 py-2 pr-11 outline-none focus:ring-2 focus:ring-blue-500" />
           {error && <div role="alert" className="text-red-600 text-sm">{error}</div>}
           <button
             type="submit"

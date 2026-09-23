@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ActionFeedback, { type FeedbackKind } from "@/components/ActionFeedback";
 
 type DeliveryItem = {
   id: number;
@@ -53,6 +54,7 @@ export default function PlatformResendSettings() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [testRecipient, setTestRecipient] = useState("");
   const [message, setMessage] = useState("Loading Resend settings…");
+  const [feedbackKind, setFeedbackKind] = useState<FeedbackKind>("info");
   const [busy, setBusy] = useState(false);
 
   function accept(next: Snapshot) {
@@ -66,7 +68,7 @@ export default function PlatformResendSettings() {
   async function load() {
     const response = await fetch("/api/v1/platform/integration-settings/resend", { cache: "no-store" });
     const result = await response.json();
-    if (!response.ok) { setMessage(result.error?.message || "Resend settings are unavailable."); return; }
+    if (!response.ok) { setFeedbackKind("error"); setMessage(result.error?.message || "Resend settings are unavailable."); return; }
     accept(result.data as Snapshot);
     setMessage("");
   }
@@ -74,7 +76,7 @@ export default function PlatformResendSettings() {
   useEffect(() => { void load(); }, []);
 
   async function action(name: string, extra: Record<string, unknown> = {}) {
-    setBusy(true);
+    setBusy(true); setFeedbackKind("info");
     setMessage(name === "save" ? "Saving encrypted Resend settings…" : "Updating Resend settings…");
     try {
       const response = await fetch("/api/v1/platform/integration-settings/resend", {
@@ -87,12 +89,12 @@ export default function PlatformResendSettings() {
         }),
       });
       const result = await response.json();
-      if (!response.ok) { setMessage(result.error?.message || "Resend settings could not be updated."); return; }
+      if (!response.ok) { setFeedbackKind("error"); setMessage(result.error?.message || "Resend settings could not be updated."); return; }
       accept(result.data as Snapshot);
       if (["save", "disable", "enable", "revoke", "retry_job"].includes(name)) setCurrentPassword("");
-      setMessage(name === "validate" || name === "retry_validation" ? "Resend domain and sender verified." : name === "test_send" ? "One confirmed test email was accepted by Resend." : "Resend settings updated.");
+      setFeedbackKind("success"); setMessage(name === "validate" || name === "retry_validation" ? "Resend domain and sender verified." : name === "test_send" ? "One confirmed test email was accepted by Resend." : "Resend settings updated.");
     } catch {
-      setMessage("Resend settings are temporarily unavailable. Try again.");
+      setFeedbackKind("error"); setMessage("Resend settings are temporarily unavailable. Try again.");
     } finally { setBusy(false); }
   }
 
@@ -127,7 +129,7 @@ export default function PlatformResendSettings() {
     {snapshot?.status === "verified" && <div className="flex flex-col gap-2 rounded border p-3 sm:flex-row sm:items-end"><div className="flex-1"><Field label="Confirmed test recipient" type="email" value={testRecipient} onChange={setTestRecipient} /></div><button disabled={busy || !testRecipient} className="rounded border border-emerald-700 px-4 py-2.5 text-sm font-bold text-emerald-800 disabled:opacity-40" onClick={() => window.confirm(`Send one Resend test email to ${testRecipient}?`) && void action("test_send", { recipient: testRecipient, confirmed: true })}>Confirm and send one test</button></div>}
     <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 lg:grid-cols-7">{["pending", "running", "retry", "completed", "dead", "cancelled"].map(key => <div key={key} className="rounded border bg-slate-50 p-2"><strong className="block text-lg">{snapshot?.delivery[key] || 0}</strong><span className="capitalize text-slate-600">{key}</span></div>)}</div>
     {retryable.length > 0 && <div><h3 className="font-bold">Delivery attention</h3><div className="mt-2 space-y-2">{retryable.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-sm"><span><strong>{item.kind.replaceAll("_", " ")}</strong> · {item.recipientDomain || "domain unavailable"} · {item.attempts}/{item.maxAttempts} attempts · {item.lastErrorCode || item.status}</span><button disabled={busy || !currentPassword} className="rounded border border-amber-700 px-3 py-1 font-bold text-amber-900 disabled:opacity-40" onClick={() => void action("retry_job", { jobId: item.id })}>Retry now</button></div>)}</div></div>}
-    <p role="status" aria-live="polite" className="text-sm text-slate-700">{message}</p>
+    <ActionFeedback message={message} kind={feedbackKind} />
   </section>;
 }
 

@@ -1,20 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatProjectDate, normalizeProjectStatus, projectTypeFor, type ProjectUiRecord, type ProjectUiStatus } from "@/lib/projects-ui";
+import PaginationControls, { pageItems } from "@/components/PaginationControls";
 
 type StatusFilter = "all" | ProjectUiStatus;
 
 export default function ProjectsPrototype({ projects, canManage, external = false }: { projects: ProjectUiRecord[]; canManage: boolean; external?: boolean }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
+  const [page, setPage] = useState(1);
   const projectTypes = useMemo(() => [...new Set(projects.map(projectTypeFor))].sort((a, b) => a.localeCompare(b)), [projects]);
   const [types, setTypes] = useState<string[]>(projectTypes);
-  const visible = useMemo(() => projects.filter(project => {
+  const filtered = useMemo(() => projects.filter(project => {
     const matchesQuery = `${project.name} ${project.client_name || ""} ${projectTypeFor(project)}`.toLowerCase().includes(query.trim().toLowerCase());
     return matchesQuery && (status === "all" || normalizeProjectStatus(project.status) === status) && types.includes(projectTypeFor(project));
   }), [projects, query, status, types]);
+  const visible = pageItems(filtered, page);
+  useEffect(() => { setPage(1); }, [query, status, types]);
   const counts = { active: projects.filter(project => normalizeProjectStatus(project.status) === "active").length, completed: projects.filter(project => normalizeProjectStatus(project.status) === "completed").length, archived: projects.filter(project => normalizeProjectStatus(project.status) === "archived").length };
 
   return <div className="mx-auto max-w-7xl space-y-6 pb-10">
@@ -23,6 +27,7 @@ export default function ProjectsPrototype({ projects, canManage, external = fals
     <section aria-label="Project summary" className="grid gap-3 sm:grid-cols-3"><Summary label="Active" value={counts.active} /><Summary label="Completed" value={counts.completed} /><Summary label="Archived" value={counts.archived} /></section>
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="project-directory-title"><div className="space-y-4 border-b border-slate-200 p-4"><div><h2 id="project-directory-title" className="font-bold text-slate-950">Project directory</h2><p className="mt-1 text-sm text-slate-500">Current work defaults to Active. Completed and Archived Projects remain intentionally recoverable.</p></div><div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_190px]"><label className="sr-only" htmlFor="project-search">Search Projects</label><input id="project-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search Project, client, or type" className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600" /><label className="sr-only" htmlFor="project-status">Filter Projects by status</label><select id="project-status" value={status} onChange={event => setStatus(event.target.value as StatusFilter)} className="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm"><option value="active">Active</option><option value="completed">Completed</option><option value="archived">Archived</option><option value="all">All statuses</option></select></div><fieldset className="rounded-lg border border-slate-200 bg-slate-50 p-3"><legend className="px-1 text-xs font-bold uppercase tracking-wide text-slate-500">Filter Projects by Project Type</legend><div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">{projectTypes.map(item => <label key={item} className="text-sm"><input type="checkbox" checked={types.includes(item)} onChange={() => setTypes(current => current.includes(item) ? current.filter(value => value !== item) : [...current, item])} className="mr-2"/>{item}</label>)}<button type="button" onClick={() => setTypes(projectTypes)} className="text-sm font-bold text-blue-700 underline">All Project Types</button></div></fieldset></div>
       {!visible.length ? <div className="px-6 py-14 text-center"><h3 className="font-bold text-slate-950">No matching Projects</h3><p className="mt-1 text-sm text-slate-500">Change the search, status, or Project Type filters.</p><button type="button" onClick={() => { setQuery(""); setStatus("all"); setTypes(projectTypes); }} className="mt-4 min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold">Clear filters</button></div> : <div className="divide-y divide-slate-200">{visible.map(project => <article key={project.id} className="grid gap-4 p-5 lg:grid-cols-[minmax(230px,1.2fr)_170px_140px_190px_auto] lg:items-center"><div><h3 className="font-bold text-slate-950">{project.name}</h3><p className="mt-1 text-sm text-slate-500">{project.client_name || "No client name"}</p></div><div><p className="text-xs font-bold uppercase tracking-wide text-slate-400">Project Type</p><p className="mt-1 text-sm font-semibold text-slate-800">{projectTypeFor(project)}</p></div><div><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${normalizeProjectStatus(project.status) === "active" ? "bg-emerald-100 text-emerald-800" : normalizeProjectStatus(project.status) === "completed" ? "bg-blue-100 text-blue-800" : "bg-slate-200 text-slate-700"}`}>{normalizeProjectStatus(project.status) === "active" ? "Active" : normalizeProjectStatus(project.status) === "completed" ? "Completed" : "Archived"}</span></div><div className="text-sm text-slate-600"><strong className="block text-xs uppercase tracking-wide text-slate-400">Project dates</strong>{formatProjectDate(project.start_date)}<span className="block text-xs text-slate-500">End: {formatProjectDate(project.derived_end_date || project.end_date)}</span></div><div className="flex flex-wrap gap-2 lg:justify-end"><Link href={`/projects/${project.id}`} className="inline-flex min-h-10 items-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700">View</Link>{canManage && <Link href={`/projects/${project.id}/edit`} className="inline-flex min-h-10 items-center rounded-lg border border-blue-300 px-3 py-2 text-sm font-bold text-blue-800">Edit</Link>}</div></article>)}</div>}
+      <PaginationControls page={page} totalItems={filtered.length} onPageChange={setPage} label="Projects" />
     </section>
   </div>;
 }

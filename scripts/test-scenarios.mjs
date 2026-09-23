@@ -1347,7 +1347,7 @@ try {
         city: "Reading",
         state: "PA",
         zip: "19601",
-        phone: "717-555-0100",
+        phone: "7175550100",
         start_date: "2026-01-01",
         end_date: "2026-02-01",
         note: "Automated isolated scenario",
@@ -1361,7 +1361,7 @@ try {
   await check("company B admin creates its own project", async () => {
     const response = await adminB.request("/api/projects", {
       method: "POST",
-      body: { name: "Scenario Project B", project_type_id: projectTypeBId, client_name: "Client B", client_email: "client-b@example.test", address: "200 Scenario Way", city: "Lancaster", state: "PA", zip: "17601", phone: "717-555-0200", start_date: "2026-03-01" },
+      body: { name: "Scenario Project B", project_type_id: projectTypeBId, client_name: "Client B", client_email: "client-b@example.test", address: "200 Scenario Way", city: "Lancaster", state: "PA", zip: "17601", phone: "7175550200", start_date: "2026-03-01" },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
     projectBId = response.data.id;
@@ -1468,13 +1468,16 @@ try {
     assert.equal(incomplete.data.error.code, "VALIDATION_FAILED");
     assert.ok(incomplete.data.error.fields.clientName);
     assert.ok(incomplete.data.error.fields.startDate);
+    const invalidPhone = await adminA.request("/api/v1/projects", { method: "POST", body: { name: "Invalid Phone", projectTypeId: projectTypeAId, clientName: "Phone Client", clientEmail: "phone@example.test", address: "1 Phone Way", city: "Reading", state: "PA", zip: "19601", phone: "717-letters-12345", startDate: "2026-04-01" } });
+    assert.equal(invalidPhone.status, 400);
+    assert.match(invalidPhone.data.error.fields.phone, /digits only/);
   });
 
   await check("Project v1 create persists tenant-safe assignments", async () => {
-    const crossTenant = await adminA.request("/api/v1/projects", { method: "POST", body: { name: "Cross Assignment", projectTypeId: projectTypeAId, clientName: "Cross", clientEmail: "cross@example.test", address: "1 Cross Way", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0300", startDate: "2026-04-01", assignmentIds: [adminBMembershipId] } });
+    const crossTenant = await adminA.request("/api/v1/projects", { method: "POST", body: { name: "Cross Assignment", projectTypeId: projectTypeAId, clientName: "Cross", clientEmail: "cross@example.test", address: "1 Cross Way", city: "Reading", state: "PA", zip: "19601", phone: "7175550300", startDate: "2026-04-01", assignmentIds: [adminBMembershipId] } });
     assert.equal(crossTenant.status, 400);
     assert.ok(crossTenant.data.error.fields.assignments);
-    const created = await adminA.request("/api/v1/projects", { method: "POST", body: { name: "Lifecycle Project", projectTypeId: projectTypeAId, clientName: "Lifecycle Client", clientEmail: "lifecycle@example.test", address: "300 Lifecycle Lane", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0301", startDate: "2026-04-06", note: "Lifecycle evidence", assignmentIds: [adminAMembershipId, ownerAMembershipId] } });
+    const created = await adminA.request("/api/v1/projects", { method: "POST", body: { name: "Lifecycle Project", projectTypeId: projectTypeAId, clientName: "Lifecycle Client", clientEmail: "lifecycle@example.test", address: "300 Lifecycle Lane", city: "Reading", state: "PA", zip: "19601", phone: "7175550301", startDate: "2026-04-06", note: "Lifecycle evidence", assignmentIds: [adminAMembershipId, ownerAMembershipId] } });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     lifecycleProjectId = created.data.data.project.id;
     assert.equal(created.data.data.project.status, "active");
@@ -1484,7 +1487,7 @@ try {
 
   await check("Project v1 update uses optimistic versions and persists fields", async () => {
     const current = await adminA.request(`/api/projects/${lifecycleProjectId}`);
-    const body = { name: "Lifecycle Project Updated", projectTypeId: projectTypeAId, clientName: "Lifecycle Client", clientEmail: "lifecycle@example.test", address: "301 Lifecycle Lane", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0301", startDate: "2026-04-06", note: "Updated lifecycle evidence", assignmentIds: [adminAMembershipId, ownerAMembershipId], version: current.data.project.version, rebaseMode: "date-only" };
+    const body = { name: "Lifecycle Project Updated", projectTypeId: projectTypeAId, clientName: "Lifecycle Client", clientEmail: "lifecycle@example.test", address: "301 Lifecycle Lane", city: "Reading", state: "PA", zip: "19601", phone: "7175550301", startDate: "2026-04-06", note: "Updated lifecycle evidence", assignmentIds: [adminAMembershipId, ownerAMembershipId], version: current.data.project.version, rebaseMode: "date-only" };
     const updated = await adminA.request(`/api/v1/projects/${lifecycleProjectId}`, { method: "PUT", body });
     assert.equal(updated.status, 200, JSON.stringify(updated.data));
     assert.equal(updated.data.data.project.address, "301 Lifecycle Lane");
@@ -1557,7 +1560,7 @@ try {
     const current = await adminA.request(`/api/projects/${projectAId}`);
     const updated = await adminA.request(`/api/v1/projects/${projectAId}`, {
       method: "PUT",
-      body: { name: "Scenario Project A", projectTypeId: projectTypeAId, clientName: "Client A", clientEmail: "client-a@example.test", address: "100 Scenario Way", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0100", startDate: "2026-01-01", note: "Automated isolated scenario", assignmentIds: [adminAMembershipId], version: current.data.project.version, rebaseMode: "date-only" },
+      body: { name: "Scenario Project A", projectTypeId: projectTypeAId, clientName: "Client A", clientEmail: "client-a@example.test", address: "100 Scenario Way", city: "Reading", state: "PA", zip: "19601", phone: "7175550100", startDate: "2026-01-01", note: "Automated isolated scenario", assignmentIds: [adminAMembershipId], version: current.data.project.version, rebaseMode: "date-only" },
     });
     assert.equal(updated.status, 200, JSON.stringify(updated.data));
     const project = await adminA.request(`/api/projects/${projectAId}`);
@@ -1693,7 +1696,7 @@ try {
   await check("viewer cannot create projects", async () => {
     const response = await viewerA.request("/api/v1/projects", {
       method: "POST",
-      body: { name: "Forbidden Project", projectTypeId: projectTypeAId, clientName: "Forbidden", clientEmail: "forbidden@example.test", address: "1 Denied Way", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0999", startDate: "2026-01-01" },
+      body: { name: "Forbidden Project", projectTypeId: projectTypeAId, clientName: "Forbidden", clientEmail: "forbidden@example.test", address: "1 Denied Way", city: "Reading", state: "PA", zip: "19601", phone: "7175550999", startDate: "2026-01-01" },
     });
     assert.equal(response.status, 403);
     const lifecycle = await viewerA.request(`/api/v1/projects/${projectAId}/lifecycle`, { method: "PATCH", body: { action: "archive", version: 1 } });
@@ -2443,7 +2446,7 @@ try {
   await check("cross-company project update cannot alter data", async () => {
     const attempt = await adminB.request(`/api/v1/projects/${projectAId}`, {
       method: "PUT",
-      body: { name: "Cross-tenant project overwrite", projectTypeId: projectTypeBId, clientName: "Cross Tenant", clientEmail: "cross@example.test", address: "1 Escape Lane", city: "Nowhere", state: "PA", zip: "00000", phone: "000-000-0000", startDate: "2027-01-01", assignmentIds: [adminBMembershipId], version: 1, rebaseMode: "date-only" },
+      body: { name: "Cross-tenant project overwrite", projectTypeId: projectTypeBId, clientName: "Cross Tenant", clientEmail: "cross@example.test", address: "1 Escape Lane", city: "Nowhere", state: "PA", zip: "00000", phone: "0000000000", startDate: "2027-01-01", assignmentIds: [adminBMembershipId], version: 1, rebaseMode: "date-only" },
     });
     assert.equal(attempt.status, 404);
     const response = await adminA.request(`/api/projects/${projectAId}`);

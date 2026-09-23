@@ -48,7 +48,7 @@ export default function GoogleCalendarManager({ email, role }: { email: string; 
     try {
       const response = await fetch("/api/google-calendar", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": csrfToken() }, body: JSON.stringify({ action: name, ...extra }) });
       const result = await response.json();
-      if (!response.ok) { setMessage(result.error?.message || "The Google Calendar action failed."); await load(); return; }
+      if (!response.ok) { setMessage(result.error?.message || "The Google Calendar action failed."); return; }
       if (result.data?.authorizationUrl) { window.location.assign(result.data.authorizationUrl); return; }
       setSnapshot(result.data); setDialog(null); setAccepted(false);
       setMessage(name === "disconnect" ? `Disconnected. ${extra.mode === "retain" ? "Existing managed items were retained as stale copies." : "Managed Google items were removed where safe."}` : name === "resume" ? "Synchronization resumed after explicit health review." : "Reconciliation completed or was safely queued.");
@@ -72,7 +72,7 @@ export default function GoogleCalendarManager({ email, role }: { email: string; 
         <button data-testid="google-item-preview" onClick={() => setDialog("payload")} className="rounded border px-4 py-2 text-sm font-bold">Preview safe Google item</button>
       </div>
       {snapshot?.lastErrorCode && <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Actionable health:</strong> {snapshot.lastErrorCode}. Consent may have been revoked, permission may be missing, or Google may be unavailable. No token details are exposed.</div>}
-      <p role="status" aria-live="polite" className="mt-3 text-sm text-slate-700">{message}</p>
+      {message && <p role={message.includes("failed") || message.includes("unavailable") || message.includes("required") ? "alert" : "status"} aria-live="polite" className={`mt-3 rounded-lg border p-3 text-sm font-semibold ${message.includes("failed") || message.includes("unavailable") || message.includes("required") ? "border-red-200 bg-red-50 text-red-800" : "border-blue-200 bg-blue-50 text-blue-950"}`}>{message}</p>}
     </section>
 
     <section className="grid gap-4 lg:grid-cols-2">

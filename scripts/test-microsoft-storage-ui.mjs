@@ -101,7 +101,7 @@ try {
   const adminCsrf = csrfCookie(registration);
   const auth = authenticatedHeaders(registration, baseUrl);
   const projectName = "Pine Street Court";
-  const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: projectName, project_type_id: admin.defaultProjectTypeId, client_name: "Morgan Family", client_email: "morgan@example.test", address: "10 Pine Street", city: "Reading", state: "PA", zip: "19601", phone: "717-555-0120", start_date: "2026-09-15" }) });
+  const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: projectName, project_type_id: admin.defaultProjectTypeId, client_name: "Morgan Family", client_email: "morgan@example.test", address: "10 Pine Street", city: "Reading", state: "PA", zip: "19601", phone: "7175550120", start_date: "2026-09-15" }) });
   assert.equal(projectResult.response.status, 200);
   const projectId = projectResult.data.id;
   const database = new Database(path.join(dataDirectory, "dialoggg.db"));

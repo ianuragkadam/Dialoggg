@@ -174,7 +174,7 @@ try {
     await googleSettings.getByLabel("OAuth client secret").fill(clientSecret);
     await googleSettings.getByLabel("Current Platform Administrator password").fill("wrong-password");
     await googleSettings.getByRole("button", { name: "Save encrypted credential" }).click();
-    await googleSettings.getByRole("status").filter({ hasText: "Confirm your current Platform Administrator password" }).waitFor();
+    await googleSettings.getByRole("alert").filter({ hasText: "Confirm your current Platform Administrator password" }).waitFor();
     await googleSettings.getByText("Not configured", { exact: true }).waitFor();
   });
 
@@ -339,6 +339,14 @@ try {
       }
       assert.equal(verify.prepare("SELECT COUNT(*) count FROM integration_credential_version WHERE is_active = 1").get().count, 0);
     } finally { verify.close(); }
+  });
+
+  await check("Platform Account explains company context and blocks the personal Google manager", async () => {
+    await platformPage.goto(`${baseUrl}/account`);
+    await platformPage.getByText("Google Calendar requires a company context", { exact: true }).waitFor();
+    assert.equal(await platformPage.getByRole("link", { name: "Manage Google Calendar" }).count(), 0);
+    await platformPage.goto(`${baseUrl}/account/google-calendar`);
+    assert.equal(new URL(platformPage.url()).pathname, "/account");
   });
 
   await check("signed-out Google Calendar route returns to Login", async () => {

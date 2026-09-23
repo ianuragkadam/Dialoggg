@@ -74,6 +74,12 @@ async function exerciseRoutes(browser, baseUrl, viewport, session, routes) {
   const signedOut = await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
   assert.equal(signedOut?.status(), 200);
   assert.match(signedOut?.headers()["strict-transport-security"] || "", /max-age=63072000/);
+  const loginPassword = page.getByLabel("Password", { exact: true });
+  await loginPassword.fill("visibility-check");
+  await page.getByRole("button", { name: "Show password" }).click();
+  assert.equal(await loginPassword.getAttribute("type"), "text");
+  await page.getByRole("button", { name: "Hide password" }).click();
+  assert.equal(await loginPassword.getAttribute("type"), "password");
   await addSession(context, session);
 
   for (const route of routes) {
@@ -89,6 +95,16 @@ async function exerciseRoutes(browser, baseUrl, viewport, session, routes) {
 
   await page.keyboard.press("Tab");
   assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), "BODY", "keyboard focus did not enter the page");
+  if (viewport.width < 1024) {
+    const navigation = page.locator("#primary-navigation");
+    const closed = await navigation.boundingBox();
+    assert.ok(closed && closed.x < 0, `mobile navigation was open by default: ${JSON.stringify(closed)}`);
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await page.waitForTimeout(400);
+    const opened = await navigation.boundingBox();
+    assert.ok(opened && opened.x >= 0, `mobile navigation did not open: ${JSON.stringify(opened)}`);
+    await page.getByRole("button", { name: "Close navigation" }).first().click();
+  }
   assert.deepEqual(runtimeErrors, [], runtimeErrors.join(" | "));
   await context.close();
 }

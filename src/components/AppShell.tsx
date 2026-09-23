@@ -33,7 +33,7 @@ const MENU = [
 export default function AppShell({ user, children }: { user: User; children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const [contexts, setContexts] = useState<AuthContext[]>([]);
   const [activeContext, setActiveContext] = useState("");
   const [switchingContext, setSwitchingContext] = useState(false);
@@ -53,6 +53,8 @@ export default function AppShell({ user, children }: { user: User; children: Rea
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [user.id, user.user_type]);
+
+  useEffect(() => { setOpen(false); }, [pathname]);
 
   async function switchContext(value: string) {
     if (!value || value === activeContext) return;
@@ -81,10 +83,10 @@ export default function AppShell({ user, children }: { user: User; children: Rea
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="bg-blue-800 text-white shadow-md flex-none">
+      <header className="relative z-50 flex-none bg-blue-800 text-white shadow-md">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <button onClick={() => setOpen(!open)} className="lg:hidden text-2xl">☰</button>
+            <button type="button" onClick={() => setOpen(current => !current)} aria-controls="primary-navigation" aria-expanded={open} aria-label={open ? "Close navigation" : "Open navigation"} className="rounded p-1 text-2xl focus:outline-none focus:ring-2 focus:ring-white lg:hidden">☰</button>
             <div className="w-9 h-9 rounded bg-white text-blue-800 font-bold flex items-center justify-center">D</div>
             <div>
               <div className="font-bold text-lg leading-tight">Dialoggg</div>
@@ -101,9 +103,10 @@ export default function AppShell({ user, children }: { user: User; children: Rea
         </div>
       </header>
 
-      <div className="flex-1 flex">
-        <aside className={`${open ? "w-56" : "w-0 -ml-56"} transition-all flex-none bg-white border-r overflow-hidden`}>
-          <nav className="p-2 space-y-1">
+      <div className="flex flex-1">
+        {open && <button type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden" />}
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] flex-none transform overflow-y-auto border-r bg-white pt-16 shadow-xl transition-transform lg:static lg:z-auto lg:w-56 lg:max-w-none lg:translate-x-0 lg:pt-0 lg:shadow-none ${open ? "translate-x-0" : "-translate-x-full"}`}>
+          <nav id="primary-navigation" className="space-y-1 p-2" aria-label="Primary navigation">
             {MENU.filter(m => {
               if (m.platformOnly) return platformAdmin;
               if (platformAdmin && m.tenantOnly) return false;
@@ -113,7 +116,7 @@ export default function AppShell({ user, children }: { user: User; children: Rea
               const active = pathname === m.href || (m.href !== "/" && pathname.startsWith(m.href));
               return (
                 <Link
-                  key={m.href} href={m.href}
+                  key={m.href} href={m.href} onClick={() => setOpen(false)}
                   className={`flex items-center gap-2 px-3 py-2 rounded text-sm ${
                     active ? "bg-blue-100 text-blue-800 font-semibold" : "text-gray-700 hover:bg-gray-100"
                   }`}
@@ -126,7 +129,7 @@ export default function AppShell({ user, children }: { user: User; children: Rea
           </nav>
         </aside>
 
-        <main className="flex-1 min-w-0 overflow-auto p-4 bg-gray-50">
+        <main className="min-w-0 flex-1 overflow-auto bg-gray-50 p-3 sm:p-4">
           {children}
         </main>
       </div>

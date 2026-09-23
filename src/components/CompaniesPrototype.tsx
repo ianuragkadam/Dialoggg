@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { authenticatedFetch } from "@/lib/client-fetch";
 import type { CompanyAdminUiItem } from "@/lib/company-admin-ui";
+import PaginationControls, { pageItems } from "@/components/PaginationControls";
 
 type StatusFilter = "all" | "active" | "suspended";
 
@@ -16,16 +17,20 @@ export default function CompaniesPrototype({ initialItems }: { initialItems: Com
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
   const triggerRef = useRef<HTMLElement | null>(null);
-  const visibleItems = useMemo(() => {
+  const filteredItems = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     return items.filter(item => {
       const matchesQuery = `${item.name} ${item.ownerName} ${item.ownerEmail}`.toLocaleLowerCase().includes(normalized);
       return matchesQuery && (statusFilter === "all" || item.status === statusFilter);
     });
   }, [items, query, statusFilter]);
+  const visibleItems = pageItems(filteredItems, page);
   const active = items.filter(item => item.status === "active").length;
   const suspended = items.length - active;
+
+  useEffect(() => { setPage(1); }, [query, statusFilter]);
 
   useEffect(() => {
     if (!toast) return;
@@ -94,6 +99,7 @@ export default function CompaniesPrototype({ initialItems }: { initialItems: Com
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="companies-list-title">
         <div className="flex flex-col gap-4 border-b border-slate-200 p-4 lg:flex-row lg:items-end lg:justify-between"><div><h2 id="companies-list-title" className="font-bold text-slate-950">Platform companies</h2><p className="mt-1 text-sm text-slate-500">Company records are operational metadata, not permission to inspect tenant content.</p></div><div className="grid gap-3 sm:grid-cols-[minmax(240px,1fr)_170px]"><div><label htmlFor="company-search" className="sr-only">Search companies</label><input id="company-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search company or Owner" className="min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200" /></div><div><label htmlFor="company-status-filter" className="sr-only">Filter companies by status</label><select id="company-status-filter" value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilter)} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200"><option value="all">All statuses</option><option value="active">Active</option><option value="suspended">Suspended</option></select></div></div></div>
         {visibleItems.length === 0 ? <div className="px-6 py-14 text-center"><div aria-hidden="true" className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-2xl">🏢</div><h3 className="mt-4 font-bold text-slate-950">No matching companies</h3><p className="mt-1 text-sm text-slate-500">Change the search or status filter to see more companies.</p><button type="button" onClick={() => { setQuery(""); setStatusFilter("all"); }} className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">Clear filters</button></div> : <div className="divide-y divide-slate-200">{visibleItems.map(item => <article key={item.id} className="grid gap-4 p-5 hover:bg-slate-50 lg:grid-cols-[minmax(240px,1.4fr)_minmax(180px,1fr)_220px_auto] lg:items-center"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate font-bold text-slate-950">{item.name}</h3><span className={`rounded-full px-2 py-1 text-xs font-bold ${item.status === "active" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900"}`}>{item.status === "active" ? "Active" : "Suspended"}</span></div><p className="mt-1 text-xs text-slate-500">Created {item.createdLabel} · {item.timeZone}</p></div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">First Owner</p><p className="mt-1 text-sm font-semibold text-slate-800">{item.ownerName}</p><p className="truncate text-xs text-slate-500">{item.ownerEmail}</p></div><dl className="grid grid-cols-3 gap-2 text-center"><div><dt className="text-xs text-slate-500">Users</dt><dd className="font-bold text-slate-900">{item.users}</dd></div><div><dt className="text-xs text-slate-500">Resources</dt><dd className="font-bold text-slate-900">{item.resources}</dd></div><div><dt className="text-xs text-slate-500">Projects</dt><dd className="font-bold text-slate-900">{item.activeProjects}</dd></div></dl><div className="flex flex-wrap gap-2 lg:justify-end"><Link href={`/platform/companies/${item.id}`} className="min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-600">View</Link><button type="button" onClick={event => openStatusDialog(item, event)} aria-label={`${item.status === "active" ? "Suspend" : "Restore"} ${item.name}`} className={`min-h-10 rounded-lg border px-3 py-2 text-sm font-bold focus:outline-none focus:ring-2 ${item.status === "active" ? "border-amber-300 bg-white text-amber-800 focus:ring-amber-600" : "border-emerald-300 bg-white text-emerald-800 focus:ring-emerald-600"}`}>{item.status === "active" ? "Suspend" : "Restore"}</button></div></article>)}</div>}
+        <PaginationControls page={page} totalItems={filteredItems.length} onPageChange={setPage} label="companies" />
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="platform-boundary-title"><h2 id="platform-boundary-title" className="font-bold text-slate-950">Platform access boundary</h2><div className="mt-3 grid gap-3 text-sm leading-6 text-slate-600 md:grid-cols-3"><p className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Separate role</strong>Platform Administrator is not a company Owner or Admin.</p><p className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Metadata only by default</strong>Counts and connection health do not expose Project names or schedules.</p><p className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Recoverable lifecycle</strong>Suspension preserves all data and never removes Microsoft folders.</p></div></section>

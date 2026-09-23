@@ -81,11 +81,43 @@ test("public registration is removed and disabled server-side", async () => {
 
 test("Login labels are programmatically associated with their fields", async () => {
   const login = await read("src/components/LoginForm.tsx");
+  const password = await read("src/components/PasswordField.tsx");
   assert.match(login, /htmlFor="login-email"/);
   assert.match(login, /id="login-email"/);
-  assert.match(login, /htmlFor="login-password"/);
   assert.match(login, /id="login-password"/);
+  assert.match(password, /htmlFor=\{id\}/);
+  assert.match(password, /Show \$\{label\.toLowerCase\(\)\}/);
+  assert.match(password, /Hide \$\{label\.toLowerCase\(\)\}/);
   assert.match(login, /role="alert"/);
+});
+
+test("bug-sheet accessibility, mobile, pagination, favicon, and phone safeguards are wired", async () => {
+  const shell = await read("src/components/AppShell.tsx");
+  const layoutIcon = await read("src/app/icon.svg");
+  const account = await read("src/app/(app)/account/page.tsx");
+  const googlePage = await read("src/app/(app)/account/google-calendar/page.tsx");
+  const changePassword = await read("src/components/ChangePasswordForm.tsx");
+  const projectForm = await read("src/components/ProjectFormPrototype.tsx");
+  const projects = await read("src/lib/projects.ts");
+  const pagination = await read("src/components/PaginationControls.tsx");
+  const directories = await Promise.all([
+    "CompaniesPrototype.tsx", "ProjectsPrototype.tsx", "ResourcesPrototype.tsx",
+    "UsersAccessPrototype.tsx", "ProjectTemplatesPrototype.tsx", "ProjectTypesPrototype.tsx",
+  ].map(name => read(`src/components/${name}`)));
+
+  assert.match(shell, /useState\(false\)/);
+  assert.match(shell, /aria-controls="primary-navigation"/);
+  assert.match(shell, /fixed inset-0 z-30/);
+  assert.match(layoutIcon, /<svg/);
+  assert.match(account, /Google Calendar requires a company context/);
+  assert.match(googlePage, /!user\.company_id/);
+  assert.match(changePassword, /PasswordField/);
+  assert.match(projectForm, /replace\(\/\\D\/g/);
+  assert.match(projectForm, /maxLength=\{10\}/);
+  assert.match(projects, /Use digits only, up to 10 digits/);
+  assert.match(pagination, /Previous/);
+  assert.match(pagination, /Next/);
+  for (const directory of directories) assert.match(directory, /PaginationControls/);
 });
 
 test("Project Templates persist tenant-scoped source Plans and instantiate atomically", async () => {
