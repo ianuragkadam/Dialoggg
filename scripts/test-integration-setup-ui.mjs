@@ -81,6 +81,23 @@ try {
     assert.equal(clientErrors.length, 0, clientErrors.join(" | "));
   });
 
+  await check("Scott handoff guide contains complete current provider instructions", async () => {
+    const body = await page.locator("body").innerText();
+    assert.match(body, /Before Scott starts: replace the current test setup safely/);
+    assert.match(body, /Do not click Revoke credential before replacement/);
+    assert.match(body, /Google Cloud: create the OAuth web application/);
+    assert.match(body, /No Google API key is required/);
+    assert.match(body, /Microsoft Entra: register the web application/);
+    assert.match(body, /Value, not Secret ID/);
+    assert.match(body, /Resend: verify the sending domain and create the key/);
+    assert.match(body, /Select Full access/);
+    assert.match(body, /Leave the webhook signing secret blank for now/);
+    assert.equal(await page.locator('a[href="https://developers.google.com/workspace/calendar/api/quickstart/js"]').count(), 1);
+    assert.equal(await page.locator('a[href^="https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app"]').count(), 1);
+    assert.equal(await page.locator('a[href="https://resend.com/docs/dashboard/domains/introduction"]').count(), 1);
+    assert.equal(await page.locator('a[href="https://resend.com/docs/dashboard/api-keys/introduction"]').count(), 1);
+  });
+
   await check("completion is gated before providers are verified", async () => {
     assert.equal(await page.getByRole("button", { name: "Mark setup complete" }).isDisabled(), true);
   });

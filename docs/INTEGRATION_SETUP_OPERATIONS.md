@@ -44,6 +44,19 @@ Save, secret rotation, disable, enable, and revoke require the current Platform 
 
 Issuing a new pair revokes the previous unrevoked pair with the same scope and company. Links expire after the selected period, currently one to thirty days. A reviewer cannot mutate configuration.
 
+## Scott credential handoff
+
+The live workshop is the canonical click-by-click handoff guide. It links to the current official provider instructions and maps every provider value to the exact Dialoggg field. When replacing a temporary tester-owned setup:
+
+1. Do not revoke the active credential first. Create Scott's provider application/domain/key, then replace and verify one provider at a time.
+2. Google requires a Web OAuth client, the exact workshop callback, and only `calendar.app.created`; no Google API key is required.
+3. Microsoft requires a Web app registration, delegated `User.Read` and `Files.ReadWrite`, and the client-secret **Value**, not its Secret ID. Use `organizations` for the intended multi-tenant application or the tenant UUID for an intentionally single-tenant deployment.
+4. Resend requires a verified exact sending domain and currently needs a **Full access** API key because validation reads domain, SPF, and DKIM state before transactional sending is enabled. A Sending-access-only key cannot pass this validation.
+5. Leave the Resend webhook signing secret blank until Dialoggg exposes an approved production webhook endpoint. Worker scheduling, alerts, and webhook rollout remain separate controlled operations.
+6. Saving a replacement creates a new encrypted version and retires the prior version. Immediately run the provider verification and stop if it does not reach **Verified**.
+
+The workshop must never request an account password, recovery code, one-time code, DNS-provider password, Microsoft Secret ID, company refresh token, or unrestricted tenant-wide Graph permission.
+
 ## Provider verification
 
 Google uses an authorization-code flow with PKCE, a one-time hashed state, the exact derived callback URI, offline access, and the narrow `calendar.app.created` scope. Platform verification exchanges the code and creates, reads, and deletes a temporary Calendar; its authorization tokens are discarded. A personal User authorization separately stores an encrypted refresh token, creates or reuses that connection's dedicated `Dialoggg` calendar, and starts reconciliation.
