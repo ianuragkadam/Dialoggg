@@ -22,6 +22,8 @@ const reviewToken = "review_secure_token_1234567890_abcdefghijklmnopqr";
 const expiredToken = "expired_secure_token_1234567890_abcdefghijklmnop";
 const revokedToken = "revoked_secure_token_1234567890_abcdefghijklmnop";
 const companyOnlyToken = "company_secure_token_1234567890_abcdefghijklmnop";
+const managedWorkshopToken = "managed_workshop_token_1234567890_abcdefghijklmnop";
+const managedReviewToken = "managed_review_token_1234567890_abcdefghijklmnopqr";
 const encryptionKey = Buffer.alloc(32, 19).toString("base64");
 const platformEmail = "integration-platform@example.test"; const platformPassword = "Integration-Platform-Test-1!";
 
@@ -41,13 +43,31 @@ try {
       .run(sha256(companyOnlyToken), companyId, new Date(Date.now() + 86_400_000).toISOString());
   } finally { database.close(); }
 
-  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_ENCRYPTION_KEY: encryptionKey, APP_BASE_URL: baseUrl, INTEGRATION_PROVIDER_MODE: "fake" }, stdio: ["ignore", "pipe", "pipe"] });
+  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_ENCRYPTION_KEY: encryptionKey, APP_BASE_URL: baseUrl, INTEGRATION_PROVIDER_MODE: "fake", INTEGRATION_SETUP_FORM_TOKEN: managedWorkshopToken, INTEGRATION_SETUP_REVIEW_TOKEN: managedReviewToken }, stdio: ["ignore", "pipe", "pipe"] });
   appServer.stdout.on("data", chunk => { appOutput += chunk.toString(); }); appServer.stderr.on("data", chunk => { appOutput += chunk.toString(); });
   const startedAt = Date.now(); while (true) { if (appServer.exitCode !== null) throw new Error(`Server exited early.\n${appOutput}`); try { if ((await fetch(`${baseUrl}/integration-setup`)).status === 200) break; } catch {} if (Date.now() - startedAt > 30_000) throw new Error(`Server did not start.\n${appOutput}`); await new Promise(resolve => setTimeout(resolve, 200)); }
 
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); const page = await context.newPage();
   const clientErrors = []; page.on("pageerror", error => clientErrors.push(error.message)); page.on("console", message => { if (message.type() === "error" && !message.text().includes("Failed to load resource")) clientErrors.push(message.text()); });
+
+  await check("managed one-click Scott and review links open without administrator issuance", async () => {
+    const managedContext = await browser.newContext({ viewport: { width: 1200, height: 900 } }); const managed = await managedContext.newPage();
+    await managed.goto(`${baseUrl}/integration-setup#token=${managedWorkshopToken}`);
+    await managed.getByRole("heading", { name: "Connect Dialoggg securely" }).waitFor();
+    assert.equal(managed.url(), `${baseUrl}/integration-setup`);
+    const reviewContext = await browser.newContext({ viewport: { width: 1200, height: 900 } }); const review = await reviewContext.newPage();
+    await review.goto(`${baseUrl}/integration-setup-review#token=${managedReviewToken}`);
+    await review.getByRole("heading", { name: "Integration setup status" }).waitFor();
+    assert.equal(review.url(), `${baseUrl}/integration-setup-review`);
+    const db = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const rows = db.prepare("SELECT access_kind, token_hash, label, revoked_at FROM integration_setup_invitation WHERE label = ? ORDER BY access_kind").all("Scott integration setup (managed link)");
+      assert.equal(rows.length, 2); assert.deepEqual(rows.map(row => row.access_kind), ["review", "workshop"]); assert.equal(rows.every(row => row.revoked_at === null), true);
+      const serialized = JSON.stringify(rows); assert.doesNotMatch(serialized, new RegExp(managedWorkshopToken)); assert.doesNotMatch(serialized, new RegExp(managedReviewToken));
+    } finally { db.close(); }
+    await reviewContext.close(); await managedContext.close();
+  });
 
   await check("private fragment is exchanged without reaching the request URL or rendered page", async () => {
     await page.goto(`${baseUrl}/integration-setup#token=${workshopToken}`);

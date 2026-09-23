@@ -34,8 +34,10 @@ npm run db:migrate
 | `REQUIREMENTS_REVIEW_TOKEN` | Production workshop | Separate internal review bearer token |
 | `FOLLOW_UP_REQUIREMENTS_FORM_TOKEN` | Follow-up workshop | Private client bearer token for the 19 detailed follow-up questions |
 | `FOLLOW_UP_REQUIREMENTS_REVIEW_TOKEN` | Follow-up workshop | Separate internal review bearer token for follow-up responses |
+| `INTEGRATION_SETUP_FORM_TOKEN` | Secure integration workshop | Stable private bearer used in the one-click Scott link fragment |
+| `INTEGRATION_SETUP_REVIEW_TOKEN` | Secure integration workshop | Separate stable private bearer used in the internal read-only link fragment |
 
-Generate different high-entropy values for the two tokens and store them only in the deployment secret manager. Restart the app after changing environment variables.
+Generate a different high-entropy value for every token and store them only in the deployment secret manager. Restart the app after changing environment variables.
 
 `npm start` is the production launcher and always validates the production contract before it runs a migration, even if the parent process did not pre-set `NODE_ENV`. It exits without touching the database unless `APP_BASE_URL` is a canonical HTTPS origin, `RAILWAY_VOLUME_MOUNT_PATH` is absolute, `APP_ENCRYPTION_KEY` decodes to exactly 32 bytes, and the provider mode is not `fake`. Use `npm run dev` for local development.
 

@@ -12,6 +12,8 @@ Only a Platform Administrator can issue new links, at `/platform/integration-set
 
 Each issue/rotation creates two different random links: a writable workshop and a read-only internal review. The administrator's browser generates the raw bearers and sends only their SHA-256 hashes to the issuance API; the API never returns a raw token. The raw bearer is after `#token=` in the private URL fragment, so browsers do not send it in HTTP request targets, referrers, server-rendered HTML, or server access logs. The recipient's browser exchanges it in a same-origin POST body for an eight-hour HttpOnly session, then removes the fragment from its address bar. Only the SHA-256 invitation and session hashes are stored.
 
+Production may also use stable one-click links configured through separate `INTEGRATION_SETUP_FORM_TOKEN` and `INTEGRATION_SETUP_REVIEW_TOKEN` deployment secrets. Scott opens `/integration-setup#token=<form token>` and immediately receives the writable workshop; the team keeps `/integration-setup-review#token=<review token>` internal. The raw values remain URL fragments and are never stored in SQLite. On first use, Dialoggg creates or refreshes only their hashed invitation records. Rotating either deployment secret revokes the previous managed link. Both variables must be present and different or the managed links fail closed.
+
 ## Required deployment configuration
 
 | Variable | Requirement |
@@ -19,6 +21,8 @@ Each issue/rotation creates two different random links: a writable workshop and 
 | `APP_BASE_URL` | Canonical HTTPS production origin, without a trailing slash. Google and Microsoft callback URIs are derived from it. |
 | `APP_ENCRYPTION_KEY` | Exactly 32 random bytes encoded as base64. Store only in the deployment secret manager. It is the root key for AES-256-GCM envelopes. |
 | `RAILWAY_VOLUME_MOUNT_PATH` | Persistent SQLite directory; `/data` in the current Railway topology. |
+| `INTEGRATION_SETUP_FORM_TOKEN` | Long random bearer for Scott's stable one-click workshop link. |
+| `INTEGRATION_SETUP_REVIEW_TOKEN` | Different long random bearer for the internal read-only review link. |
 
 `INTEGRATION_PROVIDER_MODE=fake` is test-only. Never set it in a deployed environment. Google, Microsoft, and Resend credential values are entered in the workshop and encrypted in SQLite; they are not deployment variables.
 

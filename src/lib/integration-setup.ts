@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import db from "@/db";
@@ -56,6 +56,60 @@ type ConfigRow = {
 
 export const INTEGRATION_PROVIDERS: IntegrationProvider[] = ["google_platform", "microsoft_platform", "resend_platform"];
 
+const MANAGED_INVITATION_LABEL = "Scott integration setup (managed link)";
+
+function managedTokenMatches(actual: string, expected: string | undefined) {
+  if (!expected || actual.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+}
+
+function ensureManagedIntegrationInvitation(rawToken: string) {
+  const workshopToken = process.env.INTEGRATION_SETUP_FORM_TOKEN;
+  const reviewToken = process.env.INTEGRATION_SETUP_REVIEW_TOKEN;
+  if (!workshopToken || !reviewToken || workshopToken === reviewToken) return;
+  const accessKind = managedTokenMatches(rawToken, workshopToken)
+    ? "workshop"
+    : managedTokenMatches(rawToken, reviewToken)
+      ? "review"
+      : null;
+  if (!accessKind) return;
+
+  const configured = [
+    { accessKind: "workshop" as const, tokenHash: sha256(workshopToken) },
+    { accessKind: "review" as const, tokenHash: sha256(reviewToken) },
+  ];
+  const expiresAt = new Date(Date.now() + 366 * 24 * 3_600_000).toISOString();
+
+  db.transaction(() => {
+    const currentHashes = configured.map(item => item.tokenHash);
+    const placeholders = currentHashes.map(() => "?").join(",");
+    db.prepare(`
+      UPDATE integration_setup_invitation SET revoked_at = CURRENT_TIMESTAMP
+      WHERE label = ? AND revoked_at IS NULL AND token_hash NOT IN (${placeholders})
+    `).run(MANAGED_INVITATION_LABEL, ...currentHashes);
+
+    for (const item of configured) {
+      const existing = db.prepare(`
+        SELECT id FROM integration_setup_invitation
+        WHERE token_hash = ? AND access_kind = ? AND scope_kind = 'platform' AND company_id IS NULL
+      `).get(item.tokenHash, item.accessKind) as { id: number } | undefined;
+      if (existing) {
+        db.prepare(`
+          UPDATE integration_setup_invitation
+          SET expires_at = ?, revoked_at = NULL, label = ?
+          WHERE id = ?
+        `).run(expiresAt, MANAGED_INVITATION_LABEL, existing.id);
+      } else {
+        db.prepare(`
+          INSERT INTO integration_setup_invitation (
+            token_hash, access_kind, scope_kind, company_id, label, expires_at, created_by_identity_id
+          ) VALUES (?, ?, 'platform', NULL, ?, ?, NULL)
+        `).run(item.tokenHash, item.accessKind, MANAGED_INVITATION_LABEL, expiresAt);
+      }
+    }
+  })();
+}
+
 function insertIntegrationInvitation(input: {
   accessKind: "workshop" | "review";
   scopeKind: InvitationScope;
@@ -100,6 +154,7 @@ export function rotateIntegrationInvitation(input: {
 }
 
 export function exchangeIntegrationInvitation(rawToken: string) {
+  ensureManagedIntegrationInvitation(rawToken);
   const invitation = db.prepare(`
     SELECT i.id, i.access_kind, i.scope_kind, i.company_id, i.label, i.expires_at,
       i.completed_at, c.name AS company_name
