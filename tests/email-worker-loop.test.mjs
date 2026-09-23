@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import path from "node:path";
 import test from "node:test";
-import { emailWorkerIntervalMs, startEmailWorkerLoop } from "../scripts/start-email-worker.mjs";
+import { emailWorkerIntervalMs, emailWorkerLaunch, startEmailWorkerLoop } from "../scripts/start-email-worker.mjs";
 
 function fakeChild() {
   const child = new EventEmitter();
@@ -19,6 +20,46 @@ test("email worker interval is bounded", () => {
   assert.equal(emailWorkerIntervalMs("900000"), 900_000);
   assert.throws(() => emailWorkerIntervalMs("14999"), /EMAIL_WORKER_INTERVAL_MS/);
   assert.throws(() => emailWorkerIntervalMs("invalid"), /EMAIL_WORKER_INTERVAL_MS/);
+});
+
+test("email worker launch stays anchored to the application root", () => {
+  const applicationRoot = path.resolve("C:/app-root");
+  const launch = emailWorkerLaunch(applicationRoot);
+
+  assert.equal(launch.options.cwd, applicationRoot);
+  assert.equal(launch.args[0], path.join(applicationRoot, "node_modules", "tsx", "dist", "cli.mjs"));
+  assert.equal(launch.args[1], path.join(applicationRoot, "src", "db", "process-email-outbox.ts"));
+});
+
+test("scheduled worker runs keep the original application root", () => {
+  const applicationRoot = path.resolve("C:/app-root");
+  const launches = [];
+  let scheduled;
+  const loop = startEmailWorkerLoop({
+    environment: { EMAIL_WORKER_ENABLED: "true", EMAIL_WORKER_INTERVAL_MS: "15000" },
+    workingDirectory: applicationRoot,
+    spawnFn(command, args, options) {
+      const child = fakeChild();
+      launches.push({ command, args, options, child });
+      return child;
+    },
+    setIntervalFn(callback) {
+      scheduled = callback;
+      return { unref() {} };
+    },
+    clearIntervalFn() {},
+    logger: { info() {}, error() {} },
+  });
+
+  launches[0].child.emit("exit", 0, null);
+  assert.equal(scheduled(), true);
+  assert.equal(launches.length, 2);
+  for (const launch of launches) {
+    assert.equal(launch.options.cwd, applicationRoot);
+    assert.equal(launch.args[0], path.join(applicationRoot, "node_modules", "tsx", "dist", "cli.mjs"));
+    assert.equal(launch.args[1], path.join(applicationRoot, "src", "db", "process-email-outbox.ts"));
+  }
+  loop.stop();
 });
 
 test("email worker starts immediately and never overlaps", () => {

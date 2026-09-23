@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 const DEFAULT_INTERVAL_MS = 60_000;
 const MINIMUM_INTERVAL_MS = 15_000;
@@ -13,12 +14,21 @@ export function emailWorkerIntervalMs(value) {
   return parsed;
 }
 
-function defaultSpawnWorker() {
-  return spawn(
-    process.execPath,
-    ["node_modules/tsx/dist/cli.mjs", "src/db/process-email-outbox.ts"],
-    { cwd: process.cwd(), env: process.env, stdio: "inherit" },
-  );
+export function emailWorkerLaunch(workingDirectory) {
+  const applicationRoot = path.resolve(workingDirectory);
+  return {
+    command: process.execPath,
+    args: [
+      path.join(applicationRoot, "node_modules", "tsx", "dist", "cli.mjs"),
+      path.join(applicationRoot, "src", "db", "process-email-outbox.ts"),
+    ],
+    options: { cwd: applicationRoot, env: process.env, stdio: "inherit" },
+  };
+}
+
+function defaultSpawnWorker(workingDirectory, spawnFn = spawn) {
+  const launch = emailWorkerLaunch(workingDirectory);
+  return spawnFn(launch.command, launch.args, launch.options);
 }
 
 export function startEmailWorkerLoop(options = {}) {
@@ -26,7 +36,9 @@ export function startEmailWorkerLoop(options = {}) {
   const logger = options.logger ?? console;
   const schedule = options.setIntervalFn ?? setInterval;
   const cancel = options.clearIntervalFn ?? clearInterval;
-  const spawnWorker = options.spawnWorker ?? defaultSpawnWorker;
+  const applicationRoot = path.resolve(options.workingDirectory ?? process.cwd());
+  const spawnFn = options.spawnFn ?? spawn;
+  const spawnWorker = options.spawnWorker ?? (() => defaultSpawnWorker(applicationRoot, spawnFn));
   const enabled = String(environment.EMAIL_WORKER_ENABLED ?? "true").trim().toLowerCase() !== "false";
 
   if (!enabled) {
