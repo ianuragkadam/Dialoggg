@@ -28,6 +28,14 @@ The private Integration Setup workshop now gives Scott a complete, provider-by-p
 
 Dependency manifests and the lockfile did not change. The last authoritative locked full and production audits remain zero vulnerabilities; this copy/UI checkpoint adds no dependency.
 
-## Release boundary
+## Production release
 
-Commit and production deployment identifiers are recorded after the focused commit and fresh-backup deployment. The existing managed Scott URL remains the handoff entry point; no link-token rotation is required for this schema-neutral guide update.
+- Focused guide commit: `5343007`; pushed to `origin/main`.
+- Exact clean archive SHA-256: `3CC2FB788223A24C133F381C281087C7954370467A6A9F0C81466B00C5C943A4`.
+- Reverified target: workspace `Linkedin Automation`, project `dialoggg`, environment `production`, service `dialoggg-web`, persistent volume `dialoggg-data` at `/data`.
+- Fresh non-expiring backup: `pre-scott-handoff-5343007`, Railway backup `a62bb144-9df2-47a1-a84e-c71ad7db8cd5`, external snapshot `vs_1790142315685_omg44h8u027kg6fu`, referencing 1060 MB.
+- Deployment: `fa6c6b1a-3f78-4bc9-a0cf-611cc3238752`, `SUCCESS` / `RUNNING`, image digest `sha256:9cdb7d1015627ad0fb57b56c475828d11b12621321aeae4c0a1f928d9a22765d`.
+- Startup confirmed schema v15 current and Next.js ready. The readiness endpoint returned HTTP 200 with private/no-store and HSTS; `dialoggg-data` remained `READY` at 1060.773888 MB.
+- Live 390×844 touch smoke confirmed the managed fragment was removed, no login was required, all three provider guides and the complete Scott handoff text were visible, secret fields were blank/password-protected, refresh preserved the short-lived session, a missing bearer failed closed, no raw bearer was rendered, and no HTTP 5xx was observed.
+
+The existing managed Scott URL remains the handoff entry point; no link-token rotation was required for this schema-neutral guide update.
