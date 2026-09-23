@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { assertProductionConfig } from "./validate-production-config.mjs";
+import { startEmailWorkerLoop } from "./start-email-worker.mjs";
 
 assertProductionConfig({ ...process.env, NODE_ENV: "production" });
 
@@ -11,4 +12,5 @@ const migration = spawnSync(
 if (migration.error) throw migration.error;
 if (migration.status !== 0) process.exit(migration.status ?? 1);
 
+startEmailWorkerLoop();
 await import("./start-production.mjs");

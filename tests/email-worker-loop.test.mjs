@@ -1,0 +1,68 @@
+import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import test from "node:test";
+import { emailWorkerIntervalMs, startEmailWorkerLoop } from "../scripts/start-email-worker.mjs";
+
+function fakeChild() {
+  const child = new EventEmitter();
+  child.killed = false;
+  child.kill = signal => {
+    child.killed = true;
+    child.signal = signal;
+  };
+  return child;
+}
+
+test("email worker interval is bounded", () => {
+  assert.equal(emailWorkerIntervalMs(undefined), 60_000);
+  assert.equal(emailWorkerIntervalMs("15000"), 15_000);
+  assert.equal(emailWorkerIntervalMs("900000"), 900_000);
+  assert.throws(() => emailWorkerIntervalMs("14999"), /EMAIL_WORKER_INTERVAL_MS/);
+  assert.throws(() => emailWorkerIntervalMs("invalid"), /EMAIL_WORKER_INTERVAL_MS/);
+});
+
+test("email worker starts immediately and never overlaps", () => {
+  const children = [];
+  let scheduled;
+  let cancelled = false;
+  const messages = [];
+  const loop = startEmailWorkerLoop({
+    environment: { EMAIL_WORKER_ENABLED: "true", EMAIL_WORKER_INTERVAL_MS: "15000" },
+    spawnWorker() {
+      const child = fakeChild();
+      children.push(child);
+      return child;
+    },
+    setIntervalFn(callback) {
+      scheduled = callback;
+      return { unref() {} };
+    },
+    clearIntervalFn() { cancelled = true; },
+    logger: { info: message => messages.push(message), error: message => messages.push(message) },
+  });
+
+  assert.equal(children.length, 1);
+  assert.equal(loop.intervalMs, 15_000);
+  assert.equal(scheduled(), false);
+  assert.equal(children.length, 1);
+  children[0].emit("exit", 0, null);
+  assert.equal(scheduled(), true);
+  assert.equal(children.length, 2);
+  loop.stop();
+  assert.equal(cancelled, true);
+  assert.equal(children[1].killed, true);
+  assert.equal(children[1].signal, "SIGTERM");
+  assert.match(messages.join("\n"), /scheduled every 15000ms/);
+});
+
+test("email worker can be explicitly disabled", () => {
+  let spawned = false;
+  const loop = startEmailWorkerLoop({
+    environment: { EMAIL_WORKER_ENABLED: "false" },
+    spawnWorker() { spawned = true; return fakeChild(); },
+    logger: { info() {}, error() {} },
+  });
+  assert.equal(loop.enabled, false);
+  assert.equal(loop.runNow(), false);
+  assert.equal(spawned, false);
+});
