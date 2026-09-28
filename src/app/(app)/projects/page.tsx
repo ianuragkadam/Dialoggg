@@ -5,10 +5,7 @@ import { getCurrentActor } from "@/lib/auth";
 import { workingDayEnd } from "@/lib/dates";
 import type { ProjectUiRecord } from "@/lib/projects-ui";
 
-export async function generateMetadata() {
-  const actor = await getCurrentActor();
-  return { title: `${actor?.companyName || "Projects"} | Dialoggg` };
-}
+export const metadata = { title: "Projects | Dialoggg" };
 
 export default async function ProjectsPage() {
   const actor = await getCurrentActor();
@@ -38,5 +35,5 @@ export default async function ProjectsPage() {
       return { ...project, derived_end_date: derivedEnd };
     });
   }
-  return <ProjectsPrototype projects={projects} canManage={canManage} external={external} companyName={actor.companyName || "Projects"} />;
+  return <ProjectsPrototype projects={projects} canManage={canManage} external={external} />;
 }

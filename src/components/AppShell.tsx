@@ -19,7 +19,7 @@ type AuthContext = {
 
 const MENU = [
   { label: "Companies",          href: "/platform/companies",  icon: "🏢", adminOnly: false, platformOnly: true, tenantOnly: false },
-  { label: "All Projects",       href: "/projects",            icon: "📁", adminOnly: false, platformOnly: false, tenantOnly: true },
+  { label: "My Company",         href: "/projects",            icon: "📁", adminOnly: false, platformOnly: false, tenantOnly: true },
   { label: "My Projects",        href: "/projects/mine",       icon: "📂", adminOnly: false, platformOnly: false, tenantOnly: true },
   { label: "Master Calendar",    href: "/calendar",            icon: "📅", adminOnly: false, platformOnly: false, tenantOnly: true },
   { label: "Resource Calendar",  href: "/resources/schedule",  icon: "👥", adminOnly: false, platformOnly: false, tenantOnly: true },
