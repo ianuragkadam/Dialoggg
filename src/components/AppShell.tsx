@@ -13,6 +13,8 @@ type AuthContext = {
   companyName: string | null;
   membershipId: number | null;
   role: string;
+  actualRole?: string;
+  rolePreview?: boolean;
 };
 
 const MENU = [
@@ -37,6 +39,10 @@ export default function AppShell({ user, children }: { user: User; children: Rea
   const [contexts, setContexts] = useState<AuthContext[]>([]);
   const [activeContext, setActiveContext] = useState("");
   const [switchingContext, setSwitchingContext] = useState(false);
+  const [actualRole, setActualRole] = useState(user.user_type);
+  const [previewRole, setPreviewRole] = useState(user.user_type);
+  const [rolePreviewEnabled, setRolePreviewEnabled] = useState(false);
+  const [switchingRole, setSwitchingRole] = useState(false);
   const platformAdmin = user.user_type === "super_admin";
 
   useEffect(() => {
@@ -49,6 +55,9 @@ export default function AppShell({ user, children }: { user: User; children: Rea
         const active = payload.data.activeContext as AuthContext;
         setContexts(available);
         setActiveContext(active.type === "platform" ? "platform" : `company:${active.membershipId}`);
+        setActualRole(active.actualRole || active.role);
+        setPreviewRole(active.role);
+        setRolePreviewEnabled(!!active.rolePreview);
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
@@ -75,6 +84,22 @@ export default function AppShell({ user, children }: { user: User; children: Rea
     }
   }
 
+  async function switchRole(role: string) {
+    if (!role || role === previewRole || switchingRole) return;
+    setSwitchingRole(true);
+    try {
+      const response = await authenticatedFetch("/api/v1/me/role-preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      if (!response.ok) throw new Error("Role preview could not be changed");
+      window.location.reload();
+    } finally {
+      setSwitchingRole(false);
+    }
+  }
+
   async function logout() {
     await authenticatedFetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
@@ -95,7 +120,27 @@ export default function AppShell({ user, children }: { user: User; children: Rea
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             {contexts.length > 1 && <div><label htmlFor="active-company-context" className="sr-only">Active company context</label><select id="active-company-context" value={activeContext} disabled={switchingContext} onChange={event => switchContext(event.target.value)} className="w-32 max-w-32 rounded border border-blue-500 bg-blue-900 px-2 py-1.5 text-xs font-semibold text-white outline-none focus:ring-2 focus:ring-white disabled:opacity-60 sm:w-auto sm:max-w-52"><option value="" disabled>Choose context</option>{contexts.map(context => <option key={context.type === "platform" ? "platform" : `company:${context.membershipId}`} value={context.type === "platform" ? "platform" : `company:${context.membershipId}`}>{context.type === "platform" ? "Platform Administration" : `${context.companyName} · ${context.role}`}</option>)}</select></div>}
             <span className="hidden truncate text-sm text-blue-100 sm:inline">{user.full_name || user.email}</span>
-            <span className="hidden whitespace-nowrap rounded bg-blue-700 px-2 py-1 text-xs sm:inline">{roleLabel(user.user_type)}</span>
+            {actualRole === "owner" && activeContext.startsWith("company:") ? (
+              <div className="flex items-center gap-1">
+                <label htmlFor="role-preview" className="sr-only">Preview company role</label>
+                <select
+                  id="role-preview"
+                  aria-label="Preview company role"
+                  value={previewRole}
+                  disabled={switchingRole}
+                  onChange={event => switchRole(event.target.value)}
+                  className="max-w-36 rounded border border-blue-500 bg-blue-900 px-2 py-1.5 text-xs font-semibold text-white outline-none focus:ring-2 focus:ring-white disabled:opacity-60 sm:max-w-48"
+                >
+                  <option value="owner">Owner</option>
+                  <option value="admin">Admin</option>
+                  <option value="employee">Employee</option>
+                  <option value="external">External</option>
+                </select>
+                {rolePreviewEnabled && <span className="hidden rounded bg-amber-300 px-2 py-1 text-xs font-semibold text-amber-950 md:inline">Read-only preview</span>}
+              </div>
+            ) : (
+              <span className="hidden whitespace-nowrap rounded bg-blue-700 px-2 py-1 text-xs sm:inline">{roleLabel(user.user_type)}</span>
+            )}
             <button onClick={logout} className="whitespace-nowrap rounded bg-blue-700 px-3 py-1 text-sm hover:bg-blue-900">
               Log out
             </button>
@@ -103,6 +148,7 @@ export default function AppShell({ user, children }: { user: User; children: Rea
         </div>
       </header>
 
+      {rolePreviewEnabled && <div className="relative z-40 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-950 shadow">Viewing as {roleLabel(previewRole)}. Changes are disabled during role preview. Select Owner to exit.</div>}
       <div className="flex flex-1">
         {open && <button type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden" />}
         <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] flex-none transform overflow-y-auto border-r bg-white pt-16 shadow-xl transition-transform lg:static lg:z-auto lg:w-56 lg:max-w-none lg:translate-x-0 lg:pt-0 lg:shadow-none ${open ? "translate-x-0" : "-translate-x-full"}`}>

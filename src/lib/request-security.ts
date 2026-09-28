@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { CSRF_COOKIE, type Actor } from "@/lib/auth";
 import { sha256 } from "@/lib/security";
 
-export async function validateMutationRequest(request: NextRequest, actor: Actor) {
+export async function validateMutationRequest(request: NextRequest, actor: Actor, options: { allowRolePreview?: boolean } = {}) {
   if (!validateRequestOrigin(request)) return "ORIGIN_REJECTED" as const;
   const cookieStore = await cookies();
   const cookieToken = cookieStore.get(CSRF_COOKIE)?.value;
@@ -11,6 +11,7 @@ export async function validateMutationRequest(request: NextRequest, actor: Actor
   if (!cookieToken || !headerToken || cookieToken !== headerToken || sha256(headerToken) !== actor.csrfHash) {
     return "CSRF_REJECTED" as const;
   }
+  if (actor.rolePreview && !options.allowRolePreview) return "ROLE_PREVIEW_READ_ONLY" as const;
   return null;
 }
 

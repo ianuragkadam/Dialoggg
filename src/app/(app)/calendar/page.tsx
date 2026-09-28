@@ -61,29 +61,21 @@ export default function MasterCalendarPage() {
         <h1 className="text-2xl font-bold">Master Calendar</h1>
         <div className="flex items-center gap-3">
           <SubscribeButton feedUrlEndpoint="/api/calendar/feed-url" />
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-gray-600">Project:</span>
-            <select
-              value={projectId} onChange={e => setProjectId(e.target.value)}
-              className="px-3 py-1.5 border rounded text-sm bg-white"
-            >
-              <option value="all">All Projects</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
         </div>
       </div>
       <CalendarWorkflowReview
         context="master"
         canManage={canManage}
-        projectId={projectId === "all" ? projects[0]?.id : Number(projectId)}
+        projectId={projectId}
+        projects={projects}
+        onProjectIdChange={setProjectId}
         projectTypes={projectTypes}
         selectedProjectTypeIds={selectedProjectTypeIds}
         onProjectTypeIdsChange={setSelectedProjectTypeIds}
         onIncludeCompletedChange={setIncludeCompleted}
         onEventsChanged={loadEvents}
         onAddEventReady={registerAddEvent}
-      />
+      >
       {notice&&<div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</div>}
       <div className="bg-white border rounded shadow-sm p-4">
         {openAddEvent && <div className="mb-3 flex justify-end"><button type="button" onClick={openAddEvent} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">+ Add Event</button></div>}
@@ -99,6 +91,7 @@ export default function MasterCalendarPage() {
           height={650}
         />
       </div>
+      </CalendarWorkflowReview>
       {selectedEvent&&<EventOccurrenceDialog event={selectedEvent} canManage={canManage} onClose={()=>setSelectedEvent(null)} onChanged={loadEvents}/>}
     </div>
   );

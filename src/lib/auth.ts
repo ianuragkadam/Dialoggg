@@ -8,6 +8,7 @@ import { passwordCanBeVerified, passwordPolicyError } from "@/lib/password-polic
 const SESSION_HOURS = 12;
 export const SESSION_COOKIE = "dialoggg_session";
 export const CSRF_COOKIE = "dialoggg_csrf";
+export const ROLE_PREVIEW_COOKIE = "dialoggg_role_preview";
 
 export type CompanyRole = "owner" | "admin" | "employee" | "external";
 export type ContextType = "company" | "platform";
@@ -33,6 +34,8 @@ export type Actor = {
   companyName: string | null;
   companyTimeZone: string | null;
   companyRole: CompanyRole | null;
+  actualCompanyRole: CompanyRole | null;
+  rolePreview: boolean;
   isPlatformAdmin: boolean;
   isPrimaryPlatformAdmin: boolean;
   csrfHash: string;
@@ -176,6 +179,13 @@ async function setSessionCookies(token: string, csrfToken: string, expiresAt: st
     secure,
     expires,
   });
+  cookieStore.set(ROLE_PREVIEW_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure,
+    maxAge: 0,
+  });
 }
 
 export async function createSession(
@@ -275,6 +285,8 @@ export function actorForSessionToken(token: string): Actor | null {
     companyName: row.company_name,
     companyTimeZone: row.company_time_zone,
     companyRole: row.company_role,
+    actualCompanyRole: row.company_role,
+    rolePreview: false,
     isPlatformAdmin: row.is_platform_admin === 1,
     isPrimaryPlatformAdmin: row.is_primary_platform_admin === 1,
     csrfHash: row.csrf_hash,
@@ -285,7 +297,17 @@ export function actorForSessionToken(token: string): Actor | null {
 export async function getCurrentActor(): Promise<Actor | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
-  return token ? actorForSessionToken(token) : null;
+  const actor = token ? actorForSessionToken(token) : null;
+  if (!actor) return null;
+  const previewRole = cookieStore.get(ROLE_PREVIEW_COOKIE)?.value;
+  if (
+    actor.contextType === "company" && actor.companyRole === "owner" &&
+    (previewRole === "admin" || previewRole === "employee" || previewRole === "external")
+  ) {
+    actor.companyRole = previewRole;
+    actor.rolePreview = true;
+  }
+  return actor;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -317,6 +339,7 @@ export async function destroySession() {
   }
   cookieStore.delete(SESSION_COOKIE);
   cookieStore.delete(CSRF_COOKIE);
+  cookieStore.delete(ROLE_PREVIEW_COOKIE);
 }
 
 export function revokeIdentitySessions(identityId: number, reason: string, exceptSessionId?: number) {

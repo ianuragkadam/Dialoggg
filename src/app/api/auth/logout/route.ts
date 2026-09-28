@@ -6,7 +6,7 @@ export async function POST(request: NextRequest) {
   if (!validateRequestOrigin(request)) return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: { "cache-control": "no-store" } });
   const actor = await getCurrentActor();
   if (actor) {
-    const rejected = await validateMutationRequest(request, actor);
+    const rejected = await validateMutationRequest(request, actor, { allowRolePreview: true });
     if (rejected) return NextResponse.json({ error: "Forbidden" }, { status: 403, headers: { "cache-control": "no-store" } });
   }
   await destroySession();

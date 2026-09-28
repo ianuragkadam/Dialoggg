@@ -261,6 +261,8 @@ function actorForConnection(connection: ConnectionRow): Actor {
     companyName: row.company_name,
     companyTimeZone: row.time_zone,
     companyRole: row.role,
+    actualCompanyRole: row.role,
+    rolePreview: false,
     isPlatformAdmin: false,
     isPrimaryPlatformAdmin: false,
     csrfHash: "",

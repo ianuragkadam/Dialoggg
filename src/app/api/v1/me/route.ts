@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
       companyName: actor.companyName,
       membershipId: actor.membershipId,
       role: actor.contextType === "platform" ? "platform_administrator" : actor.companyRole,
+      actualRole: actor.contextType === "platform" ? "platform_administrator" : actor.actualCompanyRole,
+      rolePreview: actor.rolePreview,
     },
     contexts: listAuthContexts(actor.identityId),
     session: { expiresAt: actor.expiresAt },
