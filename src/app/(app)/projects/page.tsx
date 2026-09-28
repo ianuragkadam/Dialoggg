@@ -35,5 +35,9 @@ export default async function ProjectsPage() {
       return { ...project, derived_end_date: derivedEnd };
     });
   }
-  return <ProjectsPrototype projects={projects} canManage={canManage} external={external} />;
+  const projectTypes = external
+    ? [...new Set(projects.map(project => project.project_type))].sort((a, b) => a.localeCompare(b))
+    : (db.prepare("SELECT name FROM project_type WHERE company_id = ? AND status = 'active' ORDER BY lower(name), id")
+        .all(actor.companyId) as Array<{ name: string }>).map(projectType => projectType.name);
+  return <ProjectsPrototype projects={projects} projectTypes={projectTypes} canManage={canManage} external={external} />;
 }
