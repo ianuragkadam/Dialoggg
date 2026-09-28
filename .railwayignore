@@ -1,4 +1,7 @@
 .next
+.env
+.env.*
+!.env.example
 .tools
 data
 guide-shots
