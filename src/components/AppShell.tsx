@@ -107,12 +107,12 @@ export default function AppShell({ user, children }: { user: User; children: Rea
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className={`min-h-screen flex flex-col ${platformAdmin ? "" : "tenant-theme"}`}>
       <header className="relative z-50 flex-none bg-blue-800 text-white shadow-md">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setOpen(current => !current)} aria-controls="primary-navigation" aria-expanded={open} aria-label={open ? "Close navigation" : "Open navigation"} className="rounded p-1 text-2xl focus:outline-none focus:ring-2 focus:ring-white lg:hidden">☰</button>
-            <div className="w-9 h-9 rounded bg-white text-blue-800 font-bold flex items-center justify-center">D</div>
+            <div className="app-logo-mark w-9 h-9 rounded bg-white text-blue-800 font-bold flex items-center justify-center">D</div>
             <div>
               <div className="font-bold text-lg leading-tight">Dialoggg</div>
             </div>

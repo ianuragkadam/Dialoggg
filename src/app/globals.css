@@ -14,6 +14,207 @@ body {
   background: #f3f5f8;
 }
 
+/* Dark navy and orange tenant theme from the D2 visual reference.
+   Scoped to the signed-in company shell so Platform Administration stays unchanged. */
+.tenant-theme {
+  --color-gray-50: #101a2b;
+  --color-gray-100: #17243a;
+  --color-gray-200: #26354d;
+  --color-gray-300: #354761;
+  --color-gray-400: #8393ab;
+  --color-gray-500: #9aa9be;
+  --color-gray-600: #aab8ca;
+  --color-gray-700: #c1ccda;
+  --color-gray-800: #d5deea;
+  --color-gray-900: #e6ebf2;
+  --color-gray-950: #f4f6fa;
+
+  --color-slate-50: #101a2b;
+  --color-slate-100: #17243a;
+  --color-slate-200: #26354d;
+  --color-slate-300: #354761;
+  --color-slate-400: #8393ab;
+  --color-slate-500: #9aa9be;
+  --color-slate-600: #aab8ca;
+  --color-slate-700: #c1ccda;
+  --color-slate-800: #d5deea;
+  --color-slate-900: #e6ebf2;
+  --color-slate-950: #f4f6fa;
+
+  --color-blue-50: #17243a;
+  --color-blue-100: #1d2b43;
+  --color-blue-200: #293952;
+  --color-blue-300: #354761;
+  --color-blue-400: #71839f;
+  --color-blue-500: #bd5424;
+  --color-blue-600: #f28a4d;
+  --color-blue-700: #eb6b2d;
+  --color-blue-800: #101a2b;
+  --color-blue-900: #111a2a;
+  --color-blue-950: #0c1422;
+
+  --color-orange-50: #281d18;
+  --color-orange-100: #33231b;
+  --color-orange-200: #5a3827;
+  --color-orange-300: #8c4c2b;
+  --color-orange-400: #c65b2b;
+  --color-orange-500: #e3652c;
+  --color-orange-600: #eb6b2d;
+  --color-orange-700: #d65d25;
+  --color-orange-800: #f2a477;
+  --color-orange-900: #ffc39e;
+  --color-orange-950: #ffe4d3;
+
+  --color-emerald-50: #17271f;
+  --color-emerald-100: #1e3429;
+  --color-emerald-200: #284937;
+  --color-emerald-600: #e96a2d;
+  --color-emerald-700: #d45d27;
+  --color-emerald-800: #8ed6ae;
+  --color-emerald-900: #b6e8ca;
+  --color-emerald-950: #e0f8ea;
+
+  --color-amber-50: #241e17;
+  --color-amber-100: #2a2118;
+  --color-amber-200: #593b25;
+  --color-amber-800: #eab584;
+  --color-amber-900: #f3c99b;
+  --color-amber-950: #ffe7c2;
+
+  --color-red-50: #2a1c24;
+  --color-red-100: #311f29;
+  --color-red-200: #5d2d3b;
+  --color-red-800: #f0a0ad;
+  --color-red-900: #f7b7c1;
+  --color-red-950: #ffe3e7;
+
+  --color-violet-50: #211d32;
+  --color-violet-100: #2b2441;
+  --color-violet-200: #46365f;
+  --color-violet-800: #c9b5f8;
+  --color-violet-900: #e0d3ff;
+  --color-violet-950: #f1eaff;
+
+  color: #d5deea;
+  color-scheme: dark;
+}
+
+.tenant-theme .bg-white {
+  background-color: #17243a !important;
+}
+
+.tenant-theme .text-white {
+  color: #f4f6fa !important;
+}
+
+.tenant-theme .app-logo-mark {
+  background-color: #f4f6fa !important;
+  color: #17243a !important;
+}
+
+.tenant-theme aside {
+  background-color: #1a2740 !important;
+}
+
+.tenant-theme .text-blue-100 {
+  color: #b7c4d8 !important;
+}
+
+.tenant-theme .text-blue-700,
+.tenant-theme .text-blue-800 {
+  color: #f07a3e !important;
+}
+
+.tenant-theme .text-blue-500 {
+  color: #f28a4d !important;
+}
+
+.tenant-theme .text-blue-900,
+.tenant-theme .text-blue-950 {
+  color: #d5deea !important;
+}
+
+.tenant-theme nav a.bg-blue-100 {
+  box-shadow: inset 3px 0 #eb6b2d;
+}
+
+/* Filled actions use the D2 orange with dark text for reliable contrast. */
+.tenant-theme .bg-blue-700,
+.tenant-theme .bg-emerald-600,
+.tenant-theme .bg-emerald-700,
+.tenant-theme .bg-green-600,
+.tenant-theme .bg-green-700,
+.tenant-theme .bg-orange-600,
+.tenant-theme .bg-orange-700 {
+  background-color: #eb6b2d !important;
+  color: #101a2b !important;
+}
+
+.tenant-theme .bg-blue-700:hover,
+.tenant-theme .bg-emerald-600:hover,
+.tenant-theme .bg-emerald-700:hover,
+.tenant-theme .bg-green-600:hover,
+.tenant-theme .bg-green-700:hover,
+.tenant-theme .bg-orange-600:hover,
+.tenant-theme .bg-orange-700:hover {
+  background-color: #f28a4d !important;
+  color: #101a2b !important;
+}
+
+/* Keep semantic text and keyboard focus visible on the dark surfaces. */
+.tenant-theme .text-red-700,
+.tenant-theme .text-red-800 {
+  color: #ff9dab !important;
+}
+
+.tenant-theme .text-amber-700,
+.tenant-theme .text-amber-800 {
+  color: #ffc078 !important;
+}
+
+.tenant-theme .text-green-700,
+.tenant-theme .text-green-800 {
+  color: #8ee0a8 !important;
+}
+
+.tenant-theme :focus-visible {
+  outline-color: #f28a4d;
+}
+
+.tenant-theme input,
+.tenant-theme select,
+.tenant-theme textarea {
+  color-scheme: dark;
+}
+
+.tenant-theme .fc,
+.tenant-theme .fc .fc-scrollgrid,
+.tenant-theme .fc .fc-scrollgrid-section > *,
+.tenant-theme .fc .fc-daygrid-day,
+.tenant-theme .fc .fc-timegrid-slot,
+.tenant-theme .fc .fc-list,
+.tenant-theme .fc .fc-list-day-cushion,
+.tenant-theme .fc .fc-list-table td {
+  background-color: #17243a;
+  border-color: #26354d;
+}
+
+.tenant-theme .fc .fc-col-header-cell-cushion,
+.tenant-theme .fc .fc-daygrid-day-number,
+.tenant-theme .fc .fc-list-day-text,
+.tenant-theme .fc .fc-list-day-side-text {
+  color: #d5deea;
+}
+
+.tenant-theme .gantt_container {
+  border-color: #26354d;
+  background-color: #17243a;
+}
+
+.tenant-theme .weekend {
+  background-color: #1a2740 !important;
+}
+
 /* dhtmlx-gantt scoped tweaks */
 .gantt_container { border: 1px solid #d6dee6; border-radius: 6px; }
 .dhx-gantt-link.gantt_task_link .gantt_line_wrapper > div { background: #f08a24 !important; }
