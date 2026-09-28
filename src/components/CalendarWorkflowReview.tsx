@@ -6,7 +6,6 @@ import { authenticatedFetch } from "@/lib/client-fetch";
 
 type CalendarContext = "project" | "master" | "resource";
 type DialogName = "event-form" | "event-review" | "event-details" | "task-details" | "drag" | "edit-scope" | "delete-scope" | "conflict" | null;
-type ViewName = "Day" | "Week" | "Month";
 type RepeatName = "Does not repeat" | "Daily" | "Weekly" | "Monthly";
 type ConflictDetail = { occurrenceKey: string; resourceName: string; withKind: "Task" | "Event"; withTitle: string; start: string; end: string; timeZone: string };
 
@@ -22,8 +21,7 @@ function Modal({ title, children, onClose, alert = false, wide = false }: { titl
   return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-3 sm:p-6" onMouseDown={onClose}><section role={alert ? "alertdialog" : "dialog"} aria-modal="true" aria-label={title} className={`max-h-[94vh] w-full overflow-y-auto rounded-xl bg-white shadow-2xl ${wide ? "max-w-3xl" : "max-w-lg"}`} onMouseDown={event => event.stopPropagation()}><header className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-xl border-b bg-blue-900 px-5 py-4 text-white"><h2 className="text-lg font-bold">{title}</h2><button type="button" aria-label={`Close ${title}`} onClick={onClose} className="rounded px-2 text-2xl hover:bg-white/15">×</button></header>{children}</section></div>;
 }
 
-export default function CalendarWorkflowReview({ context, canManage, projectId, projectName, projectTypes = [], selectedProjectTypeIds = [], onProjectTypeIdsChange, onEventsChanged, onIncludeCompletedChange }: { context: CalendarContext; canManage: boolean; projectId?: number; projectName?: string; projectTypes?: Array<{ id: number; name: string }>; selectedProjectTypeIds?: number[]; onProjectTypeIdsChange?: (ids: number[]) => void; onEventsChanged?: () => void; onIncludeCompletedChange?: (include:boolean)=>void }) {
-  const [view, setView] = useState<ViewName>("Month");
+export default function CalendarWorkflowReview({ context, canManage, projectId, projectName, projectTypes = [], selectedProjectTypeIds = [], onProjectTypeIdsChange, onEventsChanged, onIncludeCompletedChange, onAddEventReady }: { context: CalendarContext; canManage: boolean; projectId?: number; projectName?: string; projectTypes?: Array<{ id: number; name: string }>; selectedProjectTypeIds?: number[]; onProjectTypeIdsChange?: (ids: number[]) => void; onEventsChanged?: () => void; onIncludeCompletedChange?: (include:boolean)=>void; onAddEventReady?: (open: () => void) => void }) {
   const [dialog, setDialog] = useState<DialogName>(null);
   const [notice, setNotice] = useState("");
   const [includeCompleted, setIncludeCompleted] = useState(false);
@@ -66,6 +64,7 @@ export default function CalendarWorkflowReview({ context, canManage, projectId, 
   function toggleType(typeId: number) { onProjectTypeIdsChange?.(selectedProjectTypeIds.includes(typeId) ? selectedProjectTypeIds.filter(item => item !== typeId) : [...selectedProjectTypeIds, typeId]); }
   function toggleResource(resource: string) { setResources(current => current.includes(resource) ? current.filter(item => item !== resource) : [...current, resource]); }
   function openEventForm() { setErrors([]); setDialog("event-form"); }
+  useEffect(() => { onAddEventReady?.(openEventForm); }, [onAddEventReady]);
   function reviewEvent() {
     const next: string[] = [];
     if (!title.trim()) next.push("Enter the Event Title.");
@@ -81,8 +80,7 @@ export default function CalendarWorkflowReview({ context, canManage, projectId, 
 
   return <section className="overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm" aria-label={`${calendarName} workflow review`}>
     <div className="bg-gradient-to-r from-blue-950 to-blue-800 px-4 py-4 text-white">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold">{calendarName} controls</h2><span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold">Persistent calendar workflow</span></div><p className="mt-1 max-w-3xl text-sm text-blue-100">Tasks and Events remain separate, role-scoped records while this calendar shows the appropriate rollup.</p></div><div className="flex flex-wrap gap-2">{(["Day", "Week", "Month"] as ViewName[]).map(item => <button key={item} type="button" aria-pressed={view === item} onClick={() => setView(item)} className={`rounded-md px-3 py-2 text-sm font-bold ${view === item ? "bg-white text-blue-900" : "border border-white/40 hover:bg-white/10"}`}>{item}</button>)}{canManage && context !== "resource" && <button type="button" onClick={openEventForm} className="rounded-md bg-emerald-300 px-3 py-2 text-sm font-bold text-emerald-950 hover:bg-emerald-200">+ Add Event</button>}</div></div>
-      <p className="mt-3 text-xs text-blue-200">Company Time Zone: {companyTimeZone} · Current review view: {view}</p>
+      <div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold">Calendar Controls</h2><span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold">Persistent calendar workflow</span></div><p className="mt-1 max-w-3xl text-sm text-blue-100">Tasks and Events remain separate, role-scoped records while this calendar shows the appropriate rollup.</p></div>
     </div>
     {notice && <div role="status" className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">{notice}</div>}
     <div className="grid gap-4 p-4 xl:grid-cols-[1fr_300px]">

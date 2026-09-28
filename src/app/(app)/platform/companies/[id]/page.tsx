@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import CompanyDetailPrototype from "@/components/CompanyDetailPrototype";
 import ModuleRestricted from "@/components/ModuleRestricted";
 import { getCurrentUser, isPlatformAdmin } from "@/lib/auth";
-import { getCompanyOperationalMetadata } from "@/lib/company-administration";
+import { getCompanyOperationalMetadata, listCompanyActivity } from "@/lib/company-administration";
 import { toCompanyAdminUiItem } from "@/lib/company-admin-ui";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -21,5 +21,5 @@ export default async function CompanyDetailPage({ params }: { params: Promise<{ 
   const companyId = Number((await params).id);
   const company = Number.isInteger(companyId) ? getCompanyOperationalMetadata(companyId) : null;
   if (!company) notFound();
-  return <CompanyDetailPrototype company={toCompanyAdminUiItem(company)} />;
+  return <CompanyDetailPrototype company={toCompanyAdminUiItem(company)} activity={listCompanyActivity(companyId)} />;
 }

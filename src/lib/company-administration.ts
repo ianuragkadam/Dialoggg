@@ -19,8 +19,18 @@ export type CompanyOperationalMetadata = {
   resources: number;
   activeProjects: number;
   createdAt: string;
+  expirationDate: string | null;
   googleStatus: "Connected" | "Not connected" | "Attention needed" | "Paused";
   oneDriveStatus: "Connected" | "Not connected" | "Setup pending" | "Attention needed";
+};
+
+export type CompanyActivityItem = {
+  id: number;
+  occurredAt: string;
+  actor: string;
+  action: string;
+  target: string;
+  result: "success" | "denied" | "failure";
 };
 
 type CompanyRow = {
@@ -29,6 +39,7 @@ type CompanyRow = {
   status: string;
   time_zone: string;
   signup_date: string;
+  expiration_date: string | null;
   owner_first_name: string | null;
   owner_last_name: string | null;
   owner_email: string | null;
@@ -43,7 +54,7 @@ type CompanyRow = {
 };
 
 const COMPANY_METADATA_SQL = `
-  SELECT c.id, c.name, lower(c.status) AS status, c.time_zone, c.signup_date,
+  SELECT c.id, c.name, lower(c.status) AS status, c.time_zone, c.signup_date, c.expiration_date,
     owner_identity.first_name AS owner_first_name,
     owner_identity.last_name AS owner_last_name,
     owner_identity.normalized_email AS owner_email,
@@ -114,6 +125,7 @@ function mapCompany(row: CompanyRow): CompanyOperationalMetadata {
     resources: Number(row.resource_count),
     activeProjects: Number(row.active_project_count),
     createdAt: row.signup_date,
+    expirationDate: row.expiration_date,
     googleStatus,
     oneDriveStatus,
   };
@@ -127,6 +139,31 @@ export function listCompanyOperationalMetadata() {
 export function getCompanyOperationalMetadata(companyId: number) {
   const row = db.prepare(`${COMPANY_METADATA_SQL} WHERE c.id = ?`).get(companyId) as CompanyRow | undefined;
   return row ? mapCompany(row) : null;
+}
+
+export function listCompanyActivity(companyId: number): CompanyActivityItem[] {
+  const rows = db.prepare(`
+    SELECT a.id, a.occurred_at, a.action, a.target_type, a.target_id, a.result,
+      COALESCE(NULLIF(TRIM(i.first_name || ' ' || i.last_name), ''), i.normalized_email, 'System') AS actor
+    FROM audit_event a
+    LEFT JOIN identity i ON i.id = a.actor_identity_id
+    WHERE a.company_id = ?
+    ORDER BY a.occurred_at DESC, a.id DESC
+    LIMIT 100
+  `).all(companyId) as Array<{ id: number; occurred_at: string; action: string; target_type: string | null; target_id: string | null; result: "success" | "denied" | "failure"; actor: string }>;
+  return rows.map(row => ({
+    id: row.id,
+    occurredAt: row.occurred_at,
+    actor: row.actor,
+    action: row.action,
+    target: row.target_type ? `${row.target_type}${row.target_id ? `:${row.target_id}` : ""}` : "—",
+    result: row.result,
+  }));
+}
+
+export function updateCompanyExpiration(companyId: number, expirationDate: string | null) {
+  const result = db.prepare("UPDATE company SET expiration_date = ? WHERE id = ?").run(expirationDate, companyId);
+  return result.changes === 1 ? getCompanyOperationalMetadata(companyId) : null;
 }
 
 export function isIanaTimeZone(value: string) {
@@ -190,7 +227,7 @@ export async function createCompanyWithFirstOwner(input: {
     if (duplicate) throw new Error("COMPANY_NAME_EXISTS");
 
     const companyResult = db.prepare(`
-      INSERT INTO company (name, time_zone, status) VALUES (?, ?, 'active')
+      INSERT INTO company (name, time_zone, expiration_date, status) VALUES (?, ?, date('now', '+1 year'), 'active')
     `).run(input.company.name, input.company.timeZone);
     const companyId = Number(companyResult.lastInsertRowid);
     const categoryStatement = db.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, ?)");

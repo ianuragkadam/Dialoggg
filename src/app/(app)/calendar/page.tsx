@@ -23,6 +23,8 @@ export default function MasterCalendarPage() {
   const [includeCompleted,setIncludeCompleted]=useState(false);
   const [notice,setNotice]=useState("");
   const [selectedEvent,setSelectedEvent]=useState<any>(null);
+  const [openAddEvent,setOpenAddEvent]=useState<(() => void) | null>(null);
+  const registerAddEvent = useCallback((open: () => void) => setOpenAddEvent(() => open), []);
 
   useEffect(() => {
     fetch("/api/me").then(r => r.json()).then(j => {setCanManage(["owner", "admin"].includes(j.user?.user_type));setCompanyTimeZone(j.user?.company_time_zone||"UTC");});
@@ -80,9 +82,11 @@ export default function MasterCalendarPage() {
         onProjectTypeIdsChange={setSelectedProjectTypeIds}
         onIncludeCompletedChange={setIncludeCompleted}
         onEventsChanged={loadEvents}
+        onAddEventReady={registerAddEvent}
       />
       {notice&&<div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</div>}
       <div className="bg-white border rounded shadow-sm p-4">
+        {openAddEvent && <div className="mb-3 flex justify-end"><button type="button" onClick={openAddEvent} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">+ Add Event</button></div>}
         <FullCalendar
           plugins={[dayGridPlugin,interactionPlugin,luxonPlugin]}
           initialView="dayGridMonth"

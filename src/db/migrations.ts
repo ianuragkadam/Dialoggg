@@ -2230,7 +2230,17 @@ const migration016: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016];
+const migration017: Migration = {
+  version: 17,
+  name: "company_expiration_dates",
+  signature: "one-year company expiration default with administrator override and never option v1",
+  up(database) {
+    addColumn(database, "company", "expiration_date", "expiration_date TEXT");
+    database.exec("UPDATE company SET expiration_date = date(signup_date, '+1 year') WHERE expiration_date IS NULL");
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {
