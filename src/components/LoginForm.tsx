@@ -15,19 +15,29 @@ export default function LoginForm() {
     setError("");
     setLoading(true);
 
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
 
-    const result = await response.json().catch(() => ({}));
-    setLoading(false);
-    if (response.ok) {
-      window.location.assign(result.user?.user_type === "super_admin" ? "/platform/companies" : "/projects");
-      return;
+      const result = await response.json().catch(() => ({}));
+      if (response.ok) {
+        window.location.assign(result.user?.user_type === "super_admin" ? "/platform/companies" : "/projects");
+        return;
+      }
+
+      setError(
+        response.status === 429
+          ? result.error || "Too many login attempts. Please wait a moment and try again."
+          : "Email or password is incorrect. Check your details and try again.",
+      );
+    } catch {
+      setError("We couldn’t reach Dialoggg. Check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-    setError(result.error || "Login failed");
   }
 
   return (
@@ -47,12 +57,16 @@ export default function LoginForm() {
               required
               autoComplete="email"
               value={email}
-              onChange={event => setEmail(event.target.value)}
+              onChange={event => { setEmail(event.target.value); setError(""); }}
               className="w-full px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
-          <PasswordField id="login-password" label="Password" required autoComplete="current-password" value={password} onChange={setPassword} className="w-full rounded border px-3 py-2 pr-11 outline-none focus:ring-2 focus:ring-blue-500" />
-          {error && <div role="alert" className="text-red-600 text-sm">{error}</div>}
+          <PasswordField id="login-password" label="Password" required autoComplete="current-password" value={password} onChange={value => { setPassword(value); setError(""); }} className="w-full rounded border px-3 py-2 pr-11 outline-none focus:ring-2 focus:ring-blue-500" />
+          {error && (
+            <div role="alert" aria-live="polite" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </div>
+          )}
           <button
             type="submit"
             disabled={loading}
