@@ -1,4 +1,4 @@
-export const MIN_PASSWORD_CHARACTERS = 12;
+export const MIN_PASSWORD_CHARACTERS = 8;
 export const MAX_PASSWORD_BYTES = 72;
 
 export type PasswordPolicyError = "PASSWORD_REQUIRED" | "PASSWORD_TOO_SHORT" | "PASSWORD_TOO_LONG";

@@ -2184,7 +2184,53 @@ const migration015: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015];
+const migration016: Migration = {
+  version: 16,
+  name: "multiple_platform_administrators",
+  signature: "primary platform administrator + secure secondary administrator invitations v1",
+  up(database) {
+    addColumn(database, "identity", "is_primary_platform_admin", "is_primary_platform_admin INTEGER NOT NULL DEFAULT 0 CHECK (is_primary_platform_admin IN (0,1))");
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS platform_admin_invitation (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        identity_id INTEGER NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE CHECK (length(token_hash) = 64),
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        revoked_at TEXT,
+        created_by_identity_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (identity_id) REFERENCES identity(id) ON DELETE CASCADE,
+        FOREIGN KEY (created_by_identity_id) REFERENCES identity(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_platform_admin_invitation_identity
+        ON platform_admin_invitation(identity_id, expires_at DESC);
+
+      UPDATE identity
+      SET is_primary_platform_admin = 1
+      WHERE id = (
+        SELECT id FROM identity
+        WHERE is_platform_admin = 1 AND status = 'active'
+        ORDER BY id ASC LIMIT 1
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM identity WHERE is_primary_platform_admin = 1
+      );
+
+      CREATE TRIGGER IF NOT EXISTS trg_primary_platform_admin_requires_platform_access_insert
+      BEFORE INSERT ON identity
+      WHEN NEW.is_primary_platform_admin = 1 AND NEW.is_platform_admin <> 1
+      BEGIN SELECT RAISE(ABORT, 'PRIMARY_PLATFORM_ADMIN_REQUIRES_PLATFORM_ACCESS'); END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_primary_platform_admin_requires_platform_access_update
+      BEFORE UPDATE OF is_primary_platform_admin, is_platform_admin ON identity
+      WHEN NEW.is_primary_platform_admin = 1 AND NEW.is_platform_admin <> 1
+      BEGIN SELECT RAISE(ABORT, 'PRIMARY_PLATFORM_ADMIN_REQUIRES_PLATFORM_ACCESS'); END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

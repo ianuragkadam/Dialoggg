@@ -11,6 +11,7 @@ export default function PasswordField({
   className = "w-full rounded border px-3 py-2 pr-11 text-sm outline-none focus:ring-2 focus:ring-blue-500",
   placeholder,
   required = false,
+  minLength,
 }: {
   id: string;
   label: string;
@@ -20,6 +21,7 @@ export default function PasswordField({
   className?: string;
   placeholder?: string;
   required?: boolean;
+  minLength?: number;
 }) {
   const [visible, setVisible] = useState(false);
 
@@ -31,6 +33,7 @@ export default function PasswordField({
         name={id}
         type={visible ? "text" : "password"}
         required={required}
+        minLength={minLength}
         autoComplete={autoComplete}
         value={value}
         onChange={event => onChange(event.target.value)}

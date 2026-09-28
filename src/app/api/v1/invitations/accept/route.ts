@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import db from "@/db";
-import { invitationForToken } from "@/lib/account-tokens";
+import { invitationForToken, platformAdministratorInvitationForToken } from "@/lib/account-tokens";
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { createSession, hashPassword, revokeIdentitySessions, verifyPassword, type CompanyRole } from "@/lib/auth";
 import { validateRequestOrigin } from "@/lib/request-security";
@@ -23,13 +23,57 @@ export async function POST(request: NextRequest) {
   const rate = rateLimitStatus(options);
   if (!rate.allowed) return apiError(429, "RATE_LIMITED", "Too many attempts. Try again later.", traceId);
   const invitation = token.length >= 32 ? invitationForToken(token) : undefined;
-  const needsPassword = invitation?.identity_status !== "active";
+  const platformInvitation = invitation ? undefined : (token.length >= 32 ? platformAdministratorInvitationForToken(token) : undefined);
+  const needsPassword = (invitation?.identity_status ?? platformInvitation?.identity_status) !== "active";
   const policyError = passwordPolicyError(password);
-  if (!invitation || invitation.membership_status !== "pending" || policyError) {
+  if ((!invitation && !platformInvitation) || (invitation && invitation.membership_status !== "pending") || policyError) {
     recordRateLimitFailure(options, rate.keyHash);
-    if (invitation?.membership_status === "pending" && policyError) return apiError(400, policyError, passwordPolicyMessage(policyError), traceId);
+    if ((invitation?.membership_status === "pending" || platformInvitation) && policyError) return apiError(400, policyError, passwordPolicyMessage(policyError), traceId);
     return apiError(400, "INVALID_OR_EXPIRED_TOKEN", "This invitation is invalid or expired.", traceId);
   }
+  if (platformInvitation) {
+    if (!needsPassword) {
+      const identity = db.prepare("SELECT password_hash FROM identity WHERE id = ?").get(platformInvitation.identity_id) as { password_hash: string };
+      if (!(await verifyPassword(password, identity.password_hash))) {
+        recordRateLimitFailure(options, rate.keyHash);
+        return apiError(400, "INVALID_OR_EXPIRED_TOKEN", "This invitation is invalid or expired.", traceId);
+      }
+    }
+    const passwordHash = needsPassword ? await hashPassword(password) : null;
+    const activated = db.transaction(() => {
+      const changed = db.prepare(`
+        UPDATE platform_admin_invitation SET used_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+      `).run(platformInvitation.id);
+      if (changed.changes !== 1) return false;
+      db.prepare(`
+        UPDATE identity SET is_platform_admin = 1,
+          password_hash = COALESCE(?, password_hash),
+          status = CASE WHEN status = 'pending' THEN 'active' ELSE status END,
+          email_verified_at = COALESCE(email_verified_at, CURRENT_TIMESTAMP),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(passwordHash, platformInvitation.identity_id);
+      db.prepare(`
+        UPDATE platform_admin_invitation SET revoked_at = CURRENT_TIMESTAMP
+        WHERE identity_id = ? AND id <> ? AND used_at IS NULL AND revoked_at IS NULL
+      `).run(platformInvitation.identity_id, platformInvitation.id);
+      revokeIdentitySessions(platformInvitation.identity_id, "platform_administrator_invitation_accepted");
+      recordAudit({
+        requestId: traceId,
+        actorIdentityId: platformInvitation.identity_id,
+        action: "platform_administrator.invitation.accept",
+        targetType: "identity",
+        targetId: platformInvitation.identity_id,
+        result: "success",
+      });
+      return true;
+    })();
+    if (!activated) return apiError(400, "INVALID_OR_EXPIRED_TOKEN", "This invitation is invalid or expired.", traceId);
+    const session = await createSession(platformInvitation.identity_id, { type: "platform" });
+    return apiSuccess({ status: "accepted", context: session.context, expiresAt: session.expiresAt }, traceId, { status: 201 });
+  }
+  if (!invitation) return apiError(400, "INVALID_OR_EXPIRED_TOKEN", "This invitation is invalid or expired.", traceId);
   if (!needsPassword) {
     const identity = db.prepare("SELECT password_hash FROM identity WHERE id = ?").get(invitation.identity_id) as { password_hash: string };
     if (!(await verifyPassword(password, identity.password_hash))) {

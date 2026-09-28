@@ -4,6 +4,7 @@ import ChangePasswordForm from "@/components/ChangePasswordForm";
 import { redirect } from "next/navigation";
 import { roleLabel, statusLabel } from "@/lib/product-language";
 import Link from "next/link";
+import PlatformAdministratorManagement, { type PlatformAdministrator } from "@/components/PlatformAdministratorManagement";
 
 export default async function AccountPage() {
   const user = await getCurrentUser();
@@ -11,6 +12,22 @@ export default async function AccountPage() {
   const company = user.company_id
     ? db.prepare("SELECT * FROM company WHERE id = ?").get(user.company_id) as any
     : null;
+  const platformAdministrators = user.context_type === "platform"
+    ? db.prepare(`
+      SELECT i.id, i.first_name, i.last_name, i.normalized_email,
+        CASE WHEN i.is_platform_admin = 1 THEN i.status ELSE 'invited' END AS status,
+        i.is_primary_platform_admin
+      FROM identity i
+      WHERE i.is_platform_admin = 1 OR EXISTS (
+        SELECT 1 FROM platform_admin_invitation pai
+        WHERE pai.identity_id = i.id AND pai.used_at IS NULL AND pai.revoked_at IS NULL AND pai.expires_at > CURRENT_TIMESTAMP
+      )
+      ORDER BY is_primary_platform_admin DESC, lower(first_name), lower(last_name), id
+    `).all() as PlatformAdministrator[]
+    : [];
+  const primary = user.context_type === "platform"
+    ? db.prepare("SELECT is_primary_platform_admin FROM identity WHERE id = ?").get(user.identity_id) as { is_primary_platform_admin: number } | undefined
+    : undefined;
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -27,6 +44,10 @@ export default async function AccountPage() {
           </>
         )}
       </div>
+      {user.context_type === "platform" && <PlatformAdministratorManagement
+        initialAdministrators={platformAdministrators}
+        canManage={primary?.is_primary_platform_admin === 1}
+      />}
       {company ? <div className="rounded border border-blue-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><h2 className="font-semibold">Google Calendar</h2><p className="mt-1 text-sm text-gray-600">Manage your personal one-way Dialoggg calendar connection and synchronization health.</p></div>

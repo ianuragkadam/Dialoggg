@@ -262,6 +262,7 @@ function actorForConnection(connection: ConnectionRow): Actor {
     companyTimeZone: row.time_zone,
     companyRole: row.role,
     isPlatformAdmin: false,
+    isPrimaryPlatformAdmin: false,
     csrfHash: "",
     expiresAt: "",
   };

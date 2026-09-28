@@ -34,6 +34,7 @@ export type Actor = {
   companyTimeZone: string | null;
   companyRole: CompanyRole | null;
   isPlatformAdmin: boolean;
+  isPrimaryPlatformAdmin: boolean;
   csrfHash: string;
   expiresAt: string;
 };
@@ -210,7 +211,7 @@ export function actorForSessionToken(token: string): Actor | null {
       s.id AS session_id, s.identity_id, s.active_company_id, s.active_membership_id,
       s.context_type, s.csrf_hash, s.expires_at, s.last_seen_at,
       i.legacy_user_id, i.normalized_email, i.first_name, i.last_name,
-      i.status AS identity_status, i.is_platform_admin,
+      i.status AS identity_status, i.is_platform_admin, i.is_primary_platform_admin,
       cm.role AS company_role, cm.status AS membership_status,
       c.name AS company_name, c.time_zone AS company_time_zone, c.status AS company_status
     FROM auth_session s
@@ -233,6 +234,7 @@ export function actorForSessionToken(token: string): Actor | null {
     last_name: string;
     identity_status: string;
     is_platform_admin: number;
+    is_primary_platform_admin: number;
     company_role: CompanyRole | null;
     membership_status: string | null;
     company_name: string | null;
@@ -274,6 +276,7 @@ export function actorForSessionToken(token: string): Actor | null {
     companyTimeZone: row.company_time_zone,
     companyRole: row.company_role,
     isPlatformAdmin: row.is_platform_admin === 1,
+    isPrimaryPlatformAdmin: row.is_primary_platform_admin === 1,
     csrfHash: row.csrf_hash,
     expiresAt: row.expires_at,
   };

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AuthCard } from "@/components/ForgotPasswordForm";
 import { MAX_PASSWORD_BYTES, MIN_PASSWORD_CHARACTERS, passwordByteLength } from "@/lib/password-policy";
+import PasswordField from "@/components/PasswordField";
 
 export default function PasswordTokenForm({ mode }: { mode: "reset" | "invitation" }) {
   const [token, setToken] = useState("");
@@ -47,8 +48,8 @@ export default function PasswordTokenForm({ mode }: { mode: "reset" | "invitatio
   return <AuthCard title={title} description={description}>
     {completed ? <div className="space-y-4"><p role="status" className="rounded bg-emerald-50 p-3 text-sm text-emerald-950">{message}</p><Link href={mode === "invitation" ? "/projects" : "/login"} className="block rounded bg-blue-700 py-2 text-center font-semibold text-white">Continue</Link></div> :
       <form onSubmit={submit} className="space-y-4">
-        <div><label htmlFor={`${mode}-password`} className="mb-1 block text-sm font-medium">{mode === "reset" ? "New password" : "Password"}</label><input id={`${mode}-password`} type="password" autoComplete={mode === "reset" ? "new-password" : "current-password"} required minLength={MIN_PASSWORD_CHARACTERS} value={password} onChange={event => setPassword(event.target.value)} className="w-full rounded border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500" /><p className="mt-1 text-xs text-gray-500">At least {MIN_PASSWORD_CHARACTERS} characters and no more than {MAX_PASSWORD_BYTES} UTF-8 bytes.</p></div>
-        <div><label htmlFor={`${mode}-confirm`} className="mb-1 block text-sm font-medium">Confirm password</label><input id={`${mode}-confirm`} type="password" autoComplete={mode === "reset" ? "new-password" : "current-password"} required minLength={MIN_PASSWORD_CHARACTERS} value={confirm} onChange={event => setConfirm(event.target.value)} className="w-full rounded border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500" /></div>
+        <div><PasswordField id={`${mode}-password`} label={mode === "reset" ? "New password" : "Password"} required minLength={MIN_PASSWORD_CHARACTERS} autoComplete={mode === "reset" ? "new-password" : "current-password"} value={password} onChange={setPassword} /><p className="mt-1 text-xs text-gray-500">At least {MIN_PASSWORD_CHARACTERS} characters and no more than {MAX_PASSWORD_BYTES} UTF-8 bytes.</p></div>
+        <PasswordField id={`${mode}-confirm`} label="Confirm password" required minLength={MIN_PASSWORD_CHARACTERS} autoComplete={mode === "reset" ? "new-password" : "current-password"} value={confirm} onChange={setConfirm} />
         {message && <p role="alert" className="rounded bg-red-50 p-3 text-sm text-red-800">{message}</p>}
         <button disabled={busy} className="w-full rounded bg-blue-700 py-2 font-semibold text-white disabled:opacity-60">{busy ? "Saving…" : mode === "reset" ? "Reset password" : "Accept invitation"}</button>
         <Link href="/login" className="block text-center text-sm font-semibold text-blue-700 hover:underline">Return to login</Link>

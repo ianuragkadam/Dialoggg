@@ -71,6 +71,46 @@ export function issueInvitation(input: {
   })();
 }
 
+export function issuePlatformAdministratorInvitation(input: {
+  identityId: number;
+  createdByIdentityId: number;
+  baseUrl: string;
+}) {
+  const target = db.prepare(`
+    SELECT id, normalized_email, first_name FROM identity WHERE id = ?
+  `).get(input.identityId) as { id: number; normalized_email: string; first_name: string } | undefined;
+  if (!target) throw new Error("PLATFORM_ADMIN_INVITATION_TARGET_INVALID");
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = expiresInHours(INVITATION_HOURS);
+  return db.transaction(() => {
+    db.prepare(`
+      UPDATE platform_admin_invitation SET revoked_at = CURRENT_TIMESTAMP
+      WHERE identity_id = ? AND used_at IS NULL AND revoked_at IS NULL
+    `).run(target.id);
+    const invitation = db.prepare(`
+      INSERT INTO platform_admin_invitation (identity_id, token_hash, expires_at, created_by_identity_id)
+      VALUES (?, ?, ?, ?)
+    `).run(target.id, sha256(token), expiresAt, input.createdByIdentityId);
+    const invitationId = Number(invitation.lastInsertRowid);
+    queueTransactionalEmail({
+      kind: "invitation_email",
+      idempotencyKey: `platform-admin-invitation:${invitationId}`,
+      expiresAt,
+      email: {
+        to: target.normalized_email,
+        template: "invitation",
+        variables: {
+          greeting: `Hello ${target.first_name},`,
+          message: "You have been invited to become a Platform Administrator in Dialoggg.",
+          actionUrl: actionUrl(input.baseUrl, "/accept-invitation", token),
+          expiresAt,
+        },
+      },
+    });
+    return { invitationId, expiresAt };
+  })();
+}
+
 export function issuePasswordReset(identityId: number, baseUrl: string) {
   const identity = db.prepare(`
     SELECT id, normalized_email, first_name FROM identity WHERE id = ? AND status = 'active'
@@ -122,6 +162,20 @@ export function invitationForToken(token: string) {
     identity_id: number;
     company_id: number;
     membership_status: string;
+    identity_status: string;
+  } | undefined;
+}
+
+export function platformAdministratorInvitationForToken(token: string) {
+  return db.prepare(`
+    SELECT pai.id, pai.identity_id, i.status AS identity_status
+    FROM platform_admin_invitation pai
+    JOIN identity i ON i.id = pai.identity_id
+    WHERE pai.token_hash = ? AND pai.used_at IS NULL AND pai.revoked_at IS NULL
+      AND pai.expires_at > CURRENT_TIMESTAMP
+  `).get(sha256(token)) as {
+    id: number;
+    identity_id: number;
     identity_status: string;
   } | undefined;
 }
