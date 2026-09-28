@@ -48,6 +48,19 @@ export function listProjectTypes(companyId: number) {
   return rows.map(row => mapRow(row, companyId));
 }
 
+export function countProjectsMissingType(companyId: number) {
+  const row = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM project p
+    LEFT JOIN project_type pt
+      ON pt.id = p.project_type_id
+      AND pt.company_id = p.company_id
+      AND pt.status = 'active'
+    WHERE p.company_id = ? AND pt.id IS NULL
+  `).get(companyId) as { count: number };
+  return Number(row.count);
+}
+
 export function getProjectType(projectTypeId: number, companyId: number) {
   const row = db.prepare(`
     SELECT pt.id, pt.name, pt.updated_at,

@@ -1,14 +1,17 @@
 import db from "@/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentActor, getCurrentUser } from "@/lib/auth";
 import ChangePasswordForm from "@/components/ChangePasswordForm";
 import { redirect } from "next/navigation";
 import { roleLabel, statusLabel } from "@/lib/product-language";
 import Link from "next/link";
 import PlatformAdministratorManagement, { type PlatformAdministrator } from "@/components/PlatformAdministratorManagement";
+import CompanyLogoSettings from "@/components/CompanyLogoSettings";
+import path from "node:path";
 
 export default async function AccountPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const actor = await getCurrentActor();
   const company = user.company_id
     ? db.prepare("SELECT * FROM company WHERE id = ?").get(user.company_id) as any
     : null;
@@ -44,6 +47,9 @@ export default async function AccountPage() {
           </>
         )}
       </div>
+      {company && user.company_role === "owner" && actor?.actualCompanyRole === "owner" && !actor.rolePreview && <CompanyLogoSettings
+        initialLogoUrl={company.logo_path ? `/api/v1/company/logo?v=${encodeURIComponent(path.basename(company.logo_path))}` : null}
+      />}
       {user.context_type === "platform" && <PlatformAdministratorManagement
         initialAdministrators={platformAdministrators}
         canManage={primary?.is_primary_platform_admin === 1}

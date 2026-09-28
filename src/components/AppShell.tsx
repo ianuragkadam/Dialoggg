@@ -32,7 +32,7 @@ const MENU = [
   { label: "Help",               href: "/help",                icon: "❓", adminOnly: false, platformOnly: false, tenantOnly: false },
 ];
 
-export default function AppShell({ user, children }: { user: User; children: React.ReactNode }) {
+export default function AppShell({ user, children, companyName, companyLogoUrl }: { user: User; children: React.ReactNode; companyName: string | null; companyLogoUrl: string | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -112,7 +112,7 @@ export default function AppShell({ user, children }: { user: User; children: Rea
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setOpen(current => !current)} aria-controls="primary-navigation" aria-expanded={open} aria-label={open ? "Close navigation" : "Open navigation"} className="rounded p-1 text-2xl focus:outline-none focus:ring-2 focus:ring-white lg:hidden">☰</button>
-            <div className="app-logo-mark w-9 h-9 rounded bg-white text-blue-800 font-bold flex items-center justify-center">D</div>
+            <div className="app-logo-mark flex h-9 w-9 shrink-0 items-center justify-center rounded bg-white font-bold text-blue-800">D</div>
             <div>
               <div className="font-bold text-lg leading-tight">Dialoggg</div>
             </div>
@@ -141,6 +141,9 @@ export default function AppShell({ user, children }: { user: User; children: Rea
             ) : (
               <span className="hidden whitespace-nowrap rounded bg-blue-700 px-2 py-1 text-xs sm:inline">{roleLabel(user.user_type)}</span>
             )}
+            {companyLogoUrl && !platformAdmin && <div className="flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded bg-white p-1 sm:w-16" title={`${companyName || "Company"} logo`}>
+              <img src={companyLogoUrl} alt={`${companyName || "Company"} logo`} className="max-h-full max-w-full object-contain" />
+            </div>}
             <button onClick={logout} className="whitespace-nowrap rounded bg-blue-700 px-3 py-1 text-sm hover:bg-blue-900">
               Log out
             </button>
