@@ -138,7 +138,7 @@ body {
   box-shadow: inset 3px 0 #eb6b2d;
 }
 
-/* Filled actions use the D2 orange with dark text for reliable contrast. */
+/* Filled actions retain the existing D2 orange throughout the company app. */
 .tenant-theme .bg-blue-700,
 .tenant-theme .bg-emerald-600,
 .tenant-theme .bg-emerald-700,
@@ -159,6 +159,29 @@ body {
 .tenant-theme .bg-orange-700:hover {
   background-color: #f28a4d !important;
   color: #101a2b !important;
+}
+
+/* Project Types retains its separately requested lime primary action. */
+.project-type-add-button {
+  background-color: #a9cf38 !important;
+  color: #101a2b !important;
+}
+
+.project-type-add-button:hover {
+  background-color: #97bb2e !important;
+  color: #101a2b !important;
+}
+
+.project-type-add-button:focus-visible {
+  outline: 2px solid #a9cf38;
+  outline-offset: 2px;
+}
+
+/* High-contrast role-preview chip, independent of the tenant amber theme. */
+.role-preview-chip {
+  background-color: #55681c !important;
+  color: #fff !important;
+  border: 1px solid #a9cf38;
 }
 
 /* Keep semantic text and keyboard focus visible on the dark surfaces. */

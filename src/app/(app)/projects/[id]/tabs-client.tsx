@@ -66,7 +66,7 @@ export default function ProjectTabs({
               </div>
             </div>
             <GanttChart projectId={project.id} canEdit={canEdit} />
-            <ProjectPlanWorkflowReview projectName={project.name} canEdit={canEdit} />
+            <ProjectPlanWorkflowReview projectId={project.id} projectName={project.name} canEdit={canEdit} />
             <ProjectPlanGuide />
           </div>
         )}

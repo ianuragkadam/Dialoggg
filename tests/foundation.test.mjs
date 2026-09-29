@@ -247,17 +247,17 @@ test("Projects UI covers complete fields, lifecycle, rebase, and External bounda
   assert.doesNotMatch(`${list}\n${form}\n${detail}`, /UI preview|no production data changed|non-persistent/);
 });
 
-test("Project Plan workflow UI covers approved scheduling rules without replacing the original Gantt", async () => {
+test("Project Plan hierarchy review reads live saved tasks and hands edits to the original Gantt", async () => {
   const review = await read("src/components/ProjectPlanWorkflowReview.tsx");
   const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
   const gantt = await read("src/components/GanttChart.tsx");
-  for (const value of ["Leaf Task", "Header Task", "Time Period", "Finish-to-Start", "Start-to-Start", "Finish-to-Finish", "Start-to-Finish", "Allow work on Saturday", "Allow work on Sunday", "Multiple predecessors", "Bidirectional cascade", "Root Header Task is protected", "Header Task cannot be deleted", "Delete Task?"]) assert.match(review, new RegExp(value.replace(/[+?()]/g, "\\$&")));
-  assert.match(review, /latest valid result wins/i);
-  assert.match(review, /zero or a positive whole number/i);
-  assert.match(review, /Original Gantt retained/);
+  for (const value of ["Project hierarchy · live data", "Project root task rules", "saved tasks", "Edit in Gantt", "No tasks have been added", "dialoggg:open-plan-task", "dialoggg:project-plan-updated"]) assert.match(review, new RegExp(value.replace(/[+?()·]/g, "\\$&")));
   assert.match(tabs, /ProjectPlanWorkflowReview/);
+  assert.match(tabs, /ProjectPlanWorkflowReview projectId=\{project\.id\}/);
   assert.match(tabs, /<GanttChart projectId=/);
   assert.match(gantt, /dhtmlx-gantt/);
+  assert.match(gantt, /dialoggg:open-plan-task/);
+  assert.match(gantt, /dialoggg:project-plan-updated/);
   assert.doesNotMatch(review, /import\(.+GanttChart|from ["']@\/components\/GanttChart/);
 });
 

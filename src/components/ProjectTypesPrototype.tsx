@@ -170,7 +170,7 @@ export default function ProjectTypesPrototype({ initialItems }: { initialItems: 
 
   return <div className="mx-auto max-w-6xl space-y-6 pb-10">
     <nav aria-label="Breadcrumb" className="text-sm text-slate-500"><span>Settings</span><span aria-hidden="true" className="px-2">/</span><span className="font-medium text-slate-800">Project Types</span></nav>
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h1 className="text-3xl font-bold tracking-tight text-slate-950">Project Types</h1></div><button type="button" onClick={openCreate} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-800"><span aria-hidden="true" className="mr-2 text-lg">+</span>Add Project Type</button></div>
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h1 className="text-3xl font-bold tracking-tight text-slate-950">Project Types</h1></div><button type="button" onClick={openCreate} className="project-type-add-button inline-flex min-h-11 items-center justify-center rounded-lg px-4 py-2.5 text-sm font-bold"><span aria-hidden="true" className="mr-2 text-lg">+</span>Add Project Type</button></div>
     {pageError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">{pageError}</div>}
     <section aria-label="Project Type summary" className="grid gap-3 sm:grid-cols-2"><Summary label="Project Types" value={items.length}/><Summary label="Assigned Projects" value={assignedProjects}/></section>
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="project-types-list-title">

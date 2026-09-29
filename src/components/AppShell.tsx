@@ -136,7 +136,7 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
                   <option value="employee">Employee</option>
                   <option value="external">External</option>
                 </select>
-                {rolePreviewEnabled && <span className="hidden rounded bg-amber-300 px-2 py-1 text-xs font-semibold text-amber-950 md:inline">Read-only preview</span>}
+                {rolePreviewEnabled && <span className="role-preview-chip hidden rounded px-2 py-1 text-xs font-semibold md:inline">Read-only preview</span>}
               </div>
             ) : (
               <span className="hidden whitespace-nowrap rounded bg-blue-700 px-2 py-1 text-xs sm:inline">{roleLabel(user.user_type)}</span>

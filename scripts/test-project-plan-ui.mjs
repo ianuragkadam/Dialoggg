@@ -30,19 +30,31 @@ try {
   const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Reading Residence Court", project_type_id: admin.defaultProjectTypeId, client_name: "Morgan Family", client_email: "client@example.test", address: "1499 Reading Road", city: "Mohnton", state: "PA", zip: "19540", phone: "7175550100", start_date: "2026-09-15" }) });
   assert.equal(projectResult.response.status, 200); const projectId = projectResult.data.id;
   let planVersion = (await json(`${baseUrl}/api/projects/${projectId}/tasks`, { headers: auth })).data.planVersion;
+  const initialTaskIds = [];
   for (const task of [{ text: "Concrete base", start_date: "2026-09-16", duration: 2 }, { text: "Court surfacing", start_date: "2026-09-18", duration: 3 }]) {
-    const taskResult = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { method: "POST", headers: auth, body: JSON.stringify({ ...task, planVersion, resourceIds: [] }) }); assert.equal(taskResult.response.status, 201, JSON.stringify(taskResult.data)); planVersion = taskResult.data.planVersion;
+    const taskResult = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { method: "POST", headers: auth, body: JSON.stringify({ ...task, planVersion, resourceIds: [] }) }); assert.equal(taskResult.response.status, 201, JSON.stringify(taskResult.data)); planVersion = taskResult.data.planVersion; initialTaskIds.push(taskResult.data.id);
   }
+  const initialLink = await json(`${baseUrl}/api/projects/${projectId}/links`, { method: "POST", headers: auth, body: JSON.stringify({ source: initialTaskIds[0], target: initialTaskIds[1], type: "0", lag: 0, planVersion }) }); assert.equal(initialLink.response.status, 201, JSON.stringify(initialLink.data));
   const employeeLogin = await login(baseUrl, employeeEmail, password); const employeeCookie = sessionCookie(employeeLogin); const employeeCsrf = csrfCookie(employeeLogin);
 
   browser = await playwright.chromium.launch({ channel: "chrome", headless: true });
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } }); await addSession(adminContext, adminCookie, adminCsrf); const page = await adminContext.newPage();
 
-  await check("Project Plan keeps original Gantt below the workflow review", async () => {
-    await page.goto(`${baseUrl}/projects/${projectId}#plan`); await page.getByRole("heading", { name: "Project Plan controls" }).waitFor();
-    assert.equal(await page.getByText("Original Gantt retained", { exact: true }).isVisible(), true);
-    assert.equal(await page.getByRole("heading", { name: "Original Project Plan / Gantt" }).isVisible(), true);
-    await page.getByText("Concrete base", { exact: true }).last().waitFor();
+  await check("root hierarchy panel shows live saved tasks and launches their Gantt editor", async () => {
+    await page.goto(`${baseUrl}/projects/${projectId}#plan`);
+    const panel = page.getByTestId("live-root-task-panel");
+    await panel.getByText("Project hierarchy · live data").waitFor();
+    await panel.getByText("Reading Residence Court", { exact: true }).waitFor();
+    await panel.getByText("Concrete base", { exact: true }).waitFor();
+    await panel.getByText("Court surfacing", { exact: true }).waitFor();
+    await panel.getByText("FS +0 · Concrete base", { exact: true }).waitFor();
+    await panel.getByRole("button", { name: "Root task rules" }).click();
+    const rootRules = page.getByRole("dialog", { name: "Project root task rules" });
+    assert.match(await rootRules.innerText(), /groups the 2 direct child tasks/i);
+    await rootRules.getByRole("button", { name: "Close" }).click();
+    await panel.getByRole("button", { name: "Edit in Gantt" }).first().click();
+    await page.getByRole("dialog", { name: "Edit Task" }).getByLabel("Task Name").waitFor();
+    await page.getByRole("dialog", { name: "Edit Task" }).getByRole("button", { name: "Cancel" }).click();
   });
 
   await check("original Gantt persists a complete working-day Task and reloads it", async () => {
@@ -71,57 +83,35 @@ try {
     assert.equal(persisted.data.data.filter(item => item.is_root).length, 1);
   });
 
-  await check("Leaf Task editor exposes every approved scheduling field", async () => {
-    await page.locator('[data-original-gantt-boundary="preserved"]').getByRole("button", { name: "+ Add Task" }).click(); const dialog = page.getByRole("dialog", { name: "Add Task" });
-    for (const label of ["Task Name", "Parent Header", "Time Period", "Link to predecessor", "Start Date", "Duration (working days)", "Allow work on Saturday", "Allow work on Sunday", "Resource Category", "Task Progress"]) assert.equal(await dialog.getByLabel(label, { exact: false }).count() > 0, true, label);
-    assert.equal(await dialog.getByText("Crew Alpha", { exact: true }).isVisible(), true);
+  await check("live task panel refreshes after a Gantt edit", async () => {
+    const panel = page.getByTestId("live-root-task-panel");
+    await panel.getByTestId(/^live-plan-task-/).first().waitFor();
+    await page.getByTestId("persistent-gantt").getByRole("button", { name: "+ Add Task" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add Task" });
+    await dialog.getByLabel("Task Name").fill("Live panel QA task");
+    await dialog.getByLabel("Start Date").fill("2026-09-22");
+    await dialog.getByLabel("Duration (days)").fill("1");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await panel.getByText("Live panel QA task", { exact: true }).waitFor();
+    await panel.getByText(/4 saved tasks/).waitFor();
   });
 
-  await check("Task editor validates name and positive integer Duration", async () => {
-    const dialog = page.getByRole("dialog", { name: "Add Task" }); await dialog.locator("#task-name").fill(""); await dialog.locator("#task-duration").fill("0"); await dialog.getByRole("button", { name: "Review schedule" }).click();
-    await dialog.getByText("Enter the Task Name.", { exact: true }).waitFor(); await dialog.getByText("Duration must be a whole number of at least 1 working day.", { exact: true }).waitFor();
-  });
-
-  await check("Time Period preview uses inclusive working days and independent weekends", async () => {
-    const dialog = page.getByRole("dialog", { name: "Add Task" }); await dialog.locator("#task-name").fill("QA surfacing"); await dialog.locator("#task-start-date").fill("2026-09-18"); await dialog.locator("#task-duration").fill("2");
-    assert.match(await dialog.innerText(), /Sep 21, 2026/); await dialog.getByLabel("Allow work on Saturday").check(); assert.match(await dialog.innerText(), /Sep 19, 2026/);
-    await dialog.getByRole("button", { name: "Review schedule" }).click(); const review = page.getByRole("dialog", { name: "Review Task schedule" }); const text = await review.innerText(); assert.match(text, /Saturday allowed; Sunday excluded/); assert.match(text, /Excluded weekend days do not consume Duration/); await review.getByRole("button", { name: "Back to edit" }).click();
-  });
-
-  await check("Linked Task accepts multiple typed predecessors and latest constraint rule", async () => {
-    const dialog = page.getByRole("dialog", { name: "Add Task" }); await dialog.getByLabel("Link to predecessor").check(); await dialog.getByRole("button", { name: "+ Add predecessor" }).click();
-    assert.equal(await dialog.getByLabel(/Predecessor \d Task/).count(), 2); await dialog.getByRole("button", { name: "Review schedule" }).click(); const review = page.getByRole("dialog", { name: "Review Task schedule" }); assert.match(await review.innerText(), /Linked · 2 predecessors/); assert.match(await review.innerText(), /latest valid result wins/); await review.getByRole("button", { name: "Back to edit" }).click();
-  });
-
-  await check("Negative dependency lag is rejected without closing the editor", async () => {
-    const dialog = page.getByRole("dialog", { name: "Add Task" }); await dialog.getByLabel("Predecessor 1 lag").fill("-1"); await dialog.getByRole("button", { name: "Review schedule" }).click(); await dialog.getByText("Every dependency lag must be zero or a positive whole number.", { exact: true }).waitFor();
-    await dialog.getByLabel("Close Add Task").click();
-  });
-
-  await check("Header editor derives dates and progress and omits leaf-only controls", async () => {
-    await page.getByRole("button", { name: "Review Header editor" }).click(); const dialog = page.getByRole("dialog", { name: "Review Header Task" }); assert.match(await dialog.innerText(), /Header values are derived/); assert.match(await dialog.innerText(), /weighted by descendant leaf Task duration/); assert.equal(await dialog.getByLabel("Resource Category").count(), 0); assert.equal(await dialog.getByLabel("Link to predecessor").count(), 0); await dialog.getByLabel("Close Review Header Task").click();
-  });
-
-  await check("Root, Header deletion, and leaf deletion safeguards are explicit", async () => {
-    await page.getByRole("button", { name: "Review root rules" }).click(); let dialog = page.getByRole("alertdialog", { name: "Root Header Task is protected" }); assert.match(await dialog.innerText(), /cannot be deleted, converted to a leaf Task, or moved/); await dialog.getByRole("button", { name: "Understood" }).click();
-    await page.getByRole("button", { name: "Header deletion block" }).click(); dialog = page.getByRole("alertdialog", { name: "Header Task cannot be deleted" }); assert.match(await dialog.innerText(), /will not cascade-delete child Tasks/); await dialog.getByRole("button", { name: "Return to Project Plan" }).click();
-    await page.getByRole("button", { name: "Leaf deletion confirmation" }).click(); dialog = page.getByRole("alertdialog", { name: "Delete Task?" }); const text = await dialog.innerText(); assert.match(text, /incoming and outgoing dependency links/); assert.match(text, /No unrelated link will be removed/); await dialog.getByRole("button", { name: "Cancel" }).click();
-  });
-
-  await check("Dependency dialog explains identical creation paths and atomic rejection", async () => {
-    await page.getByRole("button", { name: "Create dependency" }).click(); const dialog = page.getByRole("dialog", { name: "Create dependency" }); const text = await dialog.innerText(); for (const expected of ["Finish-to-Start", "Start-to-Start", "Finish-to-Finish", "Start-to-Finish", "self-links", "another Project", "dependency cycles", "negative lag", "Header Tasks"]) assert.match(text, new RegExp(expected)); await dialog.getByRole("button", { name: "Review dependency" }).click(); await page.getByRole("status").filter({ hasText: "No link or schedule was changed" }).waitFor();
-  });
-
-  await check("Scheduling guide documents core calculation examples", async () => {
-    await page.getByRole("button", { name: "Scheduling guide" }).click(); const dialog = page.getByRole("dialog", { name: "Scheduling guide" }); const text = await dialog.innerText(); for (const expected of ["Inclusive working-day Duration", "Finish-to-Start +0", "Four dependency types", "Multiple predecessors", "Bidirectional cascade", "Header and root roll-up"]) assert.match(text, new RegExp(expected.replace("+", "\\+"))); await dialog.getByRole("button", { name: "Close guide" }).click();
+  await check("Project Plan guide opens and closes with its arrow toggle", async () => {
+    const guide = page.getByRole("button", { name: "Project Plan / Gantt Chart Guide" });
+    assert.equal(await guide.getAttribute("aria-expanded"), "false");
+    await guide.click();
+    assert.equal(await guide.getAttribute("aria-expanded"), "true");
+    await page.getByText("Header and Project dates:").waitFor();
+    await guide.click();
+    assert.equal(await guide.getAttribute("aria-expanded"), "false");
   });
 
   await check("Employee gets read-only controls while original Project Plan remains visible", async () => {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }); await addSession(context, employeeCookie, employeeCsrf); const employee = await context.newPage(); await employee.goto(`${baseUrl}/projects/${projectId}#plan`); await employee.getByText("Read-only Project Plan", { exact: true }).waitFor(); assert.equal(await employee.locator('[data-original-gantt-boundary="preserved"]').getByRole("button", { name: "+ Add Task" }).count(), 0); await employee.getByText("Concrete base", { exact: true }).last().waitFor(); await context.close();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } }); await addSession(context, employeeCookie, employeeCsrf); const employee = await context.newPage(); await employee.goto(`${baseUrl}/projects/${projectId}#plan`); await employee.getByTestId("live-root-task-panel").getByText("Concrete base", { exact: true }).waitFor(); assert.equal(await employee.getByTestId("live-root-task-panel").getByRole("button", { name: "Edit in Gantt" }).count(), 0); assert.equal(await employee.getByTestId("persistent-gantt").getByRole("button", { name: "+ Add Task" }).count(), 0); await context.close();
   });
 
   await check("Phone Project Plan avoids page-level horizontal overflow", async () => {
-    await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`${baseUrl}/projects/${projectId}#plan`); await page.getByRole("heading", { name: "Project Plan controls" }).waitFor(); const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth })); assert.ok(dimensions.scrollWidth <= dimensions.width, JSON.stringify(dimensions));
+    await page.setViewportSize({ width: 390, height: 844 }); await page.goto(`${baseUrl}/projects/${projectId}#plan`); await page.getByTestId("live-root-task-panel").waitFor(); const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth })); assert.ok(dimensions.scrollWidth <= dimensions.width, JSON.stringify(dimensions));
   });
 
   await check("Signed-out Project Plan returns to Login", async () => {

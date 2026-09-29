@@ -101,6 +101,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
     } finally {
       setTimeout(() => { syncingRef.current = false; }, 50);
     }
+    window.dispatchEvent(new CustomEvent("dialoggg:project-plan-updated", { detail: { projectId } }));
   }, [projectId]);
 
   // ---- load resources for the task popup ----
@@ -114,6 +115,15 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
   // ---- init gantt ----
   useEffect(() => {
     let cancelled = false;
+    let pendingPlanTaskId: number | null = null;
+    let openPlanTaskEditor: ((taskId: number) => void) | null = null;
+    const openPlanTaskHandler = (event: Event) => {
+      const detail = (event as CustomEvent<{ projectId?: number; taskId?: number }>).detail;
+      if (detail?.projectId !== projectId || !detail.taskId) return;
+      if (!openPlanTaskEditor) { pendingPlanTaskId = detail.taskId; return; }
+      openPlanTaskEditor(detail.taskId);
+    };
+    window.addEventListener("dialoggg:open-plan-task", openPlanTaskHandler);
 
     async function init() {
       const cssId = "dhtmlx-gantt-css";
@@ -205,6 +215,11 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         });
       }
 
+      openPlanTaskEditor = (taskId: number) => {
+        if (!gantt.isTaskExists(taskId)) { pendingPlanTaskId = taskId; return; }
+        void openEditModal(taskId, gantt.getTask(taskId));
+      };
+
       // ===== Task drag / resize → persist + cascade =====
       gantt.attachEvent("onBeforeTaskDrag", (_id: any, mode: string) => {
         dragModeRef.current = String(mode);
@@ -268,6 +283,11 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       });
 
       await reload();
+      if (pendingPlanTaskId !== null) {
+        const taskId = pendingPlanTaskId;
+        pendingPlanTaskId = null;
+        openPlanTaskEditor?.(taskId);
+      }
       try { gantt.showDate(new Date()); } catch {}
       if (!cancelled) setReady(true);
     }
@@ -275,6 +295,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
     init();
     return () => {
       cancelled = true;
+      window.removeEventListener("dialoggg:open-plan-task", openPlanTaskHandler);
       if (ganttRef.current) { try { ganttRef.current.clearAll(); } catch {} }
     };
   }, [projectId, reload]);
