@@ -61,6 +61,7 @@ export default function ProjectTabs({
           <div className="space-y-3">
             <ProjectPlanWorkflowReview projectName={project.name} canEdit={canEdit} />
             <GanttChart projectId={project.id} canEdit={canEdit} />
+            <ProjectPlanGuide />
           </div>
         )}
         {tab === "calendar"  && <ProjectCalendar projectId={project.id} canManage={canEdit} projectName={project.name} />}
@@ -68,6 +69,41 @@ export default function ProjectTabs({
         {tab === "folders" && <ProjectFoldersPrototype projectId={project.id} projectName={project.name} canManage={canManage} canEdit={canEdit} assigned={assigned} />}
       </div>
     </div>
+  );
+}
+
+function ProjectPlanGuide() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900 text-slate-100 shadow-sm">
+      <h2>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls="project-plan-gantt-guide-content"
+          onClick={() => setOpen(value => !value)}
+          className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left font-semibold transition-colors hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-inset"
+        >
+          <span>Project Plan / Gantt Chart Guide</span>
+          <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-600 bg-slate-800">
+            <svg viewBox="0 0 24 24" className={`h-5 w-5 transition-transform duration-200 ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
+            </svg>
+          </span>
+        </button>
+      </h2>
+      <div id="project-plan-gantt-guide-content" hidden={!open} className="border-t border-slate-700 px-5 py-4">
+          <ul className="grid gap-3 text-sm leading-6 md:grid-cols-2">
+            <li><strong>Editing and moving Tasks:</strong> Double-click a row or bar to edit it. Drag a bar to reschedule it, or drag from its edge circle to another Task to create a dependency.</li>
+            <li><strong>Duration and dates:</strong> Duration counts allowed working days and includes the start and end dates. Weekend days count only when enabled for that Task.</li>
+            <li><strong>Dependencies:</strong> Finish-to-Start, Start-to-Start, Finish-to-Finish, and Start-to-Finish links are supported. Zero-lag Finish-to-Start begins on the next allowed workday.</li>
+            <li><strong>Multiple links and changes:</strong> When a Task has multiple predecessors, the latest valid constraint applies. Schedule changes cascade through dependent successor Tasks.</li>
+            <li><strong>Linked Task dragging:</strong> Moving a linked Task keeps its dependency and recalculates a non-negative lag.</li>
+            <li><strong>Header and Project dates:</strong> Header dates span descendant Tasks; progress is weighted by leaf-Task duration. The root Header Task determines the Project End Date.</li>
+          </ul>
+          <p className="mt-4 text-xs text-slate-400">Changes made in the Gantt are saved to this Project Plan.</p>
+      </div>
+    </section>
   );
 }
 

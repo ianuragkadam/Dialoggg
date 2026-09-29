@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type DialogName = "task" | "dependency" | "rules" | "schedule-review" | "delete-leaf" | "delete-header" | "root" | null;
+type DialogName = "task" | "schedule-review" | "delete-leaf" | "delete-header" | "root" | null;
 type TaskKind = "leaf" | "header";
 type StartMethod = "period" | "link";
 type DependencyType = "Finish-to-Start" | "Start-to-Start" | "Finish-to-Finish" | "Start-to-Finish";
@@ -137,22 +137,13 @@ export default function ProjectPlanWorkflowReview({ projectName, canEdit }: { pr
               <span className="rounded-full bg-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-950">Original Gantt retained</span>
               <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium">Scheduling reference</span>
             </div>
-            <p className="mt-1 max-w-3xl text-sm text-blue-100">Review the approved scheduling rules here, then make real persistent changes in the original Gantt directly below.</p>
           </div>
-          {canEdit ? (
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => openTask("leaf")} className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-blue-900 hover:bg-blue-50">+ Add Task</button>
-              <button type="button" onClick={() => setDialog("dependency")} className="rounded-md border border-white/50 px-3 py-2 text-sm font-semibold hover:bg-white/10">Create dependency</button>
-              <button type="button" onClick={() => setDialog("rules")} className="rounded-md border border-white/50 px-3 py-2 text-sm font-semibold hover:bg-white/10">Scheduling guide</button>
-            </div>
-          ) : (
-            <span className="rounded-md border border-blue-300 bg-blue-800/70 px-3 py-2 text-sm font-semibold">Read-only Project Plan</span>
-          )}
+          {!canEdit && <span className="rounded-md border border-blue-300 bg-blue-800/70 px-3 py-2 text-sm font-semibold">Read-only Project Plan</span>}
         </div>
 
         {notice && <div role="status" className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">{notice}</div>}
 
-        <div className="grid gap-3 p-4 lg:grid-cols-[1.35fr_1fr]">
+        <div className="grid gap-3 p-4">
           <div className="rounded-lg border border-slate-200">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-slate-50 px-3 py-2">
               <div>
@@ -175,25 +166,14 @@ export default function ProjectPlanWorkflowReview({ projectName, canEdit }: { pr
             </div>}
           </div>
 
-          <aside className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-            <h3 className="font-semibold">Shared scheduling rules</h3>
-            <ul className="mt-2 space-y-1.5 pl-4 text-xs leading-5">
-              <li className="list-disc">Duration counts allowed working days and displays inclusive dates.</li>
-              <li className="list-disc">Zero-lag Finish-to-Start begins on the next allowed workday.</li>
-              <li className="list-disc">Multiple predecessors use the latest valid constraint.</li>
-              <li className="list-disc">Changes cascade earlier or later through every successor.</li>
-              <li className="list-disc">Dragging a linked Task retains its link and changes non-negative lag.</li>
-            </ul>
-          </aside>
         </div>
       </section>
 
       <div className="flex flex-wrap items-end justify-between gap-2 px-1">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Live planning surface</p>
-          <h2 className="font-semibold text-slate-900">Original Project Plan / Gantt</h2>
+          <h2 className="font-semibold text-slate-900">{projectName} Project Plan / Gantt Chart</h2>
         </div>
-        <p className="text-xs text-slate-500">Double-click a row or bar to use the existing editor.</p>
       </div>
 
       {dialog === "task" && (
@@ -276,16 +256,6 @@ export default function ProjectPlanWorkflowReview({ projectName, canEdit }: { pr
         <footer className="flex justify-end gap-2 border-t px-5 py-4"><button type="button" onClick={() => setDialog("task")} className="rounded-md border px-4 py-2 text-sm font-semibold">Back to edit</button><button type="button" onClick={completePreview} className="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Apply UI preview</button></footer>
       </Modal>}
 
-      {dialog === "dependency" && <Modal title="Create dependency" onClose={() => setDialog(null)}>
-        <div className="space-y-4 p-5 text-sm"><p className="text-slate-600">Create the same validated link record whether it starts here or by dragging between Gantt bars.</p><label className="block font-medium">Predecessor<select className="mt-1 w-full rounded border bg-white px-3 py-2 font-normal"><option>Concrete base</option><option>Site preparation</option></select></label><label className="block font-medium">Dependent Task<select className="mt-1 w-full rounded border bg-white px-3 py-2 font-normal"><option>Court surfacing</option><option>Fence installation</option></select></label><label className="block font-medium">Dependency type<select className="mt-1 w-full rounded border bg-white px-3 py-2 font-normal">{DEPENDENCY_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label><label className="block font-medium">Lag (dependent Task working days)<input type="number" min="0" step="1" defaultValue="0" className="mt-1 w-full rounded border px-3 py-2 font-normal"/></label><div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-900"><strong>Rejected without changing the schedule:</strong> self-links, links to another Project, dependency cycles, negative lag, and links assigned directly to Header Tasks.</div></div>
-        <footer className="flex justify-end gap-2 border-t px-5 py-4"><button type="button" onClick={() => setDialog(null)} className="rounded border px-4 py-2 text-sm font-semibold">Cancel</button><button type="button" onClick={() => { setDialog(null); setNotice("Dependency workflow preview complete. No link or schedule was changed."); }} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Review dependency</button></footer>
-      </Modal>}
-
-      {dialog === "rules" && <Modal title="Scheduling guide" onClose={() => setDialog(null)} wide>
-        <div className="grid gap-3 p-5 md:grid-cols-2"><Rule title="Inclusive working-day Duration" example="A 1-day Task starting Monday starts and ends Monday. A 5-day Task with weekends excluded ends Friday."/><Rule title="Finish-to-Start +0" example="If the predecessor ends Friday and weekends are excluded, the dependent Task begins Monday—the next allowed workday."/><Rule title="Four dependency types" example="Finish-to-Start, Start-to-Start, Finish-to-Finish, and Start-to-Finish use the same shared calculation service."/><Rule title="Multiple predecessors" example="If one constraint produces Tuesday and another Thursday, the dependent Task starts on the valid Thursday constraint."/><Rule title="Bidirectional cascade" example="Moving a predecessor earlier or later recalculates every direct and transitive successor until the graph is stable."/><Rule title="Header and root roll-up" example="Dates span descendant leaves; progress is weighted by leaf working-day Duration. The root determines Project End Date."/></div>
-        <footer className="flex justify-end border-t px-5 py-4"><button type="button" onClick={() => setDialog(null)} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Close guide</button></footer>
-      </Modal>}
-
       {dialog === "root" && <Modal title="Root Header Task is protected" role="alertdialog" onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm"><p><strong>{projectName}</strong> is the one required root Header Task for this Project Plan.</p><ul className="list-disc space-y-1 pl-5 text-slate-700"><li>It cannot be deleted, converted to a leaf Task, or moved under another Task.</li><li>Its dates come from all descendant leaf Tasks.</li><li>Its weighted progress and End Date drive the Project summary.</li></ul></div><footer className="flex justify-end border-t px-5 py-4"><button type="button" onClick={() => setDialog(null)} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Understood</button></footer></Modal>}
 
       {dialog === "delete-header" && <Modal title="Header Task cannot be deleted" role="alertdialog" onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm"><p><strong>Construction</strong> still contains 2 child Tasks.</p><p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950">Move or delete every child first. Dialoggg will not cascade-delete child Tasks.</p></div><footer className="flex justify-end border-t px-5 py-4"><button type="button" onClick={() => setDialog(null)} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Return to Project Plan</button></footer></Modal>}
@@ -295,6 +265,3 @@ export default function ProjectPlanWorkflowReview({ projectName, canEdit }: { pr
   );
 }
 
-function Rule({ title, example }: { title: string; example: string }) {
-  return <article className="rounded-lg border border-slate-200 p-4"><h3 className="font-semibold text-slate-900">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{example}</p></article>;
-}

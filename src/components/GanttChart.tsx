@@ -389,7 +389,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                   categoryId: null, externalVisible: false, isTemp: false,
                 });
               }}
-              className="bg-blue-700 text-white text-sm px-3 py-1 rounded font-semibold hover:bg-blue-800"
+              className="bg-[#3B417D] text-white text-sm px-3 py-1 rounded font-semibold hover:bg-[#323765]"
             >
               + Add Task
             </button>
