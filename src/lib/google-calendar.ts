@@ -286,12 +286,10 @@ function googleEventId(connectionId: number, item: DeliveryItem) {
   return `d${createHash("sha256").update(`${connectionId}:${itemKey(item)}`).digest("hex")}`;
 }
 
-export function eligibleGoogleItems(connectionId: number): DeliveryItem[] {
-  const connection = connectionById(connectionId);
-  if (!connection) throw new GoogleCalendarError("GOOGLE_CONNECTION_NOT_FOUND", "permanent", 404);
-  const actor = actorForConnection(connection);
+function eligibleGoogleItemsForActor(actor: Actor): DeliveryItem[] {
+  requireCompanyActor(actor);
   const resources = db.prepare("SELECT id FROM resource WHERE linked_membership_id = ? AND company_id = ? AND status = 'active'")
-    .all(connection.membership_id, connection.company_id) as Array<{ id: number }>;
+    .all(actor.membershipId!, actor.companyId!) as Array<{ id: number }>;
   const resourceIds = new Set(resources.map(item => item.id));
   const external = actor.companyRole === "external";
   const taskRows = db.prepare(`
@@ -303,7 +301,7 @@ export function eligibleGoogleItems(connectionId: number): DeliveryItem[] {
     WHERE p.company_id = ? AND p.status = 'active' AND t.is_header = 0
       ${external ? "AND t.external_visible = 1" : ""}
     ORDER BY t.id
-  `).all(connection.membership_id, connection.company_id) as Array<{
+  `).all(actor.membershipId!, actor.companyId!) as Array<{
     id: number; name: string; start_date: string; duration: number; version: number;
     allow_saturday: number; allow_sunday: number; project_id: number; project_name: string;
   }>;
@@ -343,6 +341,41 @@ export function eligibleGoogleItems(connectionId: number): DeliveryItem[] {
     },
   }));
   return [...tasks, ...events];
+}
+
+export function eligibleGoogleItems(connectionId: number): DeliveryItem[] {
+  const connection = connectionById(connectionId);
+  if (!connection) throw new GoogleCalendarError("GOOGLE_CONNECTION_NOT_FOUND", "permanent", 404);
+  return eligibleGoogleItemsForActor(actorForConnection(connection));
+}
+
+export function googleCalendarItemPreview(actor: Actor) {
+  const now = Date.now();
+  const candidates = eligibleGoogleItemsForActor(actor).flatMap(item => {
+    const start = item.payload.start as { date?: string; dateTime?: string; timeZone?: string } | undefined;
+    const end = item.payload.end as { date?: string; dateTime?: string; timeZone?: string } | undefined;
+    const startValue = start?.dateTime ?? start?.date;
+    const endValue = end?.dateTime ?? end?.date;
+    if (!start || !end || !startValue || !endValue) return [];
+    const allDay = Boolean(start.date);
+    const startMs = allDay ? Date.parse(`${startValue}T00:00:00Z`) : Date.parse(startValue);
+    const endMs = allDay ? Date.parse(`${endValue}T00:00:00Z`) : Date.parse(endValue);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= now) return [];
+    return [{
+      sourceType: item.sourceType,
+      title: String(item.payload.summary ?? "Scheduled item"),
+      start: startValue,
+      end: endValue,
+      allDay,
+      timeZone: start.timeZone ?? end.timeZone ?? actor.companyTimeZone,
+      reminders: "Google default reminders" as const,
+      sortAt: startMs,
+    }];
+  }).sort((left, right) => left.sortAt - right.sortAt);
+  const first = candidates[0];
+  if (!first) return null;
+  const { sortAt: _sortAt, ...preview } = first;
+  return preview;
 }
 
 async function accessFor(connection: ConnectionRow) {

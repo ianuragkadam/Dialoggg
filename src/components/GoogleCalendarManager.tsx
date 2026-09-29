@@ -14,6 +14,16 @@ type Snapshot = {
   health: { pending: number; dead: number; managedItems: number };
 };
 
+type GoogleItemPreview = {
+  sourceType: "task" | "event";
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  timeZone: string;
+  reminders: "Google default reminders";
+};
+
 function csrfToken() {
   return document.cookie.split("; ").find(item => item.startsWith("dialoggg_csrf="))?.split("=").slice(1).join("=") || "";
 }
@@ -34,6 +44,9 @@ export default function GoogleCalendarManager({ email, role }: { email: string; 
   const [disconnectMode, setDisconnectMode] = useState<"remove" | "retain">("remove");
   const [message, setMessage] = useState("Loading synchronization health…");
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<GoogleItemPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
 
   async function load() {
     const response = await fetch("/api/google-calendar", { cache: "no-store" });
@@ -55,6 +68,23 @@ export default function GoogleCalendarManager({ email, role }: { email: string; 
     } finally { setBusy(false); }
   }
 
+  async function openPreview() {
+    setDialog("payload");
+    setPreview(null);
+    setPreviewError("");
+    setPreviewLoading(true);
+    try {
+      const response = await fetch("/api/google-calendar/preview", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error?.message || "The Google Calendar preview is unavailable.");
+      setPreview(result.data ?? null);
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "The Google Calendar preview is unavailable.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   const current = stateLabel(snapshot);
   const canResume = role.includes("Owner") || role.includes("Admin");
   return <div className="space-y-6" data-google-calendar-ready={snapshot ? "true" : "false"}>
@@ -69,7 +99,7 @@ export default function GoogleCalendarManager({ email, role }: { email: string; 
         {snapshot?.state === "action_required" && <><button disabled={busy} onClick={() => { setAccepted(false); setDialog("connect"); }} className="rounded bg-blue-700 px-4 py-2 text-sm font-bold text-white">Reconnect Google Calendar</button><button disabled={busy} onClick={() => void action("retry")} className="rounded border px-4 py-2 text-sm font-bold">Retry queued changes</button></>}
         {snapshot?.state === "healthy" && <><button disabled={busy} onClick={() => void action("sync_now")} className="rounded bg-blue-700 px-4 py-2 text-sm font-bold text-white">Sync now</button><button disabled={busy} onClick={() => { setAccepted(false); setDialog("disconnect"); }} className="rounded border border-red-300 px-4 py-2 text-sm font-bold text-red-800">Disconnect</button></>}
         {(snapshot?.companySyncState === "paused" || snapshot?.state === "paused") && canResume && <button disabled={busy} onClick={() => setDialog("resume")} className="rounded bg-blue-700 px-4 py-2 text-sm font-bold text-white">Review and resume</button>}
-        <button data-testid="google-item-preview" onClick={() => setDialog("payload")} className="rounded border px-4 py-2 text-sm font-bold">Preview safe Google item</button>
+        <button data-testid="google-item-preview" onClick={() => void openPreview()} className="rounded border px-4 py-2 text-sm font-bold">Preview safe Google item</button>
       </div>
       {snapshot?.lastErrorCode && <div className="mt-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><strong>Actionable health:</strong> {snapshot.lastErrorCode}. Consent may have been revoked, permission may be missing, or Google may be unavailable. No token details are exposed.</div>}
       {message && <p role={message.includes("failed") || message.includes("unavailable") || message.includes("required") ? "alert" : "status"} aria-live="polite" className={`mt-3 rounded-lg border p-3 text-sm font-semibold ${message.includes("failed") || message.includes("unavailable") || message.includes("required") ? "border-red-200 bg-red-50 text-red-800" : "border-blue-200 bg-blue-50 text-blue-950"}`}>{message}</p>}
@@ -83,10 +113,23 @@ export default function GoogleCalendarManager({ email, role }: { email: string; 
     {dialog === "connect" && <Modal title="Connect Google Calendar" onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm"><p>You will authorize your own Google account. Dialoggg never asks for your Google password.</p><p>Google will allow Dialoggg to create and manage one dedicated calendar and its events using the narrow <code>calendar.app.created</code> scope.</p><label className="flex gap-3 rounded border bg-blue-50 p-3"><input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>I understand this is a personal connection and Dialoggg remains the source of truth.</span></label></div><Footer><button onClick={() => setDialog(null)} className="rounded border px-4 py-2 text-sm font-bold">Cancel</button><button disabled={!accepted || busy} onClick={() => void action("oauth_start")} className="rounded bg-blue-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Continue to Google</button></Footer></Modal>}
     {dialog === "disconnect" && <Modal title="Disconnect Google Calendar?" alert onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm"><fieldset><legend className="font-bold">Existing managed Google items</legend><label className="mt-2 block rounded border p-3"><input type="radio" name="disconnect" checked={disconnectMode === "remove"} onChange={() => setDisconnectMode("remove")} className="mr-2"/><strong>Remove managed items</strong><span className="block pl-5 text-xs">Delete the dedicated calendar where safe.</span></label><label className="mt-2 block rounded border p-3"><input type="radio" name="disconnect" checked={disconnectMode === "retain"} onChange={() => setDisconnectMode("retain")} className="mr-2"/><strong>Retain existing items</strong><span className="block pl-5 text-xs">Items remain in Google as stale copies and receive no future updates.</span></label></fieldset><label className="flex gap-3 rounded border border-red-200 bg-red-50 p-3"><input type="checkbox" checked={accepted} onChange={event => setAccepted(event.target.checked)} /><span>I understand synchronization stops immediately for this connection.</span></label></div><Footer><button onClick={() => setDialog(null)} className="rounded border px-4 py-2 text-sm font-bold">Cancel</button><button disabled={!accepted || busy} onClick={() => void action("disconnect", { mode: disconnectMode, confirmed: true })} className="rounded bg-red-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Disconnect Google Calendar</button></Footer></Modal>}
     {dialog === "resume" && <Modal title="Resume Google synchronization?" alert onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm"><p>The company is active again. Restoration alone never resumes synchronization.</p><ul className="list-disc pl-5"><li>Stored consent and dedicated calendar are checked during reconciliation.</li><li>Pending changes reuse stable mappings.</li><li>Transient failures retain their 24-hour retry window.</li></ul></div><Footer><button onClick={() => setDialog(null)} className="rounded border px-4 py-2 text-sm font-bold">Keep paused</button><button disabled={busy} onClick={() => void action("resume", { confirmed: true })} className="rounded bg-blue-700 px-4 py-2 text-sm font-bold text-white">Resume synchronization</button></Footer></Modal>}
-    {dialog === "payload" && <Modal title="Safe Google item preview" onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm"><p className="font-bold">Reading Residence Court — Client walkthrough</p><p>Managed by Dialoggg. Google edits will not be saved. Make schedule changes in Dialoggg.</p><p>Sep 22, 2:00–3:00 PM · America/New_York · Google default reminders</p><p className="rounded border border-emerald-200 bg-emerald-50 p-3"><strong>Excluded:</strong> client email, phone, site address, internal notes, dependency lag, private Resource details, and Microsoft links.</p></div><Footer><button onClick={() => setDialog(null)} className="rounded bg-blue-700 px-4 py-2 text-sm font-bold text-white">Close preview</button></Footer></Modal>}
+    {dialog === "payload" && <Modal title="Safe Google item preview" onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm">{previewLoading ? <p role="status" className="rounded border bg-slate-50 p-3">Finding your next scheduled item eligible for Google delivery…</p> : previewError ? <p role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-red-900">{previewError}</p> : preview ? <><div className="rounded-lg border bg-slate-50 p-4"><p className="text-xs font-bold uppercase text-slate-500">Actual Dialoggg {preview.sourceType === "task" ? "Task" : "Event"}</p><p className="mt-1 font-bold">{preview.title}</p><p className="mt-4 text-xs font-bold uppercase text-slate-500">Timing and reminders</p><p className="mt-1">{formatPreviewSchedule(preview)} · {preview.reminders}</p></div><p className="text-xs text-slate-600">This is the next upcoming item currently eligible for your account, using the same assignment and visibility rules as delivery.</p></> : <p className="rounded border bg-slate-50 p-3">No upcoming Tasks or Events are currently eligible for delivery to your account. Assign a Task to your linked Resource or add a visible Event, then preview again.</p>}<p className="rounded border border-emerald-200 bg-emerald-50 p-3 text-emerald-950"><strong>Privacy:</strong> client email, phone, site address, internal notes, dependency lag, private Resource details, and Microsoft links are excluded. This preview is read-only and does not write anything to Google.</p></div><Footer><button onClick={() => setDialog(null)} className="rounded bg-blue-700 px-4 py-2 text-sm font-bold text-white">Close preview</button></Footer></Modal>}
   </div>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded bg-slate-50 p-3"><p className="text-xs font-bold uppercase text-slate-500">{label}</p><p className="text-2xl font-bold">{value}</p></div>; }
+function formatPreviewSchedule(preview: GoogleItemPreview) {
+  const dateOptions: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric", timeZone: preview.allDay ? "UTC" : preview.timeZone };
+  if (preview.allDay) {
+    const start = new Date(`${preview.start.slice(0, 10)}T00:00:00Z`);
+    const exclusiveEnd = new Date(`${preview.end.slice(0, 10)}T00:00:00Z`);
+    const lastDay = new Date(exclusiveEnd.getTime() - 86_400_000);
+    const format = (value: Date) => new Intl.DateTimeFormat("en-US", dateOptions).format(value);
+    return `${format(start)}${format(start) === format(lastDay) ? "" : `–${format(lastDay)}`} · All day`;
+  }
+  const timeOptions: Intl.DateTimeFormatOptions = { ...dateOptions, hour: "numeric", minute: "2-digit" };
+  const format = (value: string) => new Intl.DateTimeFormat("en-US", timeOptions).format(new Date(value));
+  return `${format(preview.start)}–${format(preview.end)} · ${preview.timeZone}`;
+}
 function Modal({ title, children, onClose, alert = false }: { title: string; children: React.ReactNode; onClose(): void; alert?: boolean }) { return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role={alert ? "alertdialog" : "dialog"} aria-modal="true" aria-label={title}><div className="max-h-[90vh] w-full max-w-xl overflow-auto rounded-xl bg-white shadow-xl"><header className="flex items-center justify-between border-b px-5 py-4"><h2 className="text-lg font-bold">{title}</h2><button onClick={onClose} aria-label={`Close ${title}`}>×</button></header>{children}</div></div>; }
 function Footer({ children }: { children: React.ReactNode }) { return <footer className="flex justify-end gap-2 border-t px-5 py-4">{children}</footer>; }
