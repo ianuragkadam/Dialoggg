@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getCurrentUser } from "@/lib/auth";
+import dialogggLogo from "../../Dialoggg-Google-logo.png";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
@@ -10,7 +11,7 @@ export default async function HomePage() {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <Link href="/" className="flex items-center gap-3 text-2xl font-bold tracking-tight text-blue-700"><Image src="/icon.svg" alt="Dialoggg logo" width={42} height={42} />Dialoggg</Link>
+        <Link href="/" className="flex items-center gap-3 text-2xl font-bold tracking-tight text-blue-700"><Image src={dialogggLogo} alt="Dialoggg logo" width={42} height={42} priority className="rounded-lg" />Dialoggg</Link>
         <Link href="/login" className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800">Sign in</Link>
       </header>
       <section className="mx-auto max-w-4xl px-6 py-20 text-center">
