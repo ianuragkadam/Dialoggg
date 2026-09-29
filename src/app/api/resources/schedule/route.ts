@@ -13,6 +13,10 @@ type ScheduleItem = {
   end: string;
   color: string;
   projectId: number | null;
+  projectName: string;
+  sourceId: string;
+  rawTitle: string;
+  taskId?: number;
   kind: "Task" | "Event";
   seriesId?: number;
   occurrenceKey?: string;
@@ -48,6 +52,10 @@ export async function GET(request: NextRequest) {
       end: addDays(workingDayEnd(row.start_date, row.duration, { allowSaturday: !!row.allow_saturday, allowSunday: !!row.allow_sunday }), 1),
       color: row.color,
       projectId: row.project_id,
+      projectName: row.project_name,
+      sourceId: `t${row.id}`,
+      rawTitle: row.name,
+      taskId: row.id,
       kind: "Task" as const,
     })),
     ...eventOccurrences.flatMap(occurrence => occurrence.resourceIds.map(resourceId => ({
@@ -58,6 +66,9 @@ export async function GET(request: NextRequest) {
         end: occurrence.end,
         color: occurrence.color,
         projectId: occurrence.projectId,
+        projectName: occurrence.projectName || "Company calendar",
+        sourceId: occurrence.id,
+        rawTitle: occurrence.title,
         kind: "Event" as const,
         seriesId: occurrence.seriesId,
         occurrenceKey: occurrence.occurrenceKey,
@@ -92,7 +103,7 @@ export async function GET(request: NextRequest) {
         end: item.end,
         color: conflict ? "#c0392b" : item.color,
         borderColor: conflict ? "#7d1f15" : undefined,
-        extendedProps: { conflict, project_id: item.projectId, kind: item.kind, seriesId:item.seriesId, occurrenceKey:item.occurrenceKey },
+        extendedProps: { conflict, project_id: item.projectId, projectName: item.projectName, sourceId: item.sourceId, rawTitle: item.rawTitle, taskId: item.taskId, kind: item.kind, seriesId:item.seriesId, occurrenceKey:item.occurrenceKey },
       };
     }),
   }, { headers: { "cache-control": "no-store" } });

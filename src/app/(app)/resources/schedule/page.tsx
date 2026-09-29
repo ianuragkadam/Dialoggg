@@ -9,8 +9,7 @@ import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 
 type Resource = { id: string; title: string };
 type Evt = {
-  id: string; resourceId: string; title: string;
-  start: string; end: string; color: string;
+  id: string; resourceId: string; title: string; start: string; end: string; color: string;
   extendedProps: { conflict: boolean; project_id: number };
 };
 
@@ -33,7 +32,16 @@ export default function GlobalResourceSchedulePage() {
     fetch("/api/me").then(r => r.json()).then(j => {setCanManage(["owner", "admin"].includes(j.user?.user_type));setCompanyTimeZone(j.user?.company_time_zone||"UTC");});
   }, []);
 
-  const conflictCount = events.filter(e => e.extendedProps.conflict).length / 2;
+  const conflictCount = events.reduce((count, event, index) => {
+    if (!event.extendedProps.conflict) return count;
+    const eventStart = Date.parse(event.start);
+    const eventEnd = Date.parse(event.end);
+    return count + events.slice(index + 1).filter(other =>
+      other.extendedProps.conflict &&
+      other.resourceId === event.resourceId &&
+      eventStart < Date.parse(other.end) && Date.parse(other.start) < eventEnd
+    ).length;
+  }, 0);
 
   return (
     <div className="space-y-4">
