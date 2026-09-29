@@ -78,11 +78,11 @@ export default function MasterCalendarPage() {
       >
       {notice&&<div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</div>}
       <div className="bg-white border rounded shadow-sm p-4">
-        {openAddEvent && <div className="mb-3 flex justify-end"><button type="button" onClick={openAddEvent} className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">+ Add Event</button></div>}
         <FullCalendar
           plugins={[dayGridPlugin,interactionPlugin,luxonPlugin]}
           initialView="dayGridMonth"
-          headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,dayGridWeek,dayGridDay" }}
+          customButtons={openAddEvent ? { addEventButton: { text: "+ Add Event", hint: "Add an Event", click: () => openAddEvent() } } : undefined}
+          headerToolbar={{ left: "prev,next today", center: "title", right: `${openAddEvent ? "addEventButton " : ""}dayGridMonth,dayGridWeek,dayGridDay` }}
           events={events}
           timeZone={companyTimeZone}
           editable={canManage}

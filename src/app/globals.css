@@ -206,6 +206,20 @@ body {
   color: #d5deea;
 }
 
+.tenant-theme .fc .fc-button[title="Add an Event"] {
+  border-color: #f28a4d;
+  background: #f28a4d;
+  color: #111827;
+  font-weight: 700;
+}
+
+.tenant-theme .fc .fc-button[title="Add an Event"]:hover,
+.tenant-theme .fc .fc-button[title="Add an Event"]:focus {
+  border-color: #ff9d63;
+  background: #ff9d63;
+  color: #111827;
+}
+
 .tenant-theme .gantt_container {
   border-color: #26354d;
   background-color: #17243a;

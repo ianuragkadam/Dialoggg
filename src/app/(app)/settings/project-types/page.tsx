@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import ProjectTypesPrototype from "@/components/ProjectTypesPrototype";
 import { getCurrentUser, isAdmin } from "@/lib/auth";
-import { countProjectsMissingType, listProjectTypes } from "@/lib/project-types";
+import { listProjectTypes } from "@/lib/project-types";
 
 export const metadata: Metadata = {
   title: "Project Types | Dialoggg",
@@ -37,5 +37,5 @@ export default async function ProjectTypesPage() {
     }).format(new Date(`${item.updatedAt.replace(" ", "T")}Z`)),
   }));
 
-  return <ProjectTypesPrototype initialItems={projectTypes} initialMissingTypeCount={countProjectsMissingType(user!.company_id!)} />;
+  return <ProjectTypesPrototype initialItems={projectTypes} />;
 }
