@@ -288,6 +288,14 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         pendingPlanTaskId = null;
         openPlanTaskEditor?.(taskId);
       }
+      const requestedTaskId = Number(new URLSearchParams(window.location.search).get("editTaskId"));
+      if (Number.isInteger(requestedTaskId) && requestedTaskId > 0) {
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.delete("editTaskId");
+        window.history.replaceState(null, "", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+        if (gantt.isTaskExists(requestedTaskId)) openPlanTaskEditor?.(requestedTaskId);
+        else setMessage("This Task is no longer available in the Project Plan.");
+      }
       try { gantt.showDate(new Date()); } catch {}
       if (!cancelled) setReady(true);
     }
