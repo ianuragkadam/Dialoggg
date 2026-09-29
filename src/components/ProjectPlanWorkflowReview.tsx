@@ -128,19 +128,8 @@ export default function ProjectPlanWorkflowReview({ projectName, canEdit }: { pr
   }
 
   return (
-    <div className="space-y-3" data-original-gantt-boundary="preserved">
-      <section className="overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 bg-gradient-to-r from-blue-950 to-blue-800 px-4 py-4 text-white lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold">Project Plan controls</h2>
-              <span className="rounded-full bg-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-950">Original Gantt retained</span>
-              <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium">Scheduling reference</span>
-            </div>
-          </div>
-          {!canEdit && <span className="rounded-md border border-blue-300 bg-blue-800/70 px-3 py-2 text-sm font-semibold">Read-only Project Plan</span>}
-        </div>
-
+    <section className="overflow-hidden rounded-lg border border-blue-200 bg-white shadow-sm" data-original-gantt-boundary="preserved">
+        {!canEdit && <div className="flex justify-end border-b px-4 py-2"><span className="rounded-md border border-blue-300 bg-blue-800/70 px-3 py-2 text-sm font-semibold text-white">Read-only Project Plan</span></div>}
         {notice && <div role="status" className="border-b border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">{notice}</div>}
 
         <div className="grid gap-3 p-4">
@@ -167,14 +156,6 @@ export default function ProjectPlanWorkflowReview({ projectName, canEdit }: { pr
           </div>
 
         </div>
-      </section>
-
-      <div className="flex flex-wrap items-end justify-between gap-2 px-1">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Live planning surface</p>
-          <h2 className="font-semibold text-slate-900">{projectName} Project Plan / Gantt Chart</h2>
-        </div>
-      </div>
 
       {dialog === "task" && (
         <Modal title={taskKind === "header" ? "Review Header Task" : "Add Task"} onClose={() => setDialog(null)} wide>
@@ -261,7 +242,7 @@ export default function ProjectPlanWorkflowReview({ projectName, canEdit }: { pr
       {dialog === "delete-header" && <Modal title="Header Task cannot be deleted" role="alertdialog" onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm"><p><strong>Construction</strong> still contains 2 child Tasks.</p><p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-950">Move or delete every child first. Dialoggg will not cascade-delete child Tasks.</p></div><footer className="flex justify-end border-t px-5 py-4"><button type="button" onClick={() => setDialog(null)} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white">Return to Project Plan</button></footer></Modal>}
 
       {dialog === "delete-leaf" && <Modal title="Delete Task?" role="alertdialog" onClose={() => setDialog(null)}><div className="space-y-3 p-5 text-sm"><p>Delete <strong>Court surfacing</strong> from this Project Plan?</p><div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-900"><p className="font-semibold">This action removes:</p><ul className="mt-1 list-disc pl-5"><li>the Task and its Resource assignments;</li><li>its incoming and outgoing dependency links.</li></ul></div><p>Affected Tasks, Headers, Project End Date, and calendars will be recalculated. No unrelated link will be removed.</p></div><footer className="flex justify-end gap-2 border-t px-5 py-4"><button type="button" onClick={() => setDialog(null)} className="rounded border px-4 py-2 text-sm font-semibold">Cancel</button><button type="button" onClick={() => { setDialog(null); setNotice("Delete workflow preview complete. No Task, link, Resource assignment, or schedule was changed."); }} className="rounded bg-red-700 px-4 py-2 text-sm font-semibold text-white">Delete Task</button></footer></Modal>}
-    </div>
+    </section>
   );
 }
 

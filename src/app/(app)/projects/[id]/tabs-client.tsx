@@ -59,8 +59,14 @@ export default function ProjectTabs({
         {tab === "details" && <Details project={project} internalUsers={internalUsers} />}
         {tab === "plan"      && (
           <div className="space-y-3">
-            <ProjectPlanWorkflowReview projectName={project.name} canEdit={canEdit} />
+            <div className="flex flex-wrap items-end justify-between gap-2 px-1">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Live planning surface</p>
+                <h2 className="font-semibold text-slate-900">{project.name} Project Plan / Gantt Chart</h2>
+              </div>
+            </div>
             <GanttChart projectId={project.id} canEdit={canEdit} />
+            <ProjectPlanWorkflowReview projectName={project.name} canEdit={canEdit} />
             <ProjectPlanGuide />
           </div>
         )}
@@ -93,6 +99,12 @@ function ProjectPlanGuide() {
         </button>
       </h2>
       <div id="project-plan-gantt-guide-content" hidden={!open} className="border-t border-slate-700 px-5 py-4">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-semibold">Project Plan controls</h3>
+            <span className="rounded-full bg-emerald-300 px-2 py-0.5 text-xs font-bold text-emerald-950">Original Gantt retained</span>
+            <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-medium text-slate-100">Scheduling reference</span>
+          </div>
+          <p className="mb-4 text-sm text-slate-300">Review the scheduling rules here, then make persistent changes in the original Gantt above.</p>
           <ul className="grid gap-3 text-sm leading-6 md:grid-cols-2">
             <li><strong>Editing and moving Tasks:</strong> Double-click a row or bar to edit it. Drag a bar to reschedule it, or drag from its edge circle to another Task to create a dependency.</li>
             <li><strong>Duration and dates:</strong> Duration counts allowed working days and includes the start and end dates. Weekend days count only when enabled for that Task.</li>
