@@ -300,11 +300,16 @@ export async function getCurrentActor(): Promise<Actor | null> {
   const actor = token ? actorForSessionToken(token) : null;
   if (!actor) return null;
   const previewRole = cookieStore.get(ROLE_PREVIEW_COOKIE)?.value;
+  const roleRank: Record<string, number> = { owner: 0, admin: 1, employee: 2, external: 3 };
+  const actualRole = actor.actualCompanyRole;
   if (
-    actor.contextType === "company" && actor.companyRole === "owner" &&
-    (previewRole === "admin" || previewRole === "employee" || previewRole === "external")
+    actor.contextType === "company" &&
+    (actualRole === "owner" || actualRole === "admin") &&
+    typeof previewRole === "string" &&
+    previewRole in roleRank &&
+    roleRank[previewRole] > roleRank[actualRole]
   ) {
-    actor.companyRole = previewRole;
+    actor.companyRole = previewRole as CompanyRole;
     actor.rolePreview = true;
   }
   return actor;

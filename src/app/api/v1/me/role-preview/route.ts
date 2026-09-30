@@ -5,7 +5,7 @@ import { getCurrentActor, ROLE_PREVIEW_COOKIE } from "@/lib/auth";
 import { validateMutationRequest } from "@/lib/request-security";
 import { requestId } from "@/lib/security";
 
-const PREVIEW_ROLES = new Set(["owner", "admin", "employee", "external"]);
+const ROLE_RANK: Record<string, number> = { owner: 0, admin: 1, employee: 2, external: 3 };
 
 export async function POST(request: NextRequest) {
   const traceId = requestId(request);
@@ -14,8 +14,9 @@ export async function POST(request: NextRequest) {
   if (await validateMutationRequest(request, actor, { allowRolePreview: true })) {
     return apiError(403, "ACTION_FORBIDDEN", "The request could not be verified.", traceId);
   }
-  if (actor.contextType !== "company" || actor.actualCompanyRole !== "owner") {
-    return apiError(403, "ACTION_FORBIDDEN", "Only the company Owner can preview company roles.", traceId);
+  const actualRole = actor.actualCompanyRole;
+  if (actor.contextType !== "company" || (actualRole !== "owner" && actualRole !== "admin")) {
+    return apiError(403, "ACTION_FORBIDDEN", "Only a company Owner or Admin can preview roles beneath them.", traceId);
   }
 
   let body: { role?: unknown };
@@ -23,7 +24,9 @@ export async function POST(request: NextRequest) {
     return apiError(400, "VALIDATION_FAILED", "Choose a role to preview.", traceId);
   }
   const role = typeof body.role === "string" ? body.role : "";
-  if (!PREVIEW_ROLES.has(role)) return apiError(400, "VALIDATION_FAILED", "Choose a valid company role.", traceId);
+  if (!(role in ROLE_RANK) || ROLE_RANK[role] < ROLE_RANK[actualRole]) {
+    return apiError(403, "ACTION_FORBIDDEN", "You can only preview your own role or a role beneath it.", traceId);
+  }
 
   const cookieStore = await cookies();
   const options = {
@@ -32,8 +35,8 @@ export async function POST(request: NextRequest) {
     secure: process.env.NODE_ENV === "production",
     path: "/",
   };
-  if (role === "owner") cookieStore.set(ROLE_PREVIEW_COOKIE, "", { ...options, maxAge: 0 });
+  if (role === actualRole) cookieStore.set(ROLE_PREVIEW_COOKIE, "", { ...options, maxAge: 0 });
   else cookieStore.set(ROLE_PREVIEW_COOKIE, role, { ...options, expires: new Date(actor.expiresAt) });
 
-  return apiSuccess({ role, rolePreview: role !== "owner" }, traceId);
+  return apiSuccess({ role, rolePreview: role !== actualRole }, traceId);
 }

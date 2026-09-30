@@ -142,7 +142,7 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
             {contexts.length > 1 && <div><label htmlFor="active-company-context" className="sr-only">Active company context</label><select id="active-company-context" value={activeContext} disabled={switchingContext} onChange={event => switchContext(event.target.value)} className="w-32 max-w-32 rounded border border-blue-500 bg-blue-900 px-2 py-1.5 text-xs font-semibold text-white outline-none focus:ring-2 focus:ring-white disabled:opacity-60 sm:w-auto sm:max-w-52"><option value="" disabled>Choose context</option>{contexts.map(context => <option key={context.type === "platform" ? "platform" : `company:${context.membershipId}`} value={context.type === "platform" ? "platform" : `company:${context.membershipId}`}>{context.type === "platform" ? "Platform Administration" : `${context.companyName} · ${context.role}`}</option>)}</select></div>}
             <span className="hidden truncate text-sm text-blue-100 sm:inline">{user.full_name || user.email}</span>
-            {actualRole === "owner" && activeContext.startsWith("company:") ? (
+            {(actualRole === "owner" || actualRole === "admin") && activeContext.startsWith("company:") ? (
               <div className="flex items-center gap-1">
                 <label htmlFor="role-preview" className="sr-only">Preview company role</label>
                 <select
@@ -151,10 +151,10 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
                   value={previewRole}
                   disabled={switchingRole}
                   onChange={event => switchRole(event.target.value)}
-                  className="max-w-36 rounded border border-blue-500 bg-blue-900 px-2 py-1.5 text-xs font-semibold text-white outline-none focus:ring-2 focus:ring-white disabled:opacity-60 sm:max-w-48"
+                  className="tenant-role-switch max-w-36 rounded border px-2 py-1.5 text-xs font-semibold outline-none disabled:opacity-60 sm:max-w-48"
                 >
-                  <option value="owner">Owner</option>
-                  <option value="admin">Admin</option>
+                  {actualRole === "owner" && <option value="owner">Owner</option>}
+                  {(actualRole === "owner" || actualRole === "admin") && <option value="admin">Admin</option>}
                   <option value="employee">Employee</option>
                   <option value="external">External</option>
                 </select>
@@ -166,14 +166,14 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
             {companyLogoUrl && !platformAdmin && <div className="flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded bg-white p-1 sm:w-16" title={`${companyName || "Company"} logo`}>
               <img src={companyLogoUrl} alt={`${companyName || "Company"} logo`} className="max-h-full max-w-full object-contain" />
             </div>}
-            <button onClick={logout} className="whitespace-nowrap rounded bg-blue-700 px-3 py-1 text-sm hover:bg-blue-900">
+            <button onClick={logout} className="tenant-logout-button whitespace-nowrap rounded px-3 py-1 text-sm">
               Log out
             </button>
           </div>
         </div>
       </header>
 
-      {rolePreviewEnabled && <div className="relative z-40 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-950 shadow">Viewing as {roleLabel(previewRole)}. Changes are disabled during role preview. Select Owner to exit.</div>}
+      {rolePreviewEnabled && <div className="relative z-40 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-950 shadow">Viewing as {roleLabel(previewRole)}. Changes are disabled during role preview. Select your own role ({roleLabel(actualRole)}) to exit.</div>}
       <div className="flex flex-1">
         {open && <button type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden" />}
         <aside className={`fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] flex-none transform overflow-y-auto border-r bg-white pt-16 shadow-xl transition-transform lg:static lg:z-auto lg:w-56 lg:max-w-none lg:translate-x-0 lg:pt-0 lg:shadow-none ${open ? "translate-x-0" : "-translate-x-full"}`}>

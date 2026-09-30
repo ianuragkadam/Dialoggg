@@ -16,6 +16,7 @@ type Project = { id: number; name: string; project_type_id: number; project_type
 export default function MasterCalendarPage() {
   const [events, setEvents] = useState<any[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectTypes, setProjectTypes] = useState<Array<{ id: number; name: string }>>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [projectId, setProjectId] = useState<string>("all");
   const [selectedProjectTypeIds, setSelectedProjectTypeIds] = useState<number[]>([]);
@@ -33,12 +34,17 @@ export default function MasterCalendarPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/projects").then(r => r.json()).then(j => {
-      const next = (j.projects || []) as Project[];
-      setProjects(next);
-      setSelectedProjectTypeIds([...new Set(next.map(project => project.project_type_id))]);
+    Promise.all([
+      fetch("/api/projects", { cache: "no-store" }).then(response => response.json()),
+      fetch("/api/calendar/project-types", { cache: "no-store" }).then(response => response.json()),
+    ]).then(([projectData, typeData]) => {
+      const nextProjects = (projectData.projects || []) as Project[];
+      const nextTypes = (typeData.projectTypes || []) as Array<{ id: number; name: string }>;
+      setProjects(nextProjects);
+      setProjectTypes(nextTypes);
+      setSelectedProjectTypeIds(nextTypes.map(type => type.id));
       setProjectsLoaded(true);
-    });
+    }).catch(() => setProjectsLoaded(true));
   }, []);
 
   const loadEvents=useCallback(() => {
@@ -53,9 +59,6 @@ export default function MasterCalendarPage() {
   }, [projectId, selectedProjectTypeIds, projects.length, projectsLoaded,includeCompleted]);
   useEffect(() => {loadEvents();}, [loadEvents]);
   async function moveEvent(info:any){const props=info.event.extendedProps;if(props.kind!=="event"){info.revert();return;}const start=info.event.startStr,end=info.event.endStr||start;if(!window.confirm(`Move ${info.event.title} to ${start}? Cancel returns it to the original position.`)){info.revert();return;}info.revert();const replacement=info.event.allDay?{startDate:start.slice(0,10),endDate:new Date(Date.parse(end)-86400000).toISOString().slice(0,10)}:{startAt:info.event.start?.toISOString(),endAt:info.event.end?.toISOString()};async function save(confirmConflicts=false){const response=await authenticatedFetch(`/api/events/${props.seriesId}/exceptions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({version:props.version,occurrenceKey:props.occurrenceKey,action:"replace",replacement,confirmConflicts})});const data=await response.json();if(response.status===409&&data?.error?.code==="RESOURCE_CONFLICT"&&!confirmConflicts){if(window.confirm("This move overlaps another Resource assignment. Keep the assignment anyway?"))await save(true);return;}setNotice(response.ok?"Event moved after confirmation. All applicable calendars were refreshed.":data?.error?.message||"The Event could not be moved.");if(response.ok)loadEvents();}await save();}
-
-  const projectTypes = [...new Map(projects.map(project => [project.project_type_id, { id: project.project_type_id, name: project.project_type }])).values()]
-    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="space-y-4">

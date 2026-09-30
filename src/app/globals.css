@@ -146,8 +146,9 @@ body {
 .tenant-theme .bg-green-700,
 .tenant-theme .bg-orange-600,
 .tenant-theme .bg-orange-700 {
-  background-color: #eb6b2d !important;
-  color: #101a2b !important;
+  background-color: #d1850b !important;
+  color: #111827 !important;
+  border-color: #d1850b !important;
 }
 
 .tenant-theme .bg-blue-700:hover,
@@ -157,24 +158,78 @@ body {
 .tenant-theme .bg-green-700:hover,
 .tenant-theme .bg-orange-600:hover,
 .tenant-theme .bg-orange-700:hover {
-  background-color: #f28a4d !important;
-  color: #101a2b !important;
+  background-color: #b87308 !important;
+  color: #111827 !important;
+  border-color: #b87308 !important;
 }
 
-/* Project Types retains its separately requested lime primary action. */
+.tenant-theme .bg-blue-700:focus-visible,
+.tenant-theme .bg-emerald-600:focus-visible,
+.tenant-theme .bg-emerald-700:focus-visible,
+.tenant-theme .bg-green-600:focus-visible,
+.tenant-theme .bg-green-700:focus-visible,
+.tenant-theme .bg-orange-600:focus-visible,
+.tenant-theme .bg-orange-700:focus-visible {
+  outline: 2px solid #f1b94e;
+  outline-offset: 2px;
+}
+
+/* Project Types primary action uses the requested orange, consistently across pages. */
 .project-type-add-button {
-  background-color: #a9cf38 !important;
+  background-color: #d1850b !important;
   color: #101a2b !important;
+  border-color: #d1850b !important;
 }
 
 .project-type-add-button:hover {
-  background-color: #97bb2e !important;
+  background-color: #b87308 !important;
   color: #101a2b !important;
+  border-color: #b87308 !important;
 }
 
 .project-type-add-button:focus-visible {
-  outline: 2px solid #a9cf38;
+  outline: 2px solid #f1b94e;
   outline-offset: 2px;
+}
+
+/* The shared Log out action is the requested light green on every tenant page. */
+.tenant-theme .tenant-logout-button {
+  background-color: #a9cf48 !important;
+  color: #101a2b !important;
+  border-color: #a9cf48 !important;
+}
+
+.tenant-theme .tenant-logout-button:hover {
+  background-color: #94b63b !important;
+  color: #101a2b !important;
+  border-color: #94b63b !important;
+}
+
+.tenant-theme .tenant-logout-button:focus-visible {
+  outline: 2px solid #d4ec8c;
+  outline-offset: 2px;
+}
+
+.tenant-theme .tenant-role-switch {
+  color-scheme: light;
+  background-color: #a9cf48 !important;
+  color: #101a2b !important;
+  border-color: #a9cf48 !important;
+}
+
+.tenant-theme .tenant-role-switch:hover {
+  background-color: #94b63b !important;
+  border-color: #94b63b !important;
+}
+
+.tenant-theme .tenant-role-switch:focus-visible {
+  outline: 2px solid #d4ec8c;
+  outline-offset: 2px;
+}
+
+.tenant-theme .tenant-role-switch option {
+  background-color: #fff;
+  color: #101a2b;
 }
 
 /* High-contrast role-preview chip, independent of the tenant amber theme. */
@@ -227,6 +282,31 @@ body {
 .tenant-theme .fc .fc-list-day-text,
 .tenant-theme .fc .fc-list-day-side-text {
   color: #d5deea;
+}
+
+/* Make today's date easy to spot without competing with calendar events. */
+.tenant-theme .fc .fc-day-today {
+  background-color: #203552 !important;
+  box-shadow: inset 0 0 0 2px #f28a4d;
+}
+
+.tenant-theme .fc .fc-day-today .fc-daygrid-day-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  margin: 0.2rem;
+  border-radius: 9999px;
+  background-color: #f28a4d;
+  color: #111827;
+  font-weight: 800;
+}
+
+.tenant-theme .fc .fc-day-today .fc-timegrid-axis-cushion,
+.tenant-theme .fc .fc-day-today .fc-timegrid-slot-label-cushion {
+  color: #ffb27f;
+  font-weight: 700;
 }
 
 .tenant-theme .fc .fc-button[title="Add an Event"] {
