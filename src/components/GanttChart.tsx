@@ -40,9 +40,22 @@ type LinkModal = {
 };
 
 const COLORS = [
-  "#5599dd", "#2e75b6", "#85b04f", "#2e7d32", "#d29c4b", "#e67e22",
+  "#3B417D", "#D1850B", "#55681C", "#A9CF38", "#0E123B", "#2e75b6",
   "#9b59b6", "#16a085", "#c0392b", "#7f8c8d", "#34495e", "#e84393",
 ];
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
+}
+
+function chartColor(value: unknown): string {
+  return /^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : COLORS[0];
+}
+
+function paleColor(color: string): string {
+  const channels = [1, 3, 5].map(offset => Math.round(parseInt(color.slice(offset, offset + 2), 16) * .14 + 255 * .86));
+  return `rgb(${channels.join(",")})`;
+}
 
 const LINK_TYPE_TO_DHTMLX: Record<string, string> = { fs: "0", ss: "1", ff: "2", sf: "3" };
 
@@ -96,7 +109,12 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       gantt.clearAll();
       gantt.parse({
         ...data,
-        data: (data.data || []).map((task: any) => ({ ...task, working_duration: task.duration })),
+        data: (data.data || []).map((task: any) => ({
+          ...task, working_duration: task.duration, plan_color: chartColor(task.color),
+          color: task.type === "project" ? "#0E123B" : paleColor(chartColor(task.color)),
+          progressColor: task.type === "project" ? "#0E123B" : chartColor(task.color),
+          textColor: "#1c2233",
+        })),
       });
     } finally {
       setTimeout(() => { syncingRef.current = false; }, 50);
@@ -140,36 +158,46 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
 
       gantt.config.date_format = "%Y-%m-%d";
       gantt.config.duration_unit = "day";
-      gantt.config.scale_height = 50;
+      gantt.config.scale_height = 52;
       gantt.config.row_height = 34;
-      gantt.config.bar_height = 24;
-      gantt.config.grid_width = 440;
+      gantt.config.bar_height = 20;
+      gantt.config.grid_width = 490;
       gantt.config.autosize = false;
       gantt.config.fit_tasks = true;
       gantt.config.auto_scheduling = true;
       gantt.config.auto_scheduling_strict = true;
       gantt.config.auto_scheduling_initial = true;
       gantt.config.details_on_create = false;   // we open our own popup
-      gantt.config.min_column_width = 26;
+      gantt.config.min_column_width = 32;
       gantt.config.readonly = !canEdit;          // read-only roles cannot drag, resize, link, or edit
 
       gantt.config.columns = [
-        { name: "text",       label: "Task Name", tree: true, width: 190, resize: true },
-        { name: "start_date", label: "Start",     align: "center", width: 95 },
-        { name: "duration",   label: "Days",      align: "center", width: 70,
-          template: (task: any) => task.type === "project" ? "Derived" : String(task.working_duration ?? task.duration) },
-        { name: "add",        label: "",          width: 40 },
+        { name: "text", label: "Task Name", tree: true, width: 258, resize: true,
+          template: (task: any) => `${task.type === "project" ? `<i class="plan-group-dot" style="background:${chartColor(task.plan_color)}"></i>` : ""}${escapeHtml(task.text)}` },
+        { name: "resources", label: "Resources", width: 128, resize: true,
+          template: (task: any) => `<span title="${escapeHtml((task.resource_names || []).join(", "))}">${escapeHtml((task.resource_names || []).join(", ")) || "—"}</span>` },
+        { name: "progress", label: "Done", align: "right", width: 64,
+          template: (task: any) => `${Math.round(Math.max(0, Math.min(1, Number(task.progress) || 0)) * 100)}${task.type === "project" ? "%" : ""}` },
+        ...(canEdit ? [{ name: "add", label: "", width: 40 }] : []),
       ];
       gantt.config.scales = [
         { unit: "month", step: 1, format: "%F %Y" },
-        { unit: "week",  step: 1, format: (d: Date) => "Week of " + gantt.date.date_to_str("%M %j")(d) },
         { unit: "day",   step: 1, format: "%j" },
       ];
       gantt.templates.task_class = (_s: Date, _e: Date, task: any) =>
-        task.type === "project" ? "gantt-header-bar" : "gantt-task-bar";
+        task.type === "project" ? "gantt-header-bar" : `gantt-task-bar plan-color-${chartColor(task.plan_color).slice(1).toLowerCase()}`;
+      gantt.templates.task_text = () => "";
+      gantt.templates.rightside_text = (_s: Date, _e: Date, task: any) => escapeHtml(task.text);
+      gantt.templates.grid_row_class = (_s: Date, _e: Date, task: any) => task.type === "project" ? "plan-header-row" : "";
+      gantt.templates.task_row_class = gantt.templates.grid_row_class;
+      const dayClass = (date: Date) => {
+        const today = new Date();
+        if (date.toDateString() === today.toDateString()) return "plan-today";
+        return date.getDay() === 0 || date.getDay() === 6 ? "plan-weekend" : "";
+      };
+      gantt.templates.scale_cell_class = dayClass;
       gantt.templates.timeline_cell_class = (_t: any, date: Date) => {
-        const d = date.getDay();
-        return d === 0 || d === 6 ? "weekend" : "";
+        return dayClass(date);
       };
 
       gantt.init(containerRef.current!);
@@ -206,7 +234,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         setTaskModal({
           mode: "edit", id,
           text: t.text, start_date: isoFromDate(gantt, t.start_date),
-          duration: Number(t.working_duration ?? t.duration), color: t.color || COLORS[0],
+          duration: Number(t.working_duration ?? t.duration), color: t.plan_color || COLORS[0],
           parent: t.parent || 0, resourceIds, isTemp: false,
           version: Number(t.version) || 1, isHeader: t.type === "project", isRoot: !!t.is_root,
           allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday,
@@ -239,7 +267,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
           body: JSON.stringify({
             text: fresh.text, start_date: isoFromDate(gantt, fresh.start_date),
             duration, progress: fresh.progress,
-            color: fresh.color, parent: fresh.parent, version: fresh.version,
+            color: fresh.plan_color, parent: fresh.parent, version: fresh.version,
             allow_saturday: !!fresh.allow_saturday, allow_sunday: !!fresh.allow_sunday,
             resource_category_id: fresh.resource_category_id,
             external_visible: !!fresh.external_visible,
@@ -401,10 +429,11 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
   };
 
   return (
-    <div className="bg-white border rounded shadow-sm" data-testid="persistent-gantt">
-      <div className="px-4 py-2 border-b flex items-center justify-between bg-gray-50">
+    <div className="dialoggg-plan-chart" data-testid="persistent-gantt" aria-label="Live Project Plan Gantt chart">
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+      <div className="plan-chart-toolbar">
         <div className="flex items-center gap-3">
-          <h2 className="font-semibold">Project Plan</h2>
+          <div><div className="plan-chart-kicker">PROJECT PLAN · LIVE SCHEDULE</div><h2 className="plan-chart-title">{planTasks.find(task => task.is_root)?.text || "Project"} — Project Plan</h2></div>
           {canEdit && (
             <button
               onClick={() => {
@@ -418,20 +447,26 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                   categoryId: null, externalVisible: false, isTemp: false,
                 });
               }}
-              className="bg-[#3B417D] text-white text-sm px-3 py-1 rounded font-semibold hover:bg-[#323765]"
+              className="plan-chart-add"
             >
               + Add Task
             </button>
           )}
         </div>
-        <div className="text-xs text-gray-500">
+        <div className="plan-chart-help">
           {canEdit
             ? "Double-click a bar to edit · Drag bars to reschedule · Drag from a bar's edge circle to another bar to link them"
             : "View only. Ask an Admin for edit access to change the schedule."}
         </div>
       </div>
       {message && <div role="status" className="m-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">{message}</div>}
-      <div ref={containerRef} style={{ width: "100%", height: 580 }} />
+      <div className="plan-chart-scroll"><div ref={containerRef} style={{ width: "100%", minWidth: 760, height: 580 }} /></div>
+      <div className="plan-chart-legend">
+        <span><i style={{ background: "#0E123B" }} />Header / derived schedule</span>
+        <span><i style={{ background: "#3B417D" }} />Task color / completed portion</span>
+        <span><i className="plan-legend-today" />Today</span>
+        <span>Done = saved task progress · Resources = assigned people</span>
+      </div>
 
       {/* ============ TASK POPUP ============ */}
       {taskModal && (
@@ -646,12 +681,48 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       )}
 
       <style jsx global>{`
-        .gantt-header-bar .gantt_task_progress { background: #1b5380; }
-        .gantt-header-bar { background: #2e75b6 !important; border-color: #1b5380 !important; }
-        .gantt_task_link .gantt_line_wrapper > div { background: #f08a24 !important; }
-        .gantt_task_link .gantt_link_arrow_right { border-left-color: #f08a24 !important; }
-        .gantt_task_link .gantt_link_arrow_left  { border-right-color: #f08a24 !important; }
-        .gantt_task_cell.weekend { background: #f0f0f0; }
+        ${[...new Set(planTasks.map(task => chartColor(task.color)))].map(color => `.dialoggg-plan-chart .plan-color-${color.slice(1).toLowerCase()} { border-left:4px solid ${color} !important; }`).join("\n")}
+        .tenant-theme .dialoggg-plan-chart, .dialoggg-plan-chart { background:#fff; color:#1c2233; border:1px solid #e6e4dc; border-radius:14px; overflow:hidden; font-family:'Space Grotesk',sans-serif; }
+        .dialoggg-plan-chart .plan-chart-toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; padding:18px 26px; border-bottom:1px solid #e6e4dc; background:#fff; }
+        .dialoggg-plan-chart .plan-chart-title { color:#1c2233; font-size:19px; font-weight:600; margin:0; }
+        .dialoggg-plan-chart .plan-chart-kicker { color:#6b7280; font:10px 'IBM Plex Mono',monospace; letter-spacing:.04em; margin-bottom:4px; }
+        .dialoggg-plan-chart .plan-chart-add { background:#0E123B; color:#fff; border:1px solid #0E123B; padding:7px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
+        .dialoggg-plan-chart .plan-chart-add:hover { background:#3B417D; }
+        .dialoggg-plan-chart .plan-chart-add:focus-visible { outline:3px solid #A9CF38; outline-offset:3px; }
+        .dialoggg-plan-chart .plan-chart-help { color:#6b7280; font-size:11px; max-width:420px; }
+        .dialoggg-plan-chart .plan-chart-scroll { width:100%; overflow-x:auto; }
+        .dialoggg-plan-chart .gantt_container { --dhx-gantt-font-family:'Space Grotesk',sans-serif; --dhx-gantt-font-size:13px; --dhx-gantt-base-colors-select:#eeedf5; border:none; border-radius:0; background:#fff; color:#1c2233; }
+        .dialoggg-plan-chart .gantt_grid, .dialoggg-plan-chart .gantt_task, .dialoggg-plan-chart .gantt_grid_data, .dialoggg-plan-chart .gantt_task_bg { background:#fff; color:#1c2233; }
+        .dialoggg-plan-chart .gantt_grid_scale, .dialoggg-plan-chart .gantt_task_scale { background:#fbfaf7; color:#6b7280; border-color:#e6e4dc; }
+        .dialoggg-plan-chart .gantt_grid_head_cell { color:#6b7280; font:10.5px/52px 'IBM Plex Mono',monospace; text-transform:uppercase; letter-spacing:.04em; border-color:#e6e4dc; }
+        .dialoggg-plan-chart .gantt_scale_cell { color:#6b7280; font:10.5px/26px 'IBM Plex Mono',monospace; border-color:#f0efe9; }
+        .dialoggg-plan-chart .gantt_scale_line:first-child .gantt_scale_cell { color:#1c2233; font:600 12.5px/26px 'Space Grotesk',sans-serif; }
+        .dialoggg-plan-chart .gantt_row, .dialoggg-plan-chart .gantt_task_row { background:#fff; border-color:#f0efe9; color:#1c2233; }
+        .dialoggg-plan-chart .gantt_row.plan-header-row, .dialoggg-plan-chart .gantt_task_row.plan-header-row { background:#fbfaf7; font-weight:600; }
+        .dialoggg-plan-chart .gantt_cell { border-color:#f0efe9; font-size:13px; }
+        .dialoggg-plan-chart .gantt_cell[data-column-name="resources"] { color:#6b7280; font-size:12px; }
+        .dialoggg-plan-chart .gantt_cell[data-column-name="progress"] { color:#6b7280; font:12px/34px 'IBM Plex Mono',monospace; padding-right:14px; }
+        .dialoggg-plan-chart .gantt_tree_content { overflow:hidden; text-overflow:ellipsis; }
+        .dialoggg-plan-chart .gantt_tree_icon.gantt_folder_open, .dialoggg-plan-chart .gantt_tree_icon.gantt_folder_closed, .dialoggg-plan-chart .gantt_tree_icon.gantt_file { display:none; }
+        .dialoggg-plan-chart .plan-group-dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:7px; }
+        .dialoggg-plan-chart .gantt_task_cell { border-color:#f0efe9; }
+        .dialoggg-plan-chart .gantt_task_cell.plan-weekend, .dialoggg-plan-chart .gantt_scale_cell.plan-weekend { background:#f7f5ef !important; }
+        .dialoggg-plan-chart .gantt_task_cell.plan-today, .dialoggg-plan-chart .gantt_scale_cell.plan-today { background:rgba(14,18,59,.05) !important; border-left:1px solid #c8c9d2; border-right:1px solid #c8c9d2; color:#0E123B; font-weight:700; }
+        .dialoggg-plan-chart .gantt-task-bar { border:none; border-radius:5px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.05); }
+        .dialoggg-plan-chart .gantt-task-bar .gantt_task_progress { opacity:.55; border:none; border-radius:5px 0 0 5px; }
+        .dialoggg-plan-chart .gantt_task_line.gantt-header-bar { height:8px !important; margin-top:6px; border:0; border-radius:4px; background:#0E123B !important; }
+        .dialoggg-plan-chart .gantt-header-bar .gantt_task_progress { background:#0E123B !important; border:0; }
+        .dialoggg-plan-chart .gantt_task_line .gantt_side_content.gantt_right { color:#1c2233; font-size:12.5px; font-style:italic; padding-left:10px; }
+        .dialoggg-plan-chart .gantt-header-bar .gantt_side_content.gantt_right { color:#0E123B; font-size:13.5px; font-weight:700; height:20px; line-height:20px; top:-6px; }
+        .dialoggg-plan-chart .gantt_task_link .gantt_line_wrapper > div { background:#9395a7 !important; }
+        .dialoggg-plan-chart .gantt_task_link .gantt_link_arrow_right { border-left-color:#9395a7 !important; }
+        .dialoggg-plan-chart .gantt_task_link .gantt_link_arrow_left { border-right-color:#9395a7 !important; }
+        .dialoggg-plan-chart .gantt_row.gantt_selected, .dialoggg-plan-chart .gantt_task_row.gantt_selected { background:#eeedf5; }
+        .dialoggg-plan-chart .plan-chart-legend { display:flex; flex-wrap:wrap; gap:18px; padding:14px 26px; border-top:1px solid #e6e4dc; background:#fbfaf7; color:#6b7280; font-size:12px; }
+        .dialoggg-plan-chart .plan-chart-legend span { display:inline-flex; align-items:center; gap:6px; }
+        .dialoggg-plan-chart .plan-chart-legend i { width:9px; height:9px; border-radius:2px; }
+        .dialoggg-plan-chart .plan-legend-today { background:#eeedf5; border:1px solid #9395a7; }
+        @media(max-width:640px) { .dialoggg-plan-chart .plan-chart-toolbar { padding:14px; } .dialoggg-plan-chart .plan-chart-title { font-size:16px; } }
       `}</style>
     </div>
   );

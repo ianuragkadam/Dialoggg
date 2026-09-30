@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { canViewProject } from "@/lib/authorization";
 import { createPlanTask, getProjectPlan, PlanDomainError } from "@/lib/gantt-cascade";
@@ -22,6 +23,16 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const plan = getProjectPlan(projectId, actor.companyId, actor.companyRole === "external");
   if (!plan) return NextResponse.json({ error: { code: "PROJECT_NOT_FOUND", message: "Project not found." } }, { status: 404, headers: noStore });
   const external = actor.companyRole === "external";
+  // Keep internal Resource assignments out of the External/Client response.
+  const assignments = external ? [] : db.prepare(`
+    SELECT tr.task_id, r.name FROM task_resource tr
+    JOIN task t ON t.id = tr.task_id JOIN resource r ON r.id = tr.resource_id
+    WHERE t.project_id = ? AND r.company_id = ? ORDER BY r.name
+  `).all(projectId, actor.companyId) as { task_id: number; name: string }[];
+  const resourceNames = new Map<number, string[]>();
+  for (const assignment of assignments) {
+    resourceNames.set(assignment.task_id, [...(resourceNames.get(assignment.task_id) || []), assignment.name]);
+  }
   const data = plan.tasks.map(task => ({
     id: task.id,
     text: task.name,
@@ -36,6 +47,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     is_root: task.is_root === 1,
     ...(!external ? {
       version: task.version,
+      resource_names: resourceNames.get(task.id) || [],
       allow_saturday: task.allow_saturday === 1,
       allow_sunday: task.allow_sunday === 1,
       resource_category_id: task.resource_category_id,

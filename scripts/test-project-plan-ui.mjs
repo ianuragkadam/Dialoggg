@@ -21,7 +21,9 @@ const port = await freePort(); const baseUrl = `http://127.0.0.1:${port}`; const
 try {
   const playwright = await loadPlaywright();
   prepareTestDatabase(dataDirectory); const admin = bootstrapAccount(dataDirectory, { companyName: "Project Plan QA", fullName: "Plan Admin", email: adminEmail, password, role: "admin" }); bootstrapAccount(dataDirectory, { companyId: admin.companyId, fullName: "Plan Employee", email: employeeEmail, password, role: "employee" });
-  appServer = spawn(process.execPath, ["scripts/start-production.mjs"], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_BASE_URL: baseUrl }, stdio: ["ignore", "pipe", "pipe"] });
+  const serverArgs = process.env.DIALOGGG_TEST_SERVER_MODE === "next-start"
+    ? ["node_modules/next/dist/bin/next", "start", "-p", String(port)] : ["scripts/start-production.mjs"];
+  appServer = spawn(process.execPath, serverArgs, { cwd: process.cwd(), env: { ...process.env, NODE_ENV: "production", PORT: String(port), RAILWAY_VOLUME_MOUNT_PATH: dataDirectory, APP_BASE_URL: baseUrl }, stdio: ["ignore", "pipe", "pipe"] });
   appServer.stdout.on("data", chunk => { appOutput += chunk.toString(); }); appServer.stderr.on("data", chunk => { appOutput += chunk.toString(); });
   const started = Date.now(); while (true) { if (appServer.exitCode !== null) throw new Error(`Server exited.\n${appOutput}`); try { if ((await fetch(`${baseUrl}/login`)).status === 200) break; } catch {} if (Date.now() - started > 25_000) throw new Error(`Server timeout.\n${appOutput}`); await new Promise(resolve => setTimeout(resolve, 200)); }
 
@@ -29,10 +31,12 @@ try {
   const adminCookie = sessionCookie(registration); const adminCsrf = csrfCookie(registration); const auth = authenticatedHeaders(registration, baseUrl);
   const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Reading Residence Court", project_type_id: admin.defaultProjectTypeId, client_name: "Morgan Family", client_email: "client@example.test", address: "1499 Reading Road", city: "Mohnton", state: "PA", zip: "19540", phone: "7175550100", start_date: "2026-09-15" }) });
   assert.equal(projectResult.response.status, 200); const projectId = projectResult.data.id;
+  const resourceResult = await json(`${baseUrl}/api/resources`, { method: "POST", headers: auth, body: JSON.stringify({ name: "QA Crew", category_name: "Employee", email: "crew@example.test", phone: "7175550101" }) });
+  assert.equal(resourceResult.response.status, 200, JSON.stringify(resourceResult.data));
   let planVersion = (await json(`${baseUrl}/api/projects/${projectId}/tasks`, { headers: auth })).data.planVersion;
   const initialTaskIds = [];
   for (const task of [{ text: "Concrete base", start_date: "2026-09-16", duration: 2 }, { text: "Court surfacing", start_date: "2026-09-18", duration: 3 }]) {
-    const taskResult = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { method: "POST", headers: auth, body: JSON.stringify({ ...task, planVersion, resourceIds: [] }) }); assert.equal(taskResult.response.status, 201, JSON.stringify(taskResult.data)); planVersion = taskResult.data.planVersion; initialTaskIds.push(taskResult.data.id);
+    const taskResult = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { method: "POST", headers: auth, body: JSON.stringify({ ...task, planVersion, resourceIds: [resourceResult.data.id] }) }); assert.equal(taskResult.response.status, 201, JSON.stringify(taskResult.data)); planVersion = taskResult.data.planVersion; initialTaskIds.push(taskResult.data.id);
   }
   const initialLink = await json(`${baseUrl}/api/projects/${projectId}/links`, { method: "POST", headers: auth, body: JSON.stringify({ source: initialTaskIds[0], target: initialTaskIds[1], type: "0", lag: 0, planVersion }) }); assert.equal(initialLink.response.status, 201, JSON.stringify(initialLink.data));
   const employeeLogin = await login(baseUrl, employeeEmail, password); const employeeCookie = sessionCookie(employeeLogin); const employeeCsrf = csrfCookie(employeeLogin);
@@ -51,7 +55,7 @@ try {
     await panel.getByRole("button", { name: "Root task rules" }).click();
     const rootRules = page.getByRole("dialog", { name: "Project root task rules" });
     assert.match(await rootRules.innerText(), /groups the 2 direct child tasks/i);
-    await rootRules.getByRole("button", { name: "Close" }).click();
+    await rootRules.getByRole("button", { name: "Close", exact: true }).click();
     await panel.getByRole("button", { name: "Edit in Gantt" }).first().click();
     await page.getByRole("dialog", { name: "Edit Task" }).getByLabel("Task Name").waitFor();
     await page.getByRole("dialog", { name: "Edit Task" }).getByRole("button", { name: "Cancel" }).click();
@@ -64,6 +68,7 @@ try {
     await dialog.getByLabel("Task Name").fill("Persistent QA Task");
     await dialog.getByLabel("Start Date").fill("2026-09-18");
     await dialog.getByLabel("Duration (days)").fill("2");
+    await dialog.getByLabel("Task Progress", { exact: true }).fill("40");
     assert.equal(await dialog.getByLabel("Start Date").inputValue(), "2026-09-18");
     assert.equal(await dialog.getByLabel("Duration (days)").inputValue(), "2");
     await dialog.getByLabel("Allow work on Saturday").check();
@@ -73,13 +78,20 @@ try {
     await page.reload();
     await page.getByTestId("persistent-gantt").getByText("Persistent QA Task", { exact: true }).first().waitFor();
     const taskRow = page.getByTestId("persistent-gantt").locator(".gantt_row").filter({ hasText: "Persistent QA Task" });
-    assert.match((await taskRow.innerText()).replace(/\s+/g, " "), /Persistent QA Task 2026-09-18 2/);
+    assert.match((await taskRow.innerText()).replace(/\s+/g, " "), /Persistent QA Task.*40/);
+    assert.equal(await gantt.locator('.gantt_grid_head_cell').filter({ hasText: 'Resources' }).count(), 1);
+    assert.equal(await gantt.locator('.gantt_grid_head_cell').filter({ hasText: 'Done' }).count(), 1);
+    assert.equal(await gantt.locator('.gantt_container').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(255, 255, 255)');
+    await gantt.locator('.gantt_row').filter({ hasText: 'Concrete base' }).getByText('QA Crew').waitFor();
+    await gantt.screenshot({ path: path.join(process.cwd(), 'artifacts', 'gantt-reference-restyle.png') });
     const persisted = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { headers: auth });
     const task = persisted.data.data.find(item => item.text === "Persistent QA Task");
     assert.ok(task);
     assert.equal(task.start_date, "2026-09-18");
     assert.equal(task.end_date, "2026-09-19");
     assert.equal(task.allow_saturday, true);
+    assert.equal(task.progress, 0.4);
+    assert.equal(task.color, '#3B417D');
     assert.equal(persisted.data.data.filter(item => item.is_root).length, 1);
   });
 
