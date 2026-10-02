@@ -45,8 +45,7 @@ export default function UserInvitePrototype({ projects, canInviteElevated }: { p
 
   return <div className="mx-auto max-w-4xl space-y-6 pb-10">
     <nav className="text-sm text-slate-500"><Link href="/users">Users</Link><span className="px-2">/</span>Invite User</nav>
-    <div><h1 className="text-3xl font-bold">Invite User</h1><p className="mt-2 text-sm text-slate-600">Create or securely attach a global identity, then add one fixed company Role.</p></div>
-    <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950"><strong>Secure invitation</strong><p>The administrator never sets the User's password. The one-time link expires after 72 hours.</p></section>
+    <h1 className="text-3xl font-bold">Invite User</h1>
     {errors.form && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">{errors.form}</div>}
     <form onSubmit={event => { event.preventDefault(); if (validate()) setReview(true); }} className="overflow-hidden rounded-xl border bg-white shadow-sm">
       <section className="grid gap-4 p-5 sm:grid-cols-2"><Field id="invite-first-name" label="First Name" value={form.firstName} error={errors.firstName} onChange={value => set("firstName", value)} /><Field id="invite-last-name" label="Last Name" value={form.lastName} error={errors.lastName} onChange={value => set("lastName", value)} /><div className="sm:col-span-2"><Field id="invite-email" label="Login Email" value={form.email} error={errors.email} onChange={value => set("email", value)} type="email" /><p className="mt-1 text-xs text-slate-500">Email is globally unique. An existing identity must verify with its current password when accepting a second-company invitation.</p></div></section>

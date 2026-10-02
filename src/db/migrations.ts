@@ -2240,7 +2240,34 @@ const migration017: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017];
+const migration018: Migration = {
+  version: 18,
+  name: "email_change_verification",
+  signature: "hashed expiring one-time verification challenges for self-service email changes v1",
+  up(database) {
+    database.exec(`
+      CREATE TABLE email_change_challenge (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        identity_id INTEGER NOT NULL,
+        new_email TEXT NOT NULL COLLATE NOCASE,
+        code_hash TEXT NOT NULL CHECK (length(code_hash) = 64),
+        expires_at TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+        used_at TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (identity_id) REFERENCES identity(id) ON DELETE CASCADE
+      );
+      CREATE INDEX idx_email_change_challenge_identity
+        ON email_change_challenge(identity_id, created_at DESC);
+      CREATE INDEX idx_email_change_challenge_pending
+        ON email_change_challenge(identity_id, expires_at)
+        WHERE used_at IS NULL AND revoked_at IS NULL;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

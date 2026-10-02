@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { roleLabel } from "@/lib/product-language";
 import { authenticatedFetch } from "@/lib/client-fetch";
-import dialogggLogo from "../../Dialoggg-Google-logo.png";
+import dialogggLogo from "../../dialoggg-lockup-transparent-onDark.png";
 
 type User = { id: number; email: string; full_name: string | null; user_type: string };
 type AuthContext = {
@@ -65,7 +65,10 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
   const [previewRole, setPreviewRole] = useState(user.user_type);
   const [rolePreviewEnabled, setRolePreviewEnabled] = useState(false);
   const [switchingRole, setSwitchingRole] = useState(false);
+  const [companyLogoAvailable, setCompanyLogoAvailable] = useState(Boolean(companyLogoUrl));
   const platformAdmin = user.user_type === "super_admin";
+
+  useEffect(() => { setCompanyLogoAvailable(Boolean(companyLogoUrl)); }, [companyLogoUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,13 +137,10 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setOpen(current => !current)} aria-controls="primary-navigation" aria-expanded={open} aria-label={open ? "Close navigation" : "Open navigation"} className="rounded p-1 text-2xl focus:outline-none focus:ring-2 focus:ring-white lg:hidden">☰</button>
-            <Image src={dialogggLogo} alt="Dialoggg logo" width={40} height={40} priority className="h-10 w-10 shrink-0 rounded-lg object-contain" />
-            <div>
-              <div className="font-bold text-lg leading-tight">Dialoggg</div>
-            </div>
+            <Image src={dialogggLogo} alt="Dialoggg" width={180} height={40} priority className="h-8 w-auto max-w-[145px] shrink-0 object-contain sm:h-9 sm:max-w-[180px]" />
           </div>
           <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-            {contexts.length > 1 && <div><label htmlFor="active-company-context" className="sr-only">Active company context</label><select id="active-company-context" value={activeContext} disabled={switchingContext} onChange={event => switchContext(event.target.value)} className="w-32 max-w-32 rounded border border-blue-500 bg-blue-900 px-2 py-1.5 text-xs font-semibold text-white outline-none focus:ring-2 focus:ring-white disabled:opacity-60 sm:w-auto sm:max-w-52"><option value="" disabled>Choose context</option>{contexts.map(context => <option key={context.type === "platform" ? "platform" : `company:${context.membershipId}`} value={context.type === "platform" ? "platform" : `company:${context.membershipId}`}>{context.type === "platform" ? "Platform Administration" : `${context.companyName} · ${context.role}`}</option>)}</select></div>}
+            {contexts.length > 1 && <div><label htmlFor="active-company-context" className="sr-only">Active company context</label><select id="active-company-context" value={activeContext} disabled={switchingContext} onChange={event => switchContext(event.target.value)} className="h-10 w-32 max-w-32 rounded border border-blue-500 bg-blue-900 px-2 text-xs font-semibold text-white outline-none focus:ring-2 focus:ring-white disabled:opacity-60 sm:w-auto sm:max-w-52"><option value="" disabled>Choose context</option>{contexts.map(context => <option key={context.type === "platform" ? "platform" : `company:${context.membershipId}`} value={context.type === "platform" ? "platform" : `company:${context.membershipId}`}>{context.type === "platform" ? "Platform Administration" : `${context.companyName} · ${context.role}`}</option>)}</select></div>}
             <span className="hidden truncate text-sm text-blue-100 sm:inline">{user.full_name || user.email}</span>
             {(actualRole === "owner" || actualRole === "admin") && activeContext.startsWith("company:") ? (
               <div className="flex items-center gap-1">
@@ -151,22 +151,22 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
                   value={previewRole}
                   disabled={switchingRole}
                   onChange={event => switchRole(event.target.value)}
-                  className="tenant-role-switch max-w-36 rounded border px-2 py-1.5 text-xs font-semibold outline-none disabled:opacity-60 sm:max-w-48"
+                  className="tenant-role-switch h-10 min-h-10 max-w-36 rounded border px-2 py-0 text-xs font-semibold outline-none disabled:opacity-60 sm:max-w-48"
                 >
                   {actualRole === "owner" && <option value="owner">Owner</option>}
                   {(actualRole === "owner" || actualRole === "admin") && <option value="admin">Admin</option>}
                   <option value="employee">Employee</option>
                   <option value="external">External</option>
                 </select>
-                {rolePreviewEnabled && <span className="role-preview-chip hidden rounded px-2 py-1 text-xs font-semibold md:inline">Read-only preview</span>}
+                {rolePreviewEnabled && <span className="role-preview-chip hidden h-10 items-center rounded px-2 text-xs font-semibold md:inline-flex">Read-only preview</span>}
               </div>
             ) : (
-              <span className="hidden whitespace-nowrap rounded bg-blue-700 px-2 py-1 text-xs sm:inline">{roleLabel(user.user_type)}</span>
+              <span className="hidden h-10 items-center whitespace-nowrap rounded bg-blue-700 px-2 text-xs sm:inline-flex">{roleLabel(user.user_type)}</span>
             )}
-            {companyLogoUrl && !platformAdmin && <div className="flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded bg-white p-1 sm:w-16" title={`${companyName || "Company"} logo`}>
-              <img src={companyLogoUrl} alt={`${companyName || "Company"} logo`} className="max-h-full max-w-full object-contain" />
+            {companyLogoUrl && companyLogoAvailable && !platformAdmin && <div className="flex h-10 w-12 shrink-0 items-center justify-center overflow-hidden rounded bg-white p-1 sm:w-16" title={`${companyName || "Company"} logo`}>
+              <img src={companyLogoUrl} alt={`${companyName || "Company"} logo`} onError={() => setCompanyLogoAvailable(false)} className="max-h-full max-w-full object-contain" />
             </div>}
-            <button onClick={logout} className="tenant-logout-button whitespace-nowrap rounded px-3 py-1 text-sm">
+            <button onClick={logout} className="tenant-logout-button inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded px-3 text-sm">
               Log out
             </button>
           </div>

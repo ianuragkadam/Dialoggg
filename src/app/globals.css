@@ -212,18 +212,18 @@ body {
 
 .tenant-theme .tenant-role-switch {
   color-scheme: light;
-  background-color: #a9cf48 !important;
-  color: #101a2b !important;
-  border-color: #a9cf48 !important;
+  background-color: #55681c !important;
+  color: #fff !important;
+  border-color: #55681c !important;
 }
 
 .tenant-theme .tenant-role-switch:hover {
-  background-color: #94b63b !important;
-  border-color: #94b63b !important;
+  background-color: #465718 !important;
+  border-color: #465718 !important;
 }
 
 .tenant-theme .tenant-role-switch:focus-visible {
-  outline: 2px solid #d4ec8c;
+  outline: 2px solid #a9cf48;
   outline-offset: 2px;
 }
 
@@ -263,6 +263,31 @@ body {
 .tenant-theme select,
 .tenant-theme textarea {
   color-scheme: dark;
+}
+
+/* Gantt dialogs sit inside a chart with its own light-theme text color. The
+   tenant theme recolors their white modal surface navy, so explicitly restore
+   readable foregrounds and field surfaces within the dialog. */
+.tenant-theme .gantt-modal-content {
+  color: #f4f6fa !important;
+}
+
+.tenant-theme .gantt-modal-content input:not([type="checkbox"]),
+.tenant-theme .gantt-modal-content select,
+.tenant-theme .gantt-modal-content textarea {
+  color: #f4f6fa !important;
+  background-color: #101a2b !important;
+  border-color: #52637d !important;
+}
+
+.tenant-theme .gantt-modal-content input::placeholder,
+.tenant-theme .gantt-modal-content textarea::placeholder {
+  color: #aab8ca !important;
+  opacity: 1;
+}
+
+.tenant-theme .gantt-modal-content input[type="checkbox"] {
+  accent-color: #d1850b;
 }
 
 .tenant-theme .fc,

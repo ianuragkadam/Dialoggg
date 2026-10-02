@@ -85,8 +85,7 @@ export default function TemplateCreatePrototype({ sourceProjects, existingNames 
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-10">
-      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm text-slate-500"><Link href="/templates" className="hover:text-blue-700">Project Templates</Link><span aria-hidden="true">/</span><span className="font-medium text-slate-800">Save Project as Template</span></nav>
-      <div><h1 className="text-3xl font-bold tracking-tight text-slate-950">Save Project as Template</h1><p className="mt-2 text-sm leading-6 text-slate-600">Choose an existing Project Plan, name the reusable Template, and review exactly what will carry forward.</p></div>
+      <h1 className="text-3xl font-bold tracking-tight text-slate-950">Save Project as Template</h1>
       <section aria-label="Save behavior" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950"><p className="font-semibold">Persistent company Template</p><p>Saving copies the selected Project Plan atomically. The source Project remains unchanged.</p></section>
 
       {pageError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{pageError}</p>}

@@ -6,6 +6,7 @@ import { roleLabel, statusLabel } from "@/lib/product-language";
 import Link from "next/link";
 import PlatformAdministratorManagement, { type PlatformAdministrator } from "@/components/PlatformAdministratorManagement";
 import CompanyLogoSettings from "@/components/CompanyLogoSettings";
+import EditAccountProfile from "@/components/EditAccountProfile";
 import path from "node:path";
 
 export default async function AccountPage() {
@@ -15,6 +16,14 @@ export default async function AccountPage() {
   const company = user.company_id
     ? db.prepare("SELECT * FROM company WHERE id = ?").get(user.company_id) as any
     : null;
+  const accountDateLabel = (value: string | null | undefined) => {
+    if (!value) return "Never";
+    const timestamp = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
+    const date = new Date(timestamp);
+    return Number.isNaN(date.getTime())
+      ? value
+      : new Intl.DateTimeFormat("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" }).format(date);
+  };
   const platformAdministrators = user.context_type === "platform"
     ? db.prepare(`
       SELECT i.id, i.first_name, i.last_name, i.normalized_email,
@@ -36,6 +45,10 @@ export default async function AccountPage() {
     <div className="max-w-2xl space-y-4">
       <h1 className="text-2xl font-bold">Account Settings</h1>
       <div className="bg-white border rounded shadow-sm p-6 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold">Profile information</h2>
+          {actor && <EditAccountProfile initialProfile={{ firstName: actor.firstName, lastName: actor.lastName, email: actor.email }} />}
+        </div>
         <div><span className="text-gray-500 text-sm">Name:</span> <strong>{user.full_name}</strong></div>
         <div><span className="text-gray-500 text-sm">Email:</span> <strong>{user.email}</strong></div>
         <div><span className="text-gray-500 text-sm">Role:</span> <strong>{roleLabel(user.user_type)}</strong></div>
@@ -47,6 +60,14 @@ export default async function AccountPage() {
           </>
         )}
       </div>
+      {company && <section aria-labelledby="subscription-title" className="rounded border border-blue-200 bg-white p-6 shadow-sm">
+        <h2 id="subscription-title" className="font-semibold">Subscription</h2>
+        <dl className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div><dt className="text-sm text-gray-500">Start Date</dt><dd className="mt-1 font-semibold">{accountDateLabel(company.signup_date)}</dd></div>
+          <div><dt className="text-sm text-gray-500">End Date</dt><dd className="mt-1 font-semibold">{accountDateLabel(company.expiration_date)}</dd></div>
+        </dl>
+        <p className="mt-3 text-sm text-gray-600">Only the Platform Owner can change the subscription end date.</p>
+      </section>}
       {company && user.company_role === "owner" && actor?.actualCompanyRole === "owner" && !actor.rolePreview && <CompanyLogoSettings
         initialLogoUrl={company.logo_path ? `/api/v1/company/logo?v=${encodeURIComponent(path.basename(company.logo_path))}` : null}
       />}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import PasswordField from "@/components/PasswordField";
-import dialogggLogo from "../../Dialoggg-Google-logo.png";
+import dialogggLogo from "../../dialoggg-lockup-transparent-onDark.png";
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
@@ -46,7 +46,9 @@ export default function LoginForm() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-700 to-blue-900 p-6">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8">
         <div className="text-center mb-6">
-          <Image src={dialogggLogo} alt="Dialoggg logo" width={56} height={56} priority className="mx-auto h-14 w-14 rounded-xl object-contain" />
+          <div className="mx-auto inline-flex rounded-lg bg-slate-950 px-4 py-2">
+            <Image src={dialogggLogo} alt="Dialoggg" width={190} height={42} priority className="h-10 w-auto object-contain" />
+          </div>
           <h1 className="text-2xl font-bold mt-3 text-blue-800">Log in to Dialoggg</h1>
           <p className="mt-1 text-sm text-gray-500">Open your company Projects and schedules.</p>
         </div>

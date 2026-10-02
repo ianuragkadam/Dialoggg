@@ -25,7 +25,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const traceId = requestId(request);
   const actor = await getCurrentActor();
   if (!actor) return apiError(401, "AUTHENTICATION_REQUIRED", "Sign in to continue.", traceId);
-  if (actor.contextType !== "platform" || !actor.isPlatformAdmin) return apiError(403, "ACTION_FORBIDDEN", "Platform Administrator access is required.", traceId);
+  if (actor.contextType !== "platform" || !actor.isPrimaryPlatformAdmin) return apiError(403, "ACTION_FORBIDDEN", "Only the Platform Owner can change a company subscription end date.", traceId);
   const companyId = Number((await params).id);
   if (!Number.isInteger(companyId) || companyId <= 0) return apiError(404, "RESOURCE_NOT_FOUND", "Company not found.", traceId);
   const body = await request.json().catch(() => null) as { expirationDate?: unknown } | null;

@@ -161,16 +161,9 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-10">
-      <nav aria-label="Breadcrumb" className="text-sm text-slate-500">
-        <span>Projects</span><span aria-hidden="true" className="px-2">/</span><span className="font-medium text-slate-800">Project Templates</span>
-      </nav>
-
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-950">Project Templates</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Reuse a proven Project Plan without carrying across fixed dates or completed progress.
-          </p>
         </div>
         <Link href="/templates/new" className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2">
           <span aria-hidden="true" className="mr-2 text-lg">+</span>Save Project as Template

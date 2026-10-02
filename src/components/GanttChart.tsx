@@ -746,7 +746,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
           <h3 className="font-semibold">{title}</h3>
           <button aria-label={`Close ${title}`} onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">×</button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="gantt-modal-content p-5">{children}</div>
       </div>
     </div>
   );
