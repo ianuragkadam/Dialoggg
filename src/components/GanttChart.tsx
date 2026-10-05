@@ -50,24 +50,26 @@ const GANTT_COLUMN_WIDTHS = {
   progress: { width: 64, min: 52, max: 120 },
 } as const;
 
-type GanttColumnName = keyof typeof GANTT_COLUMN_WIDTHS;
+function getColumnWidthBounds(column: { name: string; width?: number; min_width?: number; max_width?: number }) {
+  const known = GANTT_COLUMN_WIDTHS[column.name as keyof typeof GANTT_COLUMN_WIDTHS];
+  return {
+    width: known?.width ?? (Number(column.width) || 140),
+    min: known?.min ?? (Number(column.min_width) || 76),
+    max: known?.max ?? (Number(column.max_width) || 480),
+  };
+}
 
-function readGanttColumnWidths(storageKey: string) {
-  const widths = Object.fromEntries(
-    Object.entries(GANTT_COLUMN_WIDTHS).map(([name, options]) => [name, options.width]),
-  ) as Record<GanttColumnName, number>;
+function readGanttColumnWidths(storageKey: string): Record<string, number> {
   try {
     const saved = JSON.parse(window.localStorage.getItem(storageKey) || "null");
-    if (saved && typeof saved === "object") {
-      for (const [name, options] of Object.entries(GANTT_COLUMN_WIDTHS) as [GanttColumnName, typeof GANTT_COLUMN_WIDTHS[GanttColumnName]][]) {
-        const width = Number(saved[name]);
-        if (Number.isFinite(width)) widths[name] = Math.max(options.min, Math.min(options.max, Math.round(width)));
-      }
-    }
+    if (saved && typeof saved === "object") return Object.fromEntries(
+      Object.entries(saved).filter(([, width]) => Number.isFinite(Number(width)) && Number(width) > 0)
+        .map(([name, width]) => [name, Number(width)]),
+    );
   } catch {
     // Use defaults when browser storage is unavailable or contains invalid data.
   }
-  return widths;
+  return {};
 }
 
 function escapeHtml(value: unknown): string {
@@ -114,6 +116,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
   const syncingRef = useRef(false);
   const planVersionRef = useRef(1);
   const dragModeRef = useRef<string | null>(null);
+  const reorderInFlightRef = useRef(false);
   const columnWidthStorageKey = `dialoggg:gantt-column-widths:v1:${projectId}:${canEdit ? "edit" : "view"}`;
 
   const [ready, setReady] = useState(false);
@@ -198,23 +201,65 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       gantt.config.auto_scheduling_initial = true;
       gantt.config.details_on_create = false;   // we open our own popup
       gantt.config.readonly = !canEdit;          // read-only roles cannot drag, resize, link, or edit
+      gantt.config.order_branch = canEdit;       // allow Owner/Admin to reorder sibling rows by dragging
+      gantt.config.order_branch_free = false;    // keep Tasks inside their existing Header
 
       const columnWidths = readGanttColumnWidths(columnWidthStorageKey);
       const addColumnWidth = 40;
 
       gantt.config.columns = [
         { name: "text", label: "Task Name", tree: true, width: columnWidths.text,
-          template: (task: any) => `${task.type === "project" ? `<i class="plan-group-dot" style="background:${chartColor(task.plan_color)}"></i>` : ""}${escapeHtml(task.text)}` },
+          template: (task: any) => `${task.type === "project" ? `<i class="plan-group-dot" style="background:${chartColor(task.plan_color)}"></i>` : ""}${canEdit && !task.is_root ? `<span class="gantt-reorder-grip" aria-hidden="true" title="Drag row to reorder">⠿</span>` : ""}${escapeHtml(task.text)}` },
         { name: "resources", label: "Resources", width: columnWidths.resources,
           template: (task: any) => `<span title="${escapeHtml((task.resource_names || []).join(", "))}">${escapeHtml((task.resource_names || []).join(", ")) || "—"}</span>` },
         { name: "progress", label: "Done", align: "right", width: columnWidths.progress,
           template: (task: any) => `${Math.round(Math.max(0, Math.min(1, Number(task.progress) || 0)) * 100)}${task.type === "project" ? "%" : ""}` },
         ...(canEdit ? [{ name: "add", label: "", width: addColumnWidth }] : []),
       ];
-      const updateGridWidth = () => {
-        gantt.config.grid_width = gantt.config.columns.reduce((total: number, column: any) => total + Number(column.width || 0), 0);
+      for (const column of gantt.config.columns) {
+        if (column.name === "add") continue;
+        const bounds = getColumnWidthBounds(column);
+        const savedWidth = Number(columnWidths[column.name]);
+        column.width = Number.isFinite(savedWidth)
+          ? Math.max(bounds.min, Math.min(bounds.max, Math.round(savedWidth)))
+          : bounds.width;
+        column.min_width = bounds.min;
+        column.max_width = bounds.max;
+      }
+      const getGridContentWidth = () => gantt.config.columns.reduce(
+        (total: number, column: any) => total + Number(column.width || 0), 0,
+      );
+      const getGridViewportWidth = () => {
+        const availableWidth = containerRef.current?.clientWidth || 1200;
+        const keepChartVisibleWidth = Math.max(220, availableWidth - 320);
+        const balancedGridWidth = Math.floor(availableWidth * 0.48);
+        return Math.max(180, Math.min(getGridContentWidth(), balancedGridWidth, keepChartVisibleWidth));
       };
-      updateGridWidth();
+      gantt.config.grid_elastic_columns = false;
+      gantt.config.layout = {
+        css: "gantt_container",
+        rows: [
+          {
+            cols: [
+              {
+                width: getGridViewportWidth(),
+                rows: [
+                  { view: "grid", id: "grid", scrollX: "gridScroll", scrollY: "scrollVer", scrollable: true },
+                  { view: "scrollbar", id: "gridScroll", group: "horizontal" },
+                ],
+              },
+              { resizer: true, width: 1 },
+              {
+                rows: [
+                  { view: "timeline", id: "timeline", scrollX: "scrollHor", scrollY: "scrollVer" },
+                  { view: "scrollbar", id: "scrollHor", group: "horizontal" },
+                ],
+              },
+              { view: "scrollbar", id: "scrollVer" },
+            ],
+          },
+        ],
+      };
       gantt.config.scales = [
         { unit: "month", step: 1, format: "%F %Y" },
         { unit: "day",   step: 1, format: "%j" },
@@ -234,6 +279,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       gantt.templates.timeline_cell_class = (_t: any, date: Date) => {
         return dayClass(date);
       };
+      gantt.templates.grid_header_class = (name: string) => name === "add" ? "" : "dialoggg-column-resize";
 
       gantt.init(containerRef.current!);
 
@@ -241,15 +287,15 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       // Widths are saved per project and per view mode in this browser.
       const onResizeStart = (event: PointerEvent) => {
         if (event.button !== 0) return;
-        const header = (event.target as HTMLElement).closest<HTMLElement>(".gantt_grid_head_cell");
+        const header = (event.target as HTMLElement).closest<HTMLElement>(".gantt_grid_head_cell.dialoggg-column-resize");
         if (!header) return;
-        const name = header.dataset.columnName as GanttColumnName | undefined;
-        if (!name || !Object.hasOwn(GANTT_COLUMN_WIDTHS, name)) return;
+        const name = header.dataset.columnName;
+        if (!name || name === "add") return;
         const bounds = header.getBoundingClientRect();
         if (bounds.right - event.clientX > 18) return;
         const column = gantt.config.columns.find((item: any) => item.name === name);
         if (!column) return;
-        const options = GANTT_COLUMN_WIDTHS[column.name as GanttColumnName];
+        const options = getColumnWidthBounds(column);
         const startX = event.clientX;
         const startWidth = Number(column.width) || options.width;
         const oldCursor = document.body.style.cursor;
@@ -260,7 +306,6 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
 
         const onPointerMove = (moveEvent: PointerEvent) => {
           column.width = Math.max(options.min, Math.min(options.max, Math.round(startWidth + moveEvent.clientX - startX)));
-          updateGridWidth();
           gantt.render();
         };
         const onPointerUp = () => {
@@ -270,10 +315,14 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
           stopActiveResize = null;
           document.body.style.cursor = oldCursor;
           document.body.style.userSelect = oldUserSelect;
+          const gridColumn = gantt.config.layout.rows[0].cols[0];
+          gridColumn.width = getGridViewportWidth();
+          gantt.resetLayout();
+          gantt.render();
           try {
             window.localStorage.setItem(columnWidthStorageKey, JSON.stringify(
               Object.fromEntries(gantt.config.columns
-                .filter((item: any) => Object.hasOwn(GANTT_COLUMN_WIDTHS, item.name))
+                .filter((item: any) => item.name !== "add")
                 .map((item: any) => [item.name, Number(item.width)])),
             ));
           } catch {
@@ -344,6 +393,39 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       gantt.attachEvent("onBeforeTaskDrag", (_id: any, mode: string) => {
         dragModeRef.current = String(mode);
         return true;
+      });
+
+      // Row dragging changes order only; task-bar dragging continues to reschedule as before.
+      gantt.attachEvent("onBeforeTaskMove", (id: any, parent: any) => {
+        const task = gantt.getTask(id);
+        if (!canEdit || task.is_root) {
+          setMessage("The protected Project root cannot be reordered.");
+          return false;
+        }
+        if (Number(parent) !== Number(task.parent || 0)) {
+          setMessage("Tasks can only be reordered within the same Header.");
+          return false;
+        }
+        setMessage("");
+        return true;
+      });
+      gantt.attachEvent("onAfterTaskMove", async (id: any, parent: any, index: number) => {
+        if (syncingRef.current || reorderInFlightRef.current) return;
+        reorderInFlightRef.current = true;
+        try {
+          const response = await authenticatedFetch(`/api/projects/${projectId}/tasks`, {
+            method: "PATCH", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ taskId: Number(id), parentId: Number(parent), index: Number(index), planVersion: planVersionRef.current }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) setMessage(payload?.error?.message || "The Task order could not be saved. The Project Plan was refreshed.");
+          else setMessage("Task order saved.");
+        } catch {
+          setMessage("The Task order could not be saved. Check your connection and try again.");
+        } finally {
+          try { await reload(); } catch { setMessage("The Project Plan could not be refreshed after reordering."); }
+          reorderInFlightRef.current = false;
+        }
       });
 
       gantt.attachEvent("onAfterTaskUpdate", async (id: any) => {
@@ -549,7 +631,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         </div>
         <div className="plan-chart-help">
           {canEdit
-            ? "Double-click a bar to edit · Drag bars to reschedule · Drag from a bar's edge circle to link · Resize grid columns by dragging their edges (saved for this project in this browser)"
+            ? "Drag task rows to reorder within their Header · Double-click a bar to edit · Drag bars to reschedule · Drag from a bar's edge circle to link · Resize grid columns by dragging their edges (saved for this project in this browser)"
             : "View only. Drag a grid-column edge to resize; widths are saved for this project in this browser."}
         </div>
       </div>
@@ -789,9 +871,12 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         .dialoggg-plan-chart .gantt_grid, .dialoggg-plan-chart .gantt_task, .dialoggg-plan-chart .gantt_grid_data, .dialoggg-plan-chart .gantt_task_bg { background:#fff; color:#1c2233; }
         .dialoggg-plan-chart .gantt_grid_scale, .dialoggg-plan-chart .gantt_task_scale { background:#fbfaf7; color:#6b7280; border-color:#e6e4dc; }
         .dialoggg-plan-chart .gantt_grid_head_cell { color:#6b7280; font:10.5px/52px 'IBM Plex Mono',monospace; text-transform:uppercase; letter-spacing:.04em; border-color:#e6e4dc; }
-        .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="text"], .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="resources"], .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="progress"] { position:relative; padding-right:20px; }
-        .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="text"]::after, .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="resources"]::after, .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="progress"]::after { content:"↔"; position:absolute; z-index:5; top:50%; right:2px; display:flex; width:17px; height:22px; transform:translateY(-50%); align-items:center; justify-content:center; border:1px solid #c7cada; border-radius:4px; background:#e9eaf2; color:#3B417D; font:700 12px/1 Arial,sans-serif; cursor:col-resize; }
-        .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="text"]:hover::after, .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="resources"]:hover::after, .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="progress"]:hover::after { border-color:#3B417D; background:#3B417D; color:#fff; }
+        .dialoggg-plan-chart .gantt_grid_head_cell.dialoggg-column-resize { position:relative; padding-right:20px; }
+        .dialoggg-plan-chart .gantt_grid_head_cell.dialoggg-column-resize::after { content:"↔"; position:absolute; z-index:5; top:50%; right:2px; display:flex; width:17px; height:22px; transform:translateY(-50%); align-items:center; justify-content:center; border:1px solid #c7cada; border-radius:4px; background:#e9eaf2; color:#3B417D; font:700 12px/1 Arial,sans-serif; cursor:col-resize; }
+        .dialoggg-plan-chart .gantt-reorder-grip { display:inline-block; margin-right:6px; color:#7b8298; font-size:16px; line-height:1; vertical-align:middle; cursor:grab; }
+        .dialoggg-plan-chart .gantt_row:hover .gantt-reorder-grip { color:#3B417D; }
+        .dialoggg-plan-chart .gantt_row.gantt_drag_marker .gantt-reorder-grip { cursor:grabbing; }
+        .dialoggg-plan-chart .gantt_grid_head_cell.dialoggg-column-resize:hover::after { border-color:#3B417D; background:#3B417D; color:#fff; }
         .dialoggg-plan-chart .gantt_scale_cell { color:#6b7280; font:10.5px/26px 'IBM Plex Mono',monospace; border-color:#f0efe9; }
         .dialoggg-plan-chart .gantt_scale_line:first-child .gantt_scale_cell { color:#1c2233; font:600 12.5px/26px 'Space Grotesk',sans-serif; }
         .dialoggg-plan-chart .gantt_row, .dialoggg-plan-chart .gantt_task_row { background:#fff; border-color:#f0efe9; color:#1c2233; }

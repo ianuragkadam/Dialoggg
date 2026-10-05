@@ -363,6 +363,38 @@ export function createPlanTask(projectId: number, companyId: number, input: Reco
   })();
 }
 
+/** Reorder a Task among its existing siblings without changing hierarchy. */
+export function reorderPlanTask(
+  projectId: number,
+  companyId: number,
+  input: { taskId: unknown; parentId: unknown; index: unknown; planVersion: unknown },
+) {
+  return db.transaction(() => {
+    assertProjectWritable(projectId, companyId, Number(input.planVersion));
+    const taskId = asInteger(input.taskId, "taskId", 1);
+    const parentId = asInteger(input.parentId, "parentId", 1);
+    const index = asInteger(input.index, "index", 0);
+    const task = db.prepare("SELECT id,parent_id,is_root FROM task WHERE id=? AND project_id=?")
+      .get(taskId, projectId) as { id: number; parent_id: number | null; is_root: number } | undefined;
+    if (!task) throw new PlanDomainError("TASK_NOT_FOUND", "Task not found.", 404);
+    if (task.is_root) throw new PlanDomainError("ROOT_TASK_PROTECTED", "The Project root cannot be reordered.", 409);
+    if (task.parent_id !== parentId) {
+      throw new PlanDomainError("TASK_REORDER_PARENT_INVALID", "Tasks can only be reordered within the same Header.", 409);
+    }
+
+    const siblings = db.prepare(`SELECT id FROM task WHERE project_id=? AND parent_id=? ORDER BY sort_order,id`)
+      .all(projectId, parentId) as { id: number }[];
+    const oldIndex = siblings.findIndex(sibling => sibling.id === taskId);
+    if (oldIndex < 0) throw new PlanDomainError("TASK_NOT_FOUND", "Task not found.", 404);
+    const [moving] = siblings.splice(oldIndex, 1);
+    siblings.splice(Math.min(index, siblings.length), 0, moving);
+
+    const update = db.prepare("UPDATE task SET sort_order=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND project_id=?");
+    siblings.forEach((sibling, siblingIndex) => update.run(siblingIndex + 1, sibling.id, projectId));
+    return persistCalculatedPlan(projectId, true);
+  })();
+}
+
 function hierarchyContains(taskId: number, possibleDescendantId: number) {
   const descendants = db.prepare(`WITH RECURSIVE tree(id) AS (
       SELECT id FROM task WHERE parent_id=? UNION ALL SELECT t.id FROM task t JOIN tree ON t.parent_id=tree.id
