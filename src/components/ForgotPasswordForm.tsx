@@ -34,7 +34,7 @@ export default function ForgotPasswordForm() {
 }
 
 export function AuthCard({ title, description, children, orangeBackground = false }: { title: string; description: string; children: React.ReactNode; orangeBackground?: boolean }) {
-  return <main className="flex min-h-screen items-center justify-center p-6" style={orangeBackground ? { backgroundColor: "#D1805B" } : { background: "linear-gradient(to bottom right, #1d4ed8, #1e3a8a)" }}>
+  return <main className="flex min-h-screen items-center justify-center p-6" style={orangeBackground ? { backgroundColor: "#D1850B" } : { background: "linear-gradient(to bottom right, #1d4ed8, #1e3a8a)" }}>
     <section className="w-full max-w-md rounded-lg bg-white p-8 shadow-xl" aria-labelledby="auth-title">
       <div className="mb-6 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded bg-gradient-to-br from-blue-600 to-blue-800 text-2xl font-bold text-white">D</div><h1 id="auth-title" className="mt-3 text-2xl font-bold text-blue-800">{title}</h1><p className="mt-1 text-sm text-gray-600">{description}</p></div>
       {children}

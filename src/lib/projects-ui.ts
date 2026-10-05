@@ -5,6 +5,7 @@ export type ProjectUiRecord = {
   project_type_id: number;
   name: string;
   status: string;
+  calendar_color: string;
   client_name: string | null;
   client_email: string | null;
   address: string | null;

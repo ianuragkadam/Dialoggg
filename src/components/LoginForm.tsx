@@ -79,7 +79,7 @@ export default function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: "#D1805B" }}>
+    <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: "#D1850B" }}>
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8">
         <div className="text-center mb-6">
           <div className="mx-auto inline-flex rounded-lg bg-slate-950 px-4 py-2">

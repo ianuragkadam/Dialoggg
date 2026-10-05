@@ -18,6 +18,11 @@ export function addDays(iso: string, days: number): string {
   return toISO(d);
 }
 
+/** DHTMLX Gantt stores the first instant after the final occupied day as end_date. */
+export function ganttEndDateFromInclusive(iso: string): string {
+  return addDays(iso, 1);
+}
+
 export function daysBetween(a: string, b: string): number {
   const ms = parseISO(b).getTime() - parseISO(a).getTime();
   return Math.round(ms / 86_400_000);

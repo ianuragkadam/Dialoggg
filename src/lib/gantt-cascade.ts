@@ -103,9 +103,9 @@ function linkRows(projectId: number) {
 
 function projectRow(projectId: number, companyId?: number) {
   const where = companyId ? "p.id=? AND p.company_id=?" : "p.id=?";
-  return db.prepare(`SELECT p.id,p.company_id,p.name,p.start_date,p.end_date,p.status,p.plan_version
+  return db.prepare(`SELECT p.id,p.company_id,p.name,p.start_date,p.end_date,p.status,p.plan_version,p.calendar_color
     FROM project p WHERE ${where}`).get(...(companyId ? [projectId, companyId] : [projectId])) as
-    | { id: number; company_id: number; name: string; start_date: string; end_date: string | null; status: string; plan_version: number }
+    | { id: number; company_id: number; name: string; start_date: string; end_date: string | null; status: string; plan_version: number; calendar_color: string }
     | undefined;
 }
 
@@ -349,9 +349,9 @@ export function createPlanTask(projectId: number, companyId: number, input: Reco
     if (isHeader) {
       db.prepare(`INSERT INTO task(project_id,parent_id,name,start_date,manual_start_date,duration,progress,color,is_header,start_by_mode,sort_order,allow_saturday,allow_sunday,version,external_visible,is_root,updated_at)
         VALUES(?,?,?,?,?,1,0,?,1,'time_period',?,0,0,1,?,0,CURRENT_TIMESTAMP)`)
-        .run(projectId, parentId, name, project.start_date, project.start_date, String(input.color ?? "#2e75b6"), sort.value, input.externalVisible === true ? 1 : 0);
+        .run(projectId, parentId, name, project.start_date, project.start_date, String(input.color ?? project.calendar_color), sort.value, input.externalVisible === true ? 1 : 0);
     } else {
-      const fields = leafFields(input);
+      const fields = leafFields({ ...input, color: input.color ?? project.calendar_color });
       db.prepare(`INSERT INTO task(project_id,parent_id,name,start_date,manual_start_date,duration,progress,color,is_header,start_by_mode,sort_order,allow_saturday,allow_sunday,version,resource_category_id,external_visible,is_root,updated_at)
         VALUES(?,?,?,?,?,?,?,?,0,'time_period',?,?,?,?,?,?,0,CURRENT_TIMESTAMP)`)
         .run(projectId,parentId,fields.name,fields.startDate,fields.startDate,fields.duration,fields.progress,fields.color,sort.value,fields.allowSaturday?1:0,fields.allowSunday?1:0,1,fields.categoryId,fields.externalVisible?1:0);

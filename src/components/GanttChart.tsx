@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
+import { addDays, alignWorkingDay, ganttEndDateFromInclusive } from "@/lib/dates";
+import { PROJECT_CALENDAR_COLORS } from "@/lib/project-colors";
+import ColorSwatches from "@/components/ColorSwatches";
 
 declare global {
   interface Window { gantt: any; }
@@ -39,11 +42,6 @@ type LinkModal = {
   lag: number;
 };
 
-const COLORS = [
-  "#3B417D", "#D1850B", "#55681C", "#A9CF38", "#0E123B", "#2e75b6",
-  "#9b59b6", "#16a085", "#c0392b", "#7f8c8d", "#34495e", "#e84393",
-];
-
 const GANTT_COLUMN_WIDTHS = {
   text: { width: 258, min: 150, max: 520 },
   resources: { width: 128, min: 88, max: 360 },
@@ -77,7 +75,7 @@ function escapeHtml(value: unknown): string {
 }
 
 function chartColor(value: unknown): string {
-  return /^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : COLORS[0];
+  return /^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : PROJECT_CALENDAR_COLORS[0];
 }
 
 function progressTint(color: string): string {
@@ -94,6 +92,9 @@ const LINK_OPTIONS: { value: LinkModal["linkType"]; title: string; plain: string
   { value: "ff", title: "Finish → Finish",plain: "Finish this task WHEN the other task FINISHES" },
   { value: "sf", title: "Start → Finish", plain: "Finish this task WHEN the other task STARTS (rare)" },
 ];
+
+// DHTMLX exposes a shared singleton, so only the most recently mounted chart may parse data into it.
+let activeGanttChartOwner: symbol | null = null;
 
 function isoFromDate(gantt: any, d: Date): string {
   return gantt.date.date_to_str("%Y-%m-%d")(d);
@@ -113,8 +114,10 @@ function workingDuration(start: Date, endExclusive: Date, allowSaturday: boolean
 export default function GanttChart({ projectId, canEdit = true }: { projectId: number; canEdit?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const ganttRef = useRef<any>(null);
+  const ganttChartOwnerRef = useRef(Symbol("gantt-chart"));
   const syncingRef = useRef(false);
   const planVersionRef = useRef(1);
+  const projectColorRef = useRef<string>(PROJECT_CALENDAR_COLORS[0]);
   const dragModeRef = useRef<string | null>(null);
   const reorderInFlightRef = useRef(false);
   const columnWidthStorageKey = `dialoggg:gantt-column-widths:v1:${projectId}:${canEdit ? "edit" : "view"}`;
@@ -126,22 +129,29 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
   const [linkModal, setLinkModal] = useState<LinkModal | null>(null);
   const [message, setMessage] = useState("");
   const [planTasks, setPlanTasks] = useState<any[]>([]);
+  const planTasksRef = useRef<any[]>([]);
 
   // ---- server reload (suppresses sync events while parsing) ----
   const reload = useCallback(async () => {
     const gantt = ganttRef.current;
     const response = await fetch(`/api/projects/${projectId}/tasks`, { cache: "no-store" });
     const data = await response.json();
+    if (activeGanttChartOwner !== ganttChartOwnerRef.current) return;
     if (!response.ok) throw new Error(data?.error?.message || "The Project Plan could not be loaded.");
     planVersionRef.current = Number(data.planVersion) || 1;
-    setPlanTasks(data.data || []);
+    projectColorRef.current = chartColor(data.projectColor);
+    planTasksRef.current = data.data || [];
+    setPlanTasks(planTasksRef.current);
     syncingRef.current = true;
     try {
       gantt.clearAll();
       gantt.parse({
         ...data,
         data: (data.data || []).map((task: any) => ({
-          ...task, working_duration: task.duration, plan_color: chartColor(task.color),
+          ...task,
+          // The API stores inclusive finish dates; DHTMLX expects end_date to be exclusive.
+          end_date: ganttEndDateFromInclusive(String(task.end_date).slice(0, 10)),
+          working_duration: task.duration, plan_color: chartColor(task.color),
           color: task.type === "project" ? "#0E123B" : chartColor(task.color),
           progressColor: task.type === "project" ? "#0E123B" : progressTint(chartColor(task.color)),
           textColor: "#1c2233",
@@ -166,6 +176,9 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
     let cancelled = false;
     let removeResizeListener: (() => void) | null = null;
     let stopActiveResize: (() => void) | null = null;
+    const chartOwner = ganttChartOwnerRef.current;
+    const ganttEventIds: string[] = [];
+    activeGanttChartOwner = chartOwner;
     let pendingPlanTaskId: number | null = null;
     let openPlanTaskEditor: ((taskId: number) => void) | null = null;
     const openPlanTaskHandler = (event: Event) => {
@@ -188,6 +201,11 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       if (cancelled) return;
       const gantt = mod.gantt;
       ganttRef.current = gantt;
+      const attachGanttEvent = (name: string, handler: (...args: any[]) => any) => {
+        const eventId = gantt.attachEvent(name, handler);
+        if (eventId) ganttEventIds.push(eventId);
+        return eventId;
+      };
 
       gantt.config.date_format = "%Y-%m-%d";
       gantt.config.duration_unit = "day";
@@ -344,13 +362,20 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       removeResizeListener = () => containerRef.current?.removeEventListener("pointerdown", onResizeStart);
 
       // ===== Intercept the "+" / new-task to open OUR popup =====
-      gantt.attachEvent("onTaskCreated", (task: any) => {
+      attachGanttEvent("onTaskCreated", (task: any) => {
         const todayIso = isoFromDate(gantt, new Date());
-        const parentTask = task.parent && gantt.isTaskExists(task.parent) ? gantt.getTask(task.parent) : null;
-        const startIso = parentTask ? isoFromDate(gantt, parentTask.start_date) : todayIso;
+        const clickedTask = planTasksRef.current.find(item => Number(item.id) === Number(task.parent));
+        const clickedIsRoot = !!clickedTask?.is_root;
+        const clickedIsLeaf = !!clickedTask && clickedTask.type !== "project";
+        const parentId = clickedIsLeaf ? Number(clickedTask.parent || 0) : Number(task.parent || 0);
+        const startIso = clickedIsRoot
+          ? String(clickedTask.start_date || todayIso)
+          : clickedTask?.end_date
+            ? alignWorkingDay(addDays(String(clickedTask.end_date).slice(0, 10), 1), { allowSaturday: false, allowSunday: false }, 1)
+            : todayIso;
         setTaskModal({
           mode: "add", id: null, text: "", start_date: startIso,
-          duration: 1, color: COLORS[0], parent: task.parent || 0,
+          duration: 1, color: projectColorRef.current, parent: parentId,
           resourceIds: [], version: 1, isHeader: false, isRoot: false,
           allowSaturday: false, allowSunday: false, progress: 0,
           categoryId: null, externalVisible: false, isTemp: false,
@@ -359,7 +384,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       });
 
       // ===== Intercept double-click / lightbox to open OUR popup =====
-      gantt.attachEvent("onBeforeLightbox", (id: any) => {
+      attachGanttEvent("onBeforeLightbox", (id: any) => {
         const t = gantt.getTask(id);
         openEditModal(id, t);
         return false;
@@ -375,7 +400,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         setTaskModal({
           mode: "edit", id,
           text: t.text, start_date: isoFromDate(gantt, t.start_date),
-          duration: Number(t.working_duration ?? t.duration), color: t.plan_color || COLORS[0],
+          duration: Number(t.working_duration ?? t.duration), color: t.plan_color || PROJECT_CALENDAR_COLORS[0],
           parent: t.parent || 0, resourceIds, isTemp: false,
           version: Number(t.version) || 1, isHeader: t.type === "project", isRoot: !!t.is_root,
           allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday,
@@ -390,13 +415,13 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       };
 
       // ===== Task drag / resize → persist + cascade =====
-      gantt.attachEvent("onBeforeTaskDrag", (_id: any, mode: string) => {
+      attachGanttEvent("onBeforeTaskDrag", (_id: any, mode: string) => {
         dragModeRef.current = String(mode);
         return true;
       });
 
       // Row dragging changes order only; task-bar dragging continues to reschedule as before.
-      gantt.attachEvent("onBeforeTaskMove", (id: any, parent: any) => {
+      attachGanttEvent("onBeforeTaskMove", (id: any, parent: any) => {
         const task = gantt.getTask(id);
         if (!canEdit || task.is_root) {
           setMessage("The protected Project root cannot be reordered.");
@@ -409,7 +434,8 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         setMessage("");
         return true;
       });
-      gantt.attachEvent("onAfterTaskMove", async (id: any, parent: any, index: number) => {
+      attachGanttEvent("onAfterTaskMove", async (id: any, parent: any, index: number) => {
+        if (activeGanttChartOwner !== chartOwner) return;
         if (syncingRef.current || reorderInFlightRef.current) return;
         reorderInFlightRef.current = true;
         try {
@@ -418,17 +444,20 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
             body: JSON.stringify({ taskId: Number(id), parentId: Number(parent), index: Number(index), planVersion: planVersionRef.current }),
           });
           const payload = await response.json().catch(() => ({}));
+          if (activeGanttChartOwner !== chartOwner) return;
           if (!response.ok) setMessage(payload?.error?.message || "The Task order could not be saved. The Project Plan was refreshed.");
           else setMessage("Task order saved.");
         } catch {
-          setMessage("The Task order could not be saved. Check your connection and try again.");
+          if (activeGanttChartOwner === chartOwner) setMessage("The Task order could not be saved. Check your connection and try again.");
         } finally {
-          try { await reload(); } catch { setMessage("The Project Plan could not be refreshed after reordering."); }
+          if (activeGanttChartOwner === chartOwner) {
+            try { await reload(); } catch { setMessage("The Project Plan could not be refreshed after reordering."); }
+          }
           reorderInFlightRef.current = false;
         }
       });
 
-      gantt.attachEvent("onAfterTaskUpdate", async (id: any) => {
+      attachGanttEvent("onAfterTaskUpdate", async (id: any) => {
         if (syncingRef.current) return;
         const fresh = gantt.getTask(id);
         const resize = dragModeRef.current === String(gantt.config.drag_mode.resize);
@@ -453,13 +482,13 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         await reload();
       });
 
-      gantt.attachEvent("onBeforeTaskDelete", () => {
+      attachGanttEvent("onBeforeTaskDelete", () => {
         setMessage("Open the Task editor and use Delete so the schedule impact can be confirmed.");
         return false;
       });
 
       // ===== Link drawn → open the "how to link" popup =====
-      gantt.attachEvent("onBeforeLinkAdd", (_id: any, link: any) => {
+      attachGanttEvent("onBeforeLinkAdd", (_id: any, link: any) => {
         if (syncingRef.current) return true;
         const src = gantt.getTask(link.source);
         const tgt = gantt.getTask(link.target);
@@ -473,7 +502,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         return false; // block auto-add; we add via API on confirm
       });
 
-      gantt.attachEvent("onAfterLinkDelete", async (id: any) => {
+      attachGanttEvent("onAfterLinkDelete", async (id: any) => {
         if (syncingRef.current) return;
         const response = await authenticatedFetch(`/api/projects/${projectId}/links/${id}`, {
           method: "DELETE", headers: { "content-type": "application/json" },
@@ -508,7 +537,13 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       stopActiveResize?.();
       removeResizeListener?.();
       window.removeEventListener("dialoggg:open-plan-task", openPlanTaskHandler);
-      if (ganttRef.current) { try { ganttRef.current.clearAll(); } catch {} }
+      for (const eventId of ganttEventIds) {
+        try { ganttRef.current?.detachEvent(eventId); } catch {}
+      }
+      if (activeGanttChartOwner === chartOwner) {
+        activeGanttChartOwner = null;
+        if (ganttRef.current) { try { ganttRef.current.clearAll(); } catch {} }
+      }
     };
   }, [projectId, reload]);
 
@@ -617,7 +652,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                 const todayIso = gantt ? isoFromDate(gantt, new Date()) : new Date().toISOString().slice(0, 10);
                 setTaskModal({
                   mode: "add", id: null, text: "", start_date: todayIso,
-                  duration: 1, color: COLORS[0], parent: 0,
+                  duration: 1, color: projectColorRef.current, parent: 0,
                   resourceIds: [], version: 1, isHeader: false, isRoot: false,
                   allowSaturday: false, allowSunday: false, progress: 0,
                   categoryId: null, externalVisible: false, isTemp: false,
@@ -718,17 +753,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
 
             <div>
               <label className="block text-sm font-medium mb-1">Color</label>
-              <div className="flex flex-wrap gap-2">
-                {COLORS.map(c => (
-                  <button
-                    key={c} type="button"
-                    onClick={() => updateTaskModal({ color: c })}
-                    className={`w-7 h-7 rounded-full border-2 ${taskModal.color === c ? "border-gray-800 scale-110" : "border-white"}`}
-                    style={{ background: c }}
-                    aria-label={c}
-                  />
-                ))}
-              </div>
+              <ColorSwatches label="Task color" colors={PROJECT_CALENDAR_COLORS} value={taskModal.color} onChange={color => updateTaskModal({ color })} />
             </div>
 
             {!taskModal.isHeader && <div>

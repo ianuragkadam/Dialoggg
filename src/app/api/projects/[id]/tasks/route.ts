@@ -56,7 +56,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     } : {}),
   }));
   const links = plan.links.map(link => ({ id: link.id, source: link.source_task_id, target: link.target_task_id, type: ({ fs: "0", ss: "1", ff: "2", sf: "3" } as const)[link.link_type], lag: link.lag_days }));
-  return NextResponse.json({ data, links, ...(!external ? { planVersion: plan.project.planVersion } : {}), projectEndDate: plan.project.endDate }, { headers: noStore });
+  const projectColor = db.prepare("SELECT calendar_color FROM project WHERE id=? AND company_id=?").get(projectId, actor.companyId) as { calendar_color: string } | undefined;
+  return NextResponse.json({ data, links, projectColor: projectColor?.calendar_color || "#3B417D", ...(!external ? { planVersion: plan.project.planVersion } : {}), projectEndDate: plan.project.endDate }, { headers: noStore });
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

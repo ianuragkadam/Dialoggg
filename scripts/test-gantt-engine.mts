@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import db from "../src/db/index.ts";
+import { ganttEndDateFromInclusive } from "../src/lib/dates.ts";
 import {
   calculatePlan,
   createPlanLink,
@@ -40,6 +41,13 @@ const target = baseTask(2);
 const link = (type: PlanLinkRow["link_type"], lag = 0): PlanLinkRow => ({ id: 1, project_id: 1, source_task_id: 1, target_task_id: 2, link_type: type, lag_days: lag });
 
 assert.equal(calculatePlan([root, source, target], [link("fs")], "2026-09-18").tasks.find(task => task.id === 2)?.start_date, "2026-09-22");
+// Client report regression: inclusive Tuesday finish + FS/zero lag starts Wednesday, not Thursday.
+const octoberSource = baseTask(1, { start_date: "2026-10-12", manual_start_date: "2026-10-12", duration: 2 });
+const octoberSuccessor = baseTask(2, { start_date: "2026-10-12", manual_start_date: "2026-10-12", duration: 1 });
+const octoberPlan = calculatePlan([root, octoberSource, octoberSuccessor], [link("fs", 0)], "2026-10-12");
+assert.equal(octoberPlan.tasks.find(task => task.id === 1)?.end_date, "2026-10-13");
+assert.equal(octoberPlan.tasks.find(task => task.id === 2)?.start_date, "2026-10-14");
+assert.equal(ganttEndDateFromInclusive(octoberPlan.tasks.find(task => task.id === 1)!.end_date), "2026-10-14");
 assert.equal(calculatePlan([root, source, target], [link("ss", 2)], "2026-09-18").tasks.find(task => task.id === 2)?.start_date, "2026-09-22");
 assert.equal(calculatePlan([root, source, target], [link("ff")], "2026-09-18").tasks.find(task => task.id === 2)?.start_date, "2026-09-18");
 assert.equal(calculatePlan([root, source, target], [link("sf")], "2026-09-18").tasks.find(task => task.id === 2)?.start_date, "2026-09-17");

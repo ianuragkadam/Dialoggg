@@ -2305,7 +2305,16 @@ const migration020: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020];
+const migration021: Migration = {
+  version: 21,
+  name: "project_calendar_color",
+  signature: "project-level master calendar and new task color with existing task color preservation v1",
+  up(database) {
+    database.exec("ALTER TABLE project ADD COLUMN calendar_color TEXT NOT NULL DEFAULT '#3B417D'");
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

@@ -49,6 +49,7 @@ export const TABLES: string[] = [
     start_date TEXT NOT NULL,
     end_date TEXT,
     note TEXT,
+    calendar_color TEXT NOT NULL DEFAULT '#3B417D',
     created_by INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (created_by) REFERENCES user(id)
