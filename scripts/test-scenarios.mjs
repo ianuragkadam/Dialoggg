@@ -1500,8 +1500,8 @@ try {
     let current = (await adminA.request(`/api/projects/${lifecycleProjectId}`)).data.project;
     const crossTenant = await adminB.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action: "archive", version: current.version } });
     assert.equal(crossTenant.status, 404);
-    for (const [action, expected] of [["complete", "completed"], ["reopen", "active"], ["archive", "archived"], ["restore", "active"], ["archive", "archived"]]) {
-      const changed = await adminA.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action, version: current.version } });
+    for (const [action, expected, actor] of [["deactivate", "inactive", adminA], ["activate", "active", ownerA], ["deactivate", "inactive", ownerA], ["activate", "active", adminA], ["complete", "completed", adminA], ["reopen", "active", adminA], ["archive", "archived", adminA], ["restore", "active", adminA], ["archive", "archived", adminA]]) {
+      const changed = await actor.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action, version: current.version } });
       assert.equal(changed.status, 200, `${action}: ${JSON.stringify(changed.data)}`);
       current = changed.data.data.project;
       assert.equal(current.status, expected);

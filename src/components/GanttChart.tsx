@@ -44,6 +44,32 @@ const COLORS = [
   "#9b59b6", "#16a085", "#c0392b", "#7f8c8d", "#34495e", "#e84393",
 ];
 
+const GANTT_COLUMN_WIDTHS = {
+  text: { width: 258, min: 150, max: 520 },
+  resources: { width: 128, min: 88, max: 360 },
+  progress: { width: 64, min: 52, max: 120 },
+} as const;
+
+type GanttColumnName = keyof typeof GANTT_COLUMN_WIDTHS;
+
+function readGanttColumnWidths(storageKey: string) {
+  const widths = Object.fromEntries(
+    Object.entries(GANTT_COLUMN_WIDTHS).map(([name, options]) => [name, options.width]),
+  ) as Record<GanttColumnName, number>;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(storageKey) || "null");
+    if (saved && typeof saved === "object") {
+      for (const [name, options] of Object.entries(GANTT_COLUMN_WIDTHS) as [GanttColumnName, typeof GANTT_COLUMN_WIDTHS[GanttColumnName]][]) {
+        const width = Number(saved[name]);
+        if (Number.isFinite(width)) widths[name] = Math.max(options.min, Math.min(options.max, Math.round(width)));
+      }
+    }
+  } catch {
+    // Use defaults when browser storage is unavailable or contains invalid data.
+  }
+  return widths;
+}
+
 function escapeHtml(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
 }
@@ -88,6 +114,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
   const syncingRef = useRef(false);
   const planVersionRef = useRef(1);
   const dragModeRef = useRef<string | null>(null);
+  const columnWidthStorageKey = `dialoggg:gantt-column-widths:v1:${projectId}:${canEdit ? "edit" : "view"}`;
 
   const [ready, setReady] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -134,6 +161,8 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
   // ---- init gantt ----
   useEffect(() => {
     let cancelled = false;
+    let removeResizeListener: (() => void) | null = null;
+    let stopActiveResize: (() => void) | null = null;
     let pendingPlanTaskId: number | null = null;
     let openPlanTaskEditor: ((taskId: number) => void) | null = null;
     const openPlanTaskHandler = (event: Event) => {
@@ -144,7 +173,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
     };
     window.addEventListener("dialoggg:open-plan-task", openPlanTaskHandler);
 
-    async function init() {
+  async function init() {
       const cssId = "dhtmlx-gantt-css";
       if (!document.getElementById(cssId)) {
         const link = document.createElement("link");
@@ -162,25 +191,30 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       gantt.config.scale_height = 52;
       gantt.config.row_height = 34;
       gantt.config.bar_height = 20;
-      gantt.config.grid_width = 490;
       gantt.config.autosize = false;
       gantt.config.fit_tasks = true;
       gantt.config.auto_scheduling = true;
       gantt.config.auto_scheduling_strict = true;
       gantt.config.auto_scheduling_initial = true;
       gantt.config.details_on_create = false;   // we open our own popup
-      gantt.config.min_column_width = 32;
       gantt.config.readonly = !canEdit;          // read-only roles cannot drag, resize, link, or edit
 
+      const columnWidths = readGanttColumnWidths(columnWidthStorageKey);
+      const addColumnWidth = 40;
+
       gantt.config.columns = [
-        { name: "text", label: "Task Name", tree: true, width: 258, resize: true,
+        { name: "text", label: "Task Name", tree: true, width: columnWidths.text,
           template: (task: any) => `${task.type === "project" ? `<i class="plan-group-dot" style="background:${chartColor(task.plan_color)}"></i>` : ""}${escapeHtml(task.text)}` },
-        { name: "resources", label: "Resources", width: 128, resize: true,
+        { name: "resources", label: "Resources", width: columnWidths.resources,
           template: (task: any) => `<span title="${escapeHtml((task.resource_names || []).join(", "))}">${escapeHtml((task.resource_names || []).join(", ")) || "—"}</span>` },
-        { name: "progress", label: "Done", align: "right", width: 64,
+        { name: "progress", label: "Done", align: "right", width: columnWidths.progress,
           template: (task: any) => `${Math.round(Math.max(0, Math.min(1, Number(task.progress) || 0)) * 100)}${task.type === "project" ? "%" : ""}` },
-        ...(canEdit ? [{ name: "add", label: "", width: 40 }] : []),
+        ...(canEdit ? [{ name: "add", label: "", width: addColumnWidth }] : []),
       ];
+      const updateGridWidth = () => {
+        gantt.config.grid_width = gantt.config.columns.reduce((total: number, column: any) => total + Number(column.width || 0), 0);
+      };
+      updateGridWidth();
       gantt.config.scales = [
         { unit: "month", step: 1, format: "%F %Y" },
         { unit: "day",   step: 1, format: "%j" },
@@ -202,6 +236,63 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       };
 
       gantt.init(containerRef.current!);
+
+      // Column resizing is implemented here instead of relying on DHTMLX PRO-only resizing.
+      // Widths are saved per project and per view mode in this browser.
+      const onResizeStart = (event: PointerEvent) => {
+        if (event.button !== 0) return;
+        const header = (event.target as HTMLElement).closest<HTMLElement>(".gantt_grid_head_cell");
+        if (!header) return;
+        const name = header.dataset.columnName as GanttColumnName | undefined;
+        if (!name || !Object.hasOwn(GANTT_COLUMN_WIDTHS, name)) return;
+        const bounds = header.getBoundingClientRect();
+        if (bounds.right - event.clientX > 18) return;
+        const column = gantt.config.columns.find((item: any) => item.name === name);
+        if (!column) return;
+        const options = GANTT_COLUMN_WIDTHS[column.name as GanttColumnName];
+        const startX = event.clientX;
+        const startWidth = Number(column.width) || options.width;
+        const oldCursor = document.body.style.cursor;
+        const oldUserSelect = document.body.style.userSelect;
+        event.preventDefault();
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+          column.width = Math.max(options.min, Math.min(options.max, Math.round(startWidth + moveEvent.clientX - startX)));
+          updateGridWidth();
+          gantt.render();
+        };
+        const onPointerUp = () => {
+          document.removeEventListener("pointermove", onPointerMove);
+          document.removeEventListener("pointerup", onPointerUp);
+          document.removeEventListener("pointercancel", onPointerUp);
+          stopActiveResize = null;
+          document.body.style.cursor = oldCursor;
+          document.body.style.userSelect = oldUserSelect;
+          try {
+            window.localStorage.setItem(columnWidthStorageKey, JSON.stringify(
+              Object.fromEntries(gantt.config.columns
+                .filter((item: any) => Object.hasOwn(GANTT_COLUMN_WIDTHS, item.name))
+                .map((item: any) => [item.name, Number(item.width)])),
+            ));
+          } catch {
+            setMessage("Column widths changed, but this browser could not save the layout preference.");
+          }
+        };
+        document.addEventListener("pointermove", onPointerMove);
+        document.addEventListener("pointerup", onPointerUp, { once: true });
+        document.addEventListener("pointercancel", onPointerUp, { once: true });
+        stopActiveResize = () => {
+          document.removeEventListener("pointermove", onPointerMove);
+          document.removeEventListener("pointerup", onPointerUp);
+          document.removeEventListener("pointercancel", onPointerUp);
+          document.body.style.cursor = oldCursor;
+          document.body.style.userSelect = oldUserSelect;
+        };
+      };
+      containerRef.current?.addEventListener("pointerdown", onResizeStart);
+      removeResizeListener = () => containerRef.current?.removeEventListener("pointerdown", onResizeStart);
 
       // ===== Intercept the "+" / new-task to open OUR popup =====
       gantt.attachEvent("onTaskCreated", (task: any) => {
@@ -332,6 +423,8 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
     init();
     return () => {
       cancelled = true;
+      stopActiveResize?.();
+      removeResizeListener?.();
       window.removeEventListener("dialoggg:open-plan-task", openPlanTaskHandler);
       if (ganttRef.current) { try { ganttRef.current.clearAll(); } catch {} }
     };
@@ -456,8 +549,8 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         </div>
         <div className="plan-chart-help">
           {canEdit
-            ? "Double-click a bar to edit · Drag bars to reschedule · Drag from a bar's edge circle to another bar to link them"
-            : "View only. Ask an Admin for edit access to change the schedule."}
+            ? "Double-click a bar to edit · Drag bars to reschedule · Drag from a bar's edge circle to link · Resize grid columns by dragging their edges (saved for this project in this browser)"
+            : "View only. Drag a grid-column edge to resize; widths are saved for this project in this browser."}
         </div>
       </div>
       {message && <div role="status" className="m-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">{message}</div>}
@@ -696,6 +789,9 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         .dialoggg-plan-chart .gantt_grid, .dialoggg-plan-chart .gantt_task, .dialoggg-plan-chart .gantt_grid_data, .dialoggg-plan-chart .gantt_task_bg { background:#fff; color:#1c2233; }
         .dialoggg-plan-chart .gantt_grid_scale, .dialoggg-plan-chart .gantt_task_scale { background:#fbfaf7; color:#6b7280; border-color:#e6e4dc; }
         .dialoggg-plan-chart .gantt_grid_head_cell { color:#6b7280; font:10.5px/52px 'IBM Plex Mono',monospace; text-transform:uppercase; letter-spacing:.04em; border-color:#e6e4dc; }
+        .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="text"], .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="resources"], .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="progress"] { position:relative; padding-right:20px; }
+        .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="text"]::after, .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="resources"]::after, .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="progress"]::after { content:"↔"; position:absolute; z-index:5; top:50%; right:2px; display:flex; width:17px; height:22px; transform:translateY(-50%); align-items:center; justify-content:center; border:1px solid #c7cada; border-radius:4px; background:#e9eaf2; color:#3B417D; font:700 12px/1 Arial,sans-serif; cursor:col-resize; }
+        .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="text"]:hover::after, .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="resources"]:hover::after, .dialoggg-plan-chart .gantt_grid_head_cell[data-column-name="progress"]:hover::after { border-color:#3B417D; background:#3B417D; color:#fff; }
         .dialoggg-plan-chart .gantt_scale_cell { color:#6b7280; font:10.5px/26px 'IBM Plex Mono',monospace; border-color:#f0efe9; }
         .dialoggg-plan-chart .gantt_scale_line:first-child .gantt_scale_cell { color:#1c2233; font:600 12.5px/26px 'Space Grotesk',sans-serif; }
         .dialoggg-plan-chart .gantt_row, .dialoggg-plan-chart .gantt_task_row { background:#fff; border-color:#f0efe9; color:#1c2233; }

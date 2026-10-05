@@ -14,6 +14,6 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
   if (actor.contextType !== "company" || !actor.companyId || !actor.membershipId || !["owner", "admin"].includes(actor.companyRole || "")) return <ModuleRestricted title="Project management is restricted" description="Only an Owner or Admin can edit a Project or change its Start Date." />;
   const project = getProjectRecord(Number(id), actor.companyId);
   if (!project) notFound();
-  if (normalizeProjectStatus(project.status) !== "active") return <ModuleRestricted title="Project is read-only" description={`${normalizeProjectStatus(project.status) === "completed" ? "Reopen" : "Restore"} this Project before editing its details or Start Date.`} />;
+  if (normalizeProjectStatus(project.status) !== "active") { const status = normalizeProjectStatus(project.status); const action = status === "completed" ? "Reopen" : status === "inactive" ? "Activate" : "Restore"; return <ModuleRestricted title="Project is read-only" description={`${action} this Project before editing its details or Start Date.`} />; }
   return <ProjectFormPrototype mode="edit" project={project} projectTypes={listProjectTypes(actor.companyId).map(({ id: projectTypeId, name }) => ({ id: projectTypeId, name }))} availableUsers={listProjectUsers(actor.companyId, project.id)} />;
 }

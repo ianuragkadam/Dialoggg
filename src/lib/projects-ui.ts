@@ -1,4 +1,4 @@
-export type ProjectUiStatus = "active" | "completed" | "archived";
+export type ProjectUiStatus = "active" | "inactive" | "completed" | "archived";
 
 export type ProjectUiRecord = {
   id: number;
@@ -32,7 +32,7 @@ export function projectTypeFor(project: ProjectUiRecord): string {
 }
 
 export function normalizeProjectStatus(status: string): ProjectUiStatus {
-  return status === "completed" || status === "archived" ? status : "active";
+  return status === "inactive" || status === "completed" || status === "archived" ? status : "active";
 }
 
 export function formatProjectDate(value: string | null | undefined): string {

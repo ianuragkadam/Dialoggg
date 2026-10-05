@@ -65,6 +65,25 @@ export function createProjectRecord(actor:Actor,input:Record<string,unknown>){ c
 
 export function updateProjectRecord(actor:Actor,projectId:number,input:Record<string,unknown>){ const fields=validateProjectInput(input,actor.companyId!); if(Object.keys(fields).length)throw new ProjectValidationError(fields); const current=getProjectRecord(projectId,actor.companyId!); if(!current)return null; if(current.status!=="active")throw new Error("PROJECT_READ_ONLY"); const version=Number(input.version); if(!Number.isInteger(version)||version!==current.version)throw new Error("PROJECT_VERSION_CONFLICT"); const mode=input.rebaseMode==="shift-unfinished"?"shift-unfinished":"date-only"; const assignments=Array.isArray(input.assignmentIds)?input.assignmentIds.map(Number):[]; return db.transaction(()=>{ const planChanged=current.start_date!==input.startDate||current.name!==String(input.name).trim(); if(current.start_date!==input.startDate&&mode==="shift-unfinished")shiftUnfinishedTasks(projectId,current.start_date,String(input.startDate)); const typeId=activeProjectTypeId(input.projectTypeId,actor.companyId!)!; const result=db.prepare(`UPDATE project SET project_type_id=?,name=?,client_name=?,client_email=?,address=?,city=?,state=?,zip=?,phone=?,start_date=?,note=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=? AND version=? AND status='active'`).run(typeId,String(input.name).trim(),String(input.clientName).trim(),String(input.clientEmail).trim().toLowerCase(),String(input.address).trim(),String(input.city).trim(),String(input.state).trim(),String(input.zip).trim(),String(input.phone).trim(),String(input.startDate),String(input.note??"").trim()||null,projectId,actor.companyId,version); if(result.changes!==1)throw new Error("PROJECT_VERSION_CONFLICT"); db.prepare("UPDATE task SET name=? WHERE project_id=? AND is_root=1").run(String(input.name).trim(),projectId); recalculateProjectPlan(projectId,planChanged); setAssignments(projectId,actor.companyId!,assignments,actor.membershipId!); return getProjectRecord(projectId,actor.companyId!)!; })(); }
 
-export function changeProjectLifecycle(projectId:number,companyId:number,action:"complete"|"reopen"|"archive"|"restore",version:number){ const current=getProjectRecord(projectId,companyId); if(!current)return null; const map={complete:["active","completed"],reopen:["completed","active"],archive:[current.status==="active"||current.status==="completed"?current.status:"invalid","archived"],restore:["archived","active"]} as const; const [expected,next]=map[action]; if(current.status!==expected||!Number.isInteger(version)||current.version!==version)throw new Error("PROJECT_LIFECYCLE_CONFLICT"); const result=db.prepare(`UPDATE project SET status=?,completed_at=CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP WHEN ?='active' THEN NULL ELSE completed_at END,archived_at=CASE WHEN ?='archived' THEN CURRENT_TIMESTAMP WHEN ?='active' THEN NULL ELSE archived_at END,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=? AND version=?`).run(next,next,next,next,next,projectId,companyId,version); return result.changes===1?getProjectRecord(projectId,companyId):null; }
+export function changeProjectLifecycle(projectId: number, companyId: number, action: "deactivate" | "activate" | "complete" | "reopen" | "archive" | "restore", version: number) {
+  const current = getProjectRecord(projectId, companyId);
+  if (!current) return null;
+  const transitions: Record<typeof action, [string, string]> = {
+    deactivate: ["active", "inactive"],
+    activate: ["inactive", "active"],
+    complete: ["active", "completed"],
+    reopen: ["completed", "active"],
+    archive: [["active", "inactive", "completed"].includes(current.status) ? current.status : "invalid", "archived"],
+    restore: ["archived", "active"],
+  };
+  const [expected, next] = transitions[action];
+  if (current.status !== expected || !Number.isInteger(version) || current.version !== version) throw new Error("PROJECT_LIFECYCLE_CONFLICT");
+  const result = db.prepare(`UPDATE project SET status=?,
+    completed_at=CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP WHEN ?='active' THEN NULL ELSE completed_at END,
+    archived_at=CASE WHEN ?='archived' THEN CURRENT_TIMESTAMP WHEN ?='active' THEN NULL ELSE archived_at END,
+    version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND company_id=? AND version=?`)
+    .run(next, next, next, next, next, projectId, companyId, version);
+  return result.changes === 1 ? getProjectRecord(projectId, companyId) : null;
+}
 
 export function permanentlyDeleteProject(projectId:number,companyId:number,name:string){ const result=db.prepare("DELETE FROM project WHERE id=? AND company_id=? AND status='archived' AND name=?").run(projectId,companyId,name); return result.changes===1; }

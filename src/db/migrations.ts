@@ -2281,7 +2281,31 @@ const migration019: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019];
+const migration020: Migration = {
+  version: 20,
+  name: "reversible_project_deactivation",
+  signature: "owner and administrator reversible active/inactive project state transitions v1",
+  up(database) {
+    database.exec(`
+      DROP TRIGGER IF EXISTS trg_project_lifecycle_update;
+      CREATE TRIGGER trg_project_lifecycle_update
+      BEFORE UPDATE OF status ON project
+      WHEN NEW.status NOT IN ('active','inactive','completed','archived')
+        OR NOT (
+          NEW.status = OLD.status
+          OR (OLD.status = 'active' AND NEW.status IN ('inactive','completed','archived'))
+          OR (OLD.status = 'inactive' AND NEW.status IN ('active','archived'))
+          OR (OLD.status = 'completed' AND NEW.status IN ('active','archived'))
+          OR (OLD.status = 'archived' AND NEW.status = 'active')
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_LIFECYCLE_INVALID');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {
