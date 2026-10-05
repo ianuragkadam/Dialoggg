@@ -3,7 +3,7 @@
 :root {
   --color-brand: #1f6fb2;
   --color-brand-dark: #16527f;
-  --color-accent-orange: #f08a24;
+  --color-accent-orange: #d1850b;
 }
 
 html, body, #__next { height: 100%; }
@@ -46,9 +46,9 @@ body {
   --color-blue-200: #293952;
   --color-blue-300: #354761;
   --color-blue-400: #71839f;
-  --color-blue-500: #bd5424;
-  --color-blue-600: #f28a4d;
-  --color-blue-700: #eb6b2d;
+  --color-blue-500: #d1850b;
+  --color-blue-600: #d1850b;
+  --color-blue-700: #d1850b;
   --color-blue-800: #101a2b;
   --color-blue-900: #111a2a;
   --color-blue-950: #0c1422;
@@ -59,7 +59,7 @@ body {
   --color-orange-300: #8c4c2b;
   --color-orange-400: #c65b2b;
   --color-orange-500: #e3652c;
-  --color-orange-600: #eb6b2d;
+  --color-orange-600: #d1850b;
   --color-orange-700: #d65d25;
   --color-orange-800: #f2a477;
   --color-orange-900: #ffc39e;
@@ -122,11 +122,11 @@ body {
 
 .tenant-theme .text-blue-700,
 .tenant-theme .text-blue-800 {
-  color: #f07a3e !important;
+  color: #d1850b !important;
 }
 
 .tenant-theme .text-blue-500 {
-  color: #f28a4d !important;
+  color: #d1850b !important;
 }
 
 .tenant-theme .text-blue-900,
@@ -135,7 +135,7 @@ body {
 }
 
 .tenant-theme nav a.bg-blue-100 {
-  box-shadow: inset 3px 0 #eb6b2d;
+  box-shadow: inset 3px 0 #d1850b;
 }
 
 /* Filled actions retain the existing D2 orange throughout the company app. */
@@ -194,9 +194,9 @@ body {
 
 /* The shared Log out action is the requested light green on every tenant page. */
 .tenant-theme .tenant-logout-button {
-  background-color: #a9cf48 !important;
+  background-color: #a9cf38 !important;
   color: #101a2b !important;
-  border-color: #a9cf48 !important;
+  border-color: #a9cf38 !important;
 }
 
 .tenant-theme .tenant-logout-button:hover {
@@ -223,7 +223,7 @@ body {
 }
 
 .tenant-theme .tenant-role-switch:focus-visible {
-  outline: 2px solid #a9cf48;
+  outline: 2px solid #a9cf38;
   outline-offset: 2px;
 }
 
@@ -256,7 +256,7 @@ body {
 }
 
 .tenant-theme :focus-visible {
-  outline-color: #f28a4d;
+  outline-color: #d1850b;
 }
 
 .tenant-theme input,
@@ -312,7 +312,7 @@ body {
 /* Make today's date easy to spot without competing with calendar events. */
 .tenant-theme .fc .fc-day-today {
   background-color: #203552 !important;
-  box-shadow: inset 0 0 0 2px #f28a4d;
+  box-shadow: inset 0 0 0 2px #d1850b;
 }
 
 .tenant-theme .fc .fc-day-today .fc-daygrid-day-number {
@@ -323,7 +323,7 @@ body {
   min-height: 2rem;
   margin: 0.2rem;
   border-radius: 9999px;
-  background-color: #f28a4d;
+  background-color: #d1850b;
   color: #111827;
   font-weight: 800;
 }
@@ -335,8 +335,8 @@ body {
 }
 
 .tenant-theme .fc .fc-button[title="Add an Event"] {
-  border-color: #f28a4d;
-  background: #f28a4d;
+  border-color: #d1850b;
+  background: #d1850b;
   color: #111827;
   font-weight: 700;
 }
