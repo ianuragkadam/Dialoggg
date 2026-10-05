@@ -2267,7 +2267,21 @@ const migration018: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018];
+const migration019: Migration = {
+  version: 19,
+  name: "recoverable_platform_company_retirement_and_editing",
+  signature: "soft-retire companies, preserve audit/work history, and release normalized names for recreation v1",
+  up(database) {
+    addColumn(database, "company", "deleted_at", "deleted_at TEXT");
+    database.exec(`
+      DROP INDEX IF EXISTS ux_company_normalized_name;
+      CREATE UNIQUE INDEX ux_company_normalized_name
+        ON company(lower(trim(name))) WHERE lower(status) <> 'deleted';
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

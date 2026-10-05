@@ -127,7 +127,7 @@ try {
     assert.equal(await page.getByRole("link", { name: /All Projects/ }).count(), 0);
     const body = await page.locator("body").innerText();
     assert.match(body, /Tenant QA Company/);
-    assert.match(body, /Platform access boundary/);
+    assert.match(body, /About Platform Access/);
   });
 
   await check("one identity switches between Platform Administration and an authorized company", async () => {
@@ -180,8 +180,27 @@ try {
     const body = await page.locator("body").innerText();
     assert.match(body, /America\/New_York/);
     assert.match(body, /Integration health/);
-    assert.match(body, /Tenant privacy boundary/);
-    assert.match(body, /intentionally omits Project names/);
+    assert.match(body, /Connection summary only/);
+    assert.match(body, /Stable site\/library identifiers remain private/);
+  });
+
+  await check("Edit Company validates required values and saves normalized profile details", async () => {
+    await page.goto(`${baseUrl}/platform/companies/${tenant.companyId}/edit`);
+    await page.getByRole("heading", { name: "Edit Company" }).waitFor();
+    await page.locator("#edit-company-name").fill("   ");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.getByText("Enter a Company Name from 1 to 100 characters.", { exact: true }).waitFor();
+    await page.locator("#edit-company-name").fill("Tenant QA Renamed");
+    await page.locator("#edit-company-time-zone").selectOption("America/Chicago");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.waitForURL(`**/platform/companies/${tenant.companyId}`);
+    await page.getByRole("heading", { name: "Tenant QA Renamed", exact: true }).waitFor();
+    assert.match(await page.locator("body").innerText(), /America\/Chicago/);
+    await page.goto(`${baseUrl}/platform/companies/${tenant.companyId}/edit`);
+    await page.locator("#edit-company-name").fill("Tenant QA Company");
+    await page.locator("#edit-company-time-zone").selectOption("America/New_York");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.waitForURL(`**/platform/companies/${tenant.companyId}`);
   });
 
   await check("detail lifecycle confirmation can suspend and restore", async () => {
@@ -212,7 +231,7 @@ try {
     await page.locator("#owner-last-name").fill("Morgan");
     await page.locator("#owner-email").fill("jamie@example.test");
     await page.getByRole("button", { name: "Review company setup" }).click();
-    await page.getByRole("dialog", { name: "Confirm company setup" }).getByRole("button", { name: "Create company and invite Owner" }).click();
+    await page.getByRole("dialog", { name: "Confirm company setup" }).getByRole("button", { name: "Create Company and send Owner invite" }).click();
     await page.getByText("A company named “tenant qa company” already exists.", { exact: true }).waitFor();
   });
 
@@ -239,9 +258,51 @@ try {
 
   await check("company setup confirmation persists the tenant and queues the Owner invitation", async () => {
     await page.getByRole("button", { name: "Review company setup" }).click();
-    await page.getByRole("dialog", { name: "Confirm company setup" }).getByRole("button", { name: "Create company and invite Owner" }).click();
+    await page.getByRole("dialog", { name: "Confirm company setup" }).getByRole("button", { name: "Create Company and send Owner invite" }).click();
     await page.getByRole("heading", { name: "Company created" }).waitFor();
     assert.match(await page.locator("body").innerText(), /Owner invitation queued/i);
+  });
+
+  await check("company name conflicts are surfaced when editing", async () => {
+    await page.goto(`${baseUrl}/platform/companies/${tenant.companyId}/edit`);
+    await page.locator("#edit-company-name").fill("Keystone Court Builders");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await page.getByText("A company with this name already exists.", { exact: true }).waitFor();
+    await page.getByText("Choose a different Company Name.", { exact: true }).waitFor();
+  });
+
+  await check("Delete company requires name confirmation, retires access, preserves history, and frees the name", async () => {
+    await page.goto(`${baseUrl}/platform/companies`);
+    await page.getByRole("button", { name: "Delete Keystone Court Builders" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Delete company access?" });
+    assert.match(await dialog.innerText(), /historical projects and audit history are retained/i);
+    const deleteButton = dialog.getByRole("button", { name: "Delete company" });
+    assert.equal(await deleteButton.isDisabled(), true);
+    await dialog.getByLabel("Company Name").fill("Keystone Court Builders");
+    await deleteButton.click();
+    await page.getByText(/Keystone Court Builders was retired/i).waitFor();
+    assert.equal(await page.getByText("Keystone Court Builders", { exact: true }).count(), 0);
+
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    try {
+      // Confirm using the durable company name: retirement is soft and preserves the row.
+      const row = database.prepare("SELECT id, status, deleted_at FROM company WHERE name = 'Keystone Court Builders' AND lower(status) = 'deleted'").get();
+      assert.ok(row?.id && row.deleted_at);
+      assert.equal(row.status, "deleted");
+      assert.ok(database.prepare("SELECT 1 FROM audit_event WHERE company_id = ? AND action = 'company.delete'").get(row.id));
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM company_membership WHERE company_id = ? AND status <> 'deactivated'").get(row.id).count, 0);
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM invitation_token WHERE membership_id IN (SELECT id FROM company_membership WHERE company_id = ?) AND used_at IS NULL AND revoked_at IS NULL").get(row.id).count, 0);
+    } finally { database.close(); }
+
+    await page.goto(`${baseUrl}/platform/companies/new`);
+    await page.locator("#company-name").fill("Keystone Court Builders");
+    await page.locator("#company-time-zone").selectOption("America/New_York");
+    await page.locator("#owner-first-name").fill("Jamie");
+    await page.locator("#owner-last-name").fill("Morgan");
+    await page.locator("#owner-email").fill("jamie@example.test");
+    await page.getByRole("button", { name: "Review company setup" }).click();
+    await page.getByRole("dialog", { name: "Confirm company setup" }).getByRole("button", { name: "Create Company and send Owner invite" }).click();
+    await page.getByRole("heading", { name: "Company created" }).waitFor();
   });
 
   await check("mobile Companies view has no horizontal page overflow", async () => {
