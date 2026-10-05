@@ -193,7 +193,12 @@ export function resendEmailSender(): EmailSender {
           to: [message.to],
           reply_to: saved.config.replyTo || undefined,
           subject: copy.subject,
-          text: `${message.variables.greeting}\n\n${message.variables.message}\n\n${copy.action}: ${message.variables.actionUrl}\n\nThis link or notice expires at ${message.variables.expiresAt}.`,
+          text: [
+            message.variables.greeting,
+            message.variables.message,
+            message.variables.actionUrl ? `${copy.action}: ${message.variables.actionUrl}` : "",
+            message.variables.expiresAt ? `This link or notice expires at ${message.variables.expiresAt}.` : "",
+          ].filter(Boolean).join("\n\n"),
         }),
         cache: "no-store",
         signal: AbortSignal.timeout(10_000),

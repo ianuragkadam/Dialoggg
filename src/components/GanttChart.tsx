@@ -52,8 +52,9 @@ function chartColor(value: unknown): string {
   return /^#[0-9a-f]{6}$/i.test(String(value)) ? String(value) : COLORS[0];
 }
 
-function paleColor(color: string): string {
-  const channels = [1, 3, 5].map(offset => Math.round(parseInt(color.slice(offset, offset + 2), 16) * .14 + 255 * .86));
+function progressTint(color: string): string {
+  // Keep the task's own color visible as the full bar track; use a lighter tint only for completed progress.
+  const channels = [1, 3, 5].map(offset => Math.round(parseInt(color.slice(offset, offset + 2), 16) * .55 + 255 * .45));
   return `rgb(${channels.join(",")})`;
 }
 
@@ -111,8 +112,8 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         ...data,
         data: (data.data || []).map((task: any) => ({
           ...task, working_duration: task.duration, plan_color: chartColor(task.color),
-          color: task.type === "project" ? "#0E123B" : paleColor(chartColor(task.color)),
-          progressColor: task.type === "project" ? "#0E123B" : chartColor(task.color),
+          color: task.type === "project" ? "#0E123B" : chartColor(task.color),
+          progressColor: task.type === "project" ? "#0E123B" : progressTint(chartColor(task.color)),
           textColor: "#1c2233",
         })),
       });
@@ -709,7 +710,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         .dialoggg-plan-chart .gantt_task_cell.plan-weekend, .dialoggg-plan-chart .gantt_scale_cell.plan-weekend { background:#f7f5ef !important; }
         .dialoggg-plan-chart .gantt_task_cell.plan-today, .dialoggg-plan-chart .gantt_scale_cell.plan-today { background:rgba(14,18,59,.05) !important; border-left:1px solid #c8c9d2; border-right:1px solid #c8c9d2; color:#0E123B; font-weight:700; }
         .dialoggg-plan-chart .gantt-task-bar { border:none; border-radius:5px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.05); }
-        .dialoggg-plan-chart .gantt-task-bar .gantt_task_progress { opacity:.55; border:none; border-radius:5px 0 0 5px; }
+        .dialoggg-plan-chart .gantt-task-bar .gantt_task_progress { opacity:1; border:none; border-radius:5px 0 0 5px; }
         .dialoggg-plan-chart .gantt_task_line.gantt-header-bar { height:8px !important; margin-top:6px; border:0; border-radius:4px; background:#0E123B !important; }
         .dialoggg-plan-chart .gantt-header-bar .gantt_task_progress { background:#0E123B !important; border:0; }
         .dialoggg-plan-chart .gantt_task_line .gantt_side_content.gantt_right { color:#1c2233; font-size:12.5px; font-style:italic; padding-left:10px; }

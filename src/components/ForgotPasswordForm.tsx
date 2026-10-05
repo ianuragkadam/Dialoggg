@@ -23,7 +23,7 @@ export default function ForgotPasswordForm() {
       : result.error?.message || "Unable to process the request. Try again later.");
   }
 
-  return <AuthCard title="Forgot password" description="Enter your login email. The response is the same whether or not an account exists.">
+  return <AuthCard title="Forgot password" description="Enter your login email. The response is the same whether or not an account exists." orangeBackground>
     <form onSubmit={submit} className="space-y-4">
       <div><label htmlFor="forgot-email" className="mb-1 block text-sm font-medium">Email</label><input id="forgot-email" type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} className="w-full rounded border px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500" /></div>
       {message && <p role="status" className="rounded bg-blue-50 p-3 text-sm text-blue-950">{message}</p>}
@@ -33,8 +33,8 @@ export default function ForgotPasswordForm() {
   </AuthCard>;
 }
 
-export function AuthCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-700 to-blue-900 p-6">
+export function AuthCard({ title, description, children, orangeBackground = false }: { title: string; description: string; children: React.ReactNode; orangeBackground?: boolean }) {
+  return <main className="flex min-h-screen items-center justify-center p-6" style={orangeBackground ? { backgroundColor: "#D1805B" } : { background: "linear-gradient(to bottom right, #1d4ed8, #1e3a8a)" }}>
     <section className="w-full max-w-md rounded-lg bg-white p-8 shadow-xl" aria-labelledby="auth-title">
       <div className="mb-6 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded bg-gradient-to-br from-blue-600 to-blue-800 text-2xl font-bold text-white">D</div><h1 id="auth-title" className="mt-3 text-2xl font-bold text-blue-800">{title}</h1><p className="mt-1 text-sm text-gray-600">{description}</p></div>
       {children}

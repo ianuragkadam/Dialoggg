@@ -29,6 +29,7 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [pageError, setPageError] = useState("");
+  const [guideOpen, setGuideOpen] = useState(false);
   const [page, setPage] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -170,11 +171,6 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
         </Link>
       </div>
 
-      <section aria-label="Template behavior" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
-        <p className="font-semibold">Company Template Library</p>
-        <p>Changes are saved for this company. Projects already created from a Template remain independent when the Template is renamed or deleted.</p>
-      </section>
-
       {pageError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{pageError}</p>}
 
       <section aria-label="Template summary" className="grid gap-3 sm:grid-cols-3">
@@ -227,14 +223,19 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
         <PaginationControls page={page} totalItems={filteredItems.length} onPageChange={setPage} label="Templates" />
       </section>
 
-      <section aria-labelledby="template-rules" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 id="template-rules" className="font-bold text-slate-950">What every Template remembers</h2>
-        <ul className="mt-3 grid gap-3 text-sm leading-6 text-slate-600 md:grid-cols-2 xl:grid-cols-4">
-          <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Plan structure</strong>Task names, Headers, durations, links, lag, colors, and relative offsets.</li>
-          <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Working rules</strong>Saturday and Sunday settings travel with the saved Tasks.</li>
-          <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Clean start</strong>Fixed dates are recalculated and every Task begins at 0% progress.</li>
-          <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Independent Projects</strong>Renaming or deleting a Template never changes Projects already made from it.</li>
-        </ul>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="template-guide-title">
+        <button type="button" aria-expanded={guideOpen} aria-controls="template-guide-content" onClick={() => setGuideOpen(open => !open)} className="flex min-h-16 w-full items-center justify-between gap-4 px-5 py-4 text-left font-bold text-slate-950 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-inset">
+          <span id="template-guide-title">How Project Templates Work</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${guideOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg>
+        </button>
+        {guideOpen && <div id="template-guide-content" className="border-t border-slate-200 p-5">
+          <ul className="grid gap-3 text-sm leading-6 text-slate-600 md:grid-cols-2 xl:grid-cols-4">
+            <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Plan structure</strong>Task names, Headers, durations, links, lag, colors, and relative offsets.</li>
+            <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Working rules</strong>Saturday and Sunday settings travel with the saved Tasks.</li>
+            <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Clean start</strong>Fixed dates are recalculated and every Task begins at 0% progress.</li>
+            <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Independent Projects</strong>Renaming or deleting a Template never changes Projects already made from it.</li>
+          </ul>
+        </div>}
       </section>
 
       {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-md rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl"><span aria-hidden="true" className="mr-2 text-emerald-400">✓</span>{toast}</div>}

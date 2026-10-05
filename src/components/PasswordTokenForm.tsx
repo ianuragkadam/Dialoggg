@@ -45,7 +45,7 @@ export default function PasswordTokenForm({ mode }: { mode: "reset" | "invitatio
 
   const title = mode === "reset" ? "Reset password" : "Accept invitation";
   const description = mode === "reset" ? "Choose a new password for your Dialoggg identity." : "New users create a password; existing users confirm their current Dialoggg password.";
-  return <AuthCard title={title} description={description}>
+  return <AuthCard title={title} description={description} orangeBackground={mode === "invitation"}>
     {completed ? <div className="space-y-4"><p role="status" className="rounded bg-emerald-50 p-3 text-sm text-emerald-950">{message}</p><Link href={mode === "invitation" ? "/projects" : "/login"} className="block rounded bg-blue-700 py-2 text-center font-semibold text-white">Continue</Link></div> :
       <form onSubmit={submit} className="space-y-4">
         <div><PasswordField id={`${mode}-password`} label={mode === "reset" ? "New password" : "Password"} required minLength={MIN_PASSWORD_CHARACTERS} autoComplete={mode === "reset" ? "new-password" : "current-password"} value={password} onChange={setPassword} /><p className="mt-1 text-xs text-gray-500">At least {MIN_PASSWORD_CHARACTERS} characters and no more than {MAX_PASSWORD_BYTES} UTF-8 bytes.</p></div>

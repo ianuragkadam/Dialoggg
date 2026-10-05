@@ -68,10 +68,6 @@ export default function ResourcesPrototype({ initialResources, canManage }: { in
             </div>
           </details>
         </div>
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-950">
-          <p className="font-semibold">{canManage ? "Owner/Admin management" : "Employee read-only"}</p>
-          <p>{canManage ? "Changes are saved to this company and audited." : "Employees may review company Resources and schedules but cannot add, edit, link, deactivate, or restore them."}</p>
-        </div>
         <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_190px_170px]">
           <label className="sr-only" htmlFor="resource-search">Search Resources</label>
           <input id="resource-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search name, email, or category" className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm" />
