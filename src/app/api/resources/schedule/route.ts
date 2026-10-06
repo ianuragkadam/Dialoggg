@@ -20,6 +20,10 @@ type ScheduleItem = {
   kind: "Task" | "Event";
   seriesId?: number;
   occurrenceKey?: string;
+  version?: number;
+  allDay: boolean;
+  timeZone?: string;
+  recurring?: boolean;
 };
 
 export async function GET(request: NextRequest) {
@@ -29,8 +33,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const resources = db.prepare("SELECT id, name FROM resource WHERE company_id = ? ORDER BY lower(name), id")
+  const resources = db.prepare(`SELECT r.id, r.name, COALESCE(rc.name, 'Other') AS category
+    FROM resource r LEFT JOIN resource_category rc ON rc.id = r.category_id AND rc.company_id = r.company_id
+    WHERE r.company_id = ? ORDER BY lower(r.name), r.id`)
+    .all(actor.companyId) as Array<{ id: number; name: string; category: string }>;
+  const categories = db.prepare("SELECT id, name FROM resource_category WHERE company_id = ? ORDER BY lower(name), id")
     .all(actor.companyId) as Array<{ id: number; name: string }>;
+  const resourceById = new Map(resources.map(resource => [resource.id, resource]));
   const taskRows = db.prepare(`
     SELECT t.id, t.name, t.start_date, t.duration, t.color, t.allow_saturday, t.allow_sunday,
       tr.resource_id, p.id AS project_id, p.name AS project_name
@@ -57,6 +66,7 @@ export async function GET(request: NextRequest) {
       rawTitle: row.name,
       taskId: row.id,
       kind: "Task" as const,
+      allDay: true,
     })),
     ...eventOccurrences.flatMap(occurrence => occurrence.resourceIds.map(resourceId => ({
         id: `${occurrence.id}-r${resourceId}`,
@@ -72,6 +82,10 @@ export async function GET(request: NextRequest) {
         kind: "Event" as const,
         seriesId: occurrence.seriesId,
         occurrenceKey: occurrence.occurrenceKey,
+        version: occurrence.version,
+        allDay: occurrence.allDay,
+        timeZone: occurrence.timeZone,
+        recurring: occurrence.recurring,
       }))),
   ];
 
@@ -92,7 +106,8 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    resources: resources.map(resource => ({ id: String(resource.id), title: resource.name })),
+    categories,
+    resources: resources.map(resource => ({ id: String(resource.id), title: resource.name, category: resource.category })),
     events: items.map(item => {
       const conflict = conflicts.has(item.id);
       return {
@@ -101,9 +116,10 @@ export async function GET(request: NextRequest) {
         title: item.title,
         start: item.start,
         end: item.end,
-        color: conflict ? "#c0392b" : item.color,
-        borderColor: conflict ? "#7d1f15" : undefined,
-        extendedProps: { conflict, project_id: item.projectId, projectName: item.projectName, sourceId: item.sourceId, rawTitle: item.rawTitle, taskId: item.taskId, kind: item.kind, seriesId:item.seriesId, occurrenceKey:item.occurrenceKey },
+        color: item.color,
+        borderColor: conflict ? "#7d1f15" : item.color,
+        allDay: item.allDay,
+        extendedProps: { conflict, resourceName: resourceById.get(item.resourceId)?.name ?? "Resource", resourceCategory: resourceById.get(item.resourceId)?.category ?? "Other", project_id: item.projectId, projectName: item.projectName, sourceId: item.sourceId, rawTitle: item.rawTitle, taskId: item.taskId, kind: item.kind, seriesId:item.seriesId, occurrenceKey:item.occurrenceKey, version:item.version, timeZone:item.timeZone, recurring:item.recurring },
       };
     }),
   }, { headers: { "cache-control": "no-store" } });

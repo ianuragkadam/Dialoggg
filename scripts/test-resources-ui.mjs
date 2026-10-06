@@ -110,8 +110,10 @@ try {
     const schedule = await fetch(`${baseUrl}/api/resources/schedule`, { headers: adminHeaders });
     assert.equal(schedule.status, 200);
     const schedulePayload = await schedule.json();
-    assert.ok(schedulePayload.events.some(item => item.id === `t${seededTaskId}-r${jamieId}` && item.extendedProps.kind === "Task"));
-    assert.ok(schedulePayload.events.some(item => item.extendedProps.seriesId === seededEventId && item.resourceId === String(jamieId) && item.extendedProps.kind === "Event"));
+    assert.deepEqual(new Set(schedulePayload.categories.map(category => category.name)), new Set(["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]));
+    assert.equal(schedulePayload.resources.find(item => item.id === String(jamieId))?.category, "Employee");
+    assert.ok(schedulePayload.events.some(item => item.id === `t${seededTaskId}-r${jamieId}` && item.extendedProps.kind === "Task" && item.allDay === true && item.extendedProps.resourceCategory === "Employee"));
+    assert.ok(schedulePayload.events.some(item => item.extendedProps.seriesId === seededEventId && item.resourceId === String(jamieId) && item.extendedProps.kind === "Event" && item.extendedProps.version));
     const inactive = await fetch(`${baseUrl}/api/v1/resources/${permitId}/assignments`, { method: "PUT", headers: { ...adminHeaders, "content-type": "application/json" }, body: JSON.stringify({ taskIds: [seededTaskId], eventSeriesIds: [] }) });
     assert.equal(inactive.status, 409);
   });
@@ -120,6 +122,32 @@ try {
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await addAuth(adminContext, authCookies(adminLogin));
   const page = await adminContext.newPage();
+
+  await check("Resource Calendar supports persisted Timeline/Calendar views and shared resource-type filtering", async () => {
+    await page.goto(`${baseUrl}/resources/schedule`);
+    await page.getByRole("heading", { name: "Resource Calendar" }).waitFor();
+    assert.equal(await page.getByRole("tab", { name: "Timeline" }).getAttribute("aria-selected"), "true");
+    await page.getByRole("button", { name: "Calendar Controls" }).click();
+    await page.getByRole("button", { name: "Clear all" }).click();
+    await page.getByText("No resource types selected.", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Select all" }).click();
+    await page.getByRole("tab", { name: "Calendar" }).click();
+    assert.equal(await page.getByRole("tab", { name: "Calendar" }).getAttribute("aria-selected"), "true");
+    await page.getByLabel("Equipment", { exact: true }).uncheck();
+    const filterSummary = page.locator(".fc-resourceFilterSummary-button");
+    await filterSummary.waitFor();
+    assert.match(await filterSummary.innerText(), /Showing: Employee, Subcontractor, Supplier, Other/);
+    await page.getByRole("button", { name: "week", exact: true }).click();
+    assert.match(await filterSummary.innerText(), /Showing: Employee, Subcontractor, Supplier, Other/);
+    await page.getByRole("button", { name: "day", exact: true }).click();
+    await page.getByRole("button", { name: "month", exact: true }).click();
+    await page.getByRole("tab", { name: "Timeline" }).click();
+    assert.match(await page.locator(".fc-resourceFilterSummary-button").innerText(), /Showing: Employee, Subcontractor, Supplier, Other/);
+    await page.getByRole("button", { name: "Select all" }).click();
+    await page.getByRole("button", { name: "Clear all" }).click();
+    await page.getByText("No resource types selected.", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Select all" }).click();
+  });
 
   await check("Admin opens persisted Resources with all five fixed Categories", async () => {
     await page.goto(`${baseUrl}/resources`);
@@ -231,11 +259,22 @@ try {
     await externalPage.getByRole("heading", { name: "Resources are restricted" }).waitFor();
     await externalContext.close();
   });
-  await check("Mobile Resources view has no horizontal overflow", async () => {
+  await check("Mobile Resource Calendar header and month grid fit the phone viewport", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${baseUrl}/resources`);
-    const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+    await page.goto(`${baseUrl}/resources/schedule`);
+    await page.getByRole("tab", { name: "Calendar" }).click();
+    const calendar = page.locator(".resource-calendar-grid-wrapper .fc");
+    await calendar.waitFor();
+    const dimensions = await page.evaluate(() => {
+      const calendar = document.querySelector(".resource-calendar-grid-wrapper .fc");
+      const toolbar = calendar?.querySelector(".fc-toolbar.fc-header-toolbar");
+      const bounds = (element) => { const rect = element?.getBoundingClientRect(); return rect ? { left: rect.left, right: rect.right, width: rect.width } : null; };
+      return { width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth, calendar: bounds(calendar), toolbar: bounds(toolbar), title: bounds(calendar?.querySelector(".fc-toolbar-title")), lastToolbarButton: bounds(calendar?.querySelector(".fc-toolbar-chunk:nth-child(3)")) };
+    });
     assert.ok(dimensions.scrollWidth <= dimensions.width, JSON.stringify(dimensions));
+    assert.ok(dimensions.calendar && dimensions.toolbar && dimensions.title && dimensions.lastToolbarButton, JSON.stringify(dimensions));
+    assert.ok(dimensions.toolbar.left >= dimensions.calendar.left && dimensions.toolbar.right <= dimensions.calendar.right, JSON.stringify(dimensions));
+    assert.ok(dimensions.lastToolbarButton.right <= dimensions.calendar.right, JSON.stringify(dimensions));
   });
   await check("Signed-out Resource routes return to Login", async () => {
     const context = await browser.newContext();
