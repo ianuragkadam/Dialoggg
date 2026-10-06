@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+/* Keep Resource Calendar task summaries on-brand and readable. */
+section[aria-label="Resource Calendar workflow review"] section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md {
+  background-color: #3B417D;
+  border-color: #3B417D;
+  color: #fff;
+}
+
+section[aria-label="Resource Calendar workflow review"] section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md :is(p, span) {
+  color: #fff;
+}
+
+section[aria-label="Resource Calendar workflow review"] section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md a {
+  color: #D1850B;
+}
+
 :root {
   --color-brand: #1f6fb2;
   --color-brand-dark: #16527f;

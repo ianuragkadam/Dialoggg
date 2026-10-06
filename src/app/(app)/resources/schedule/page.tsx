@@ -53,11 +53,11 @@ export default function GlobalResourceSchedulePage() {
               ⚠️ {conflictCount} overlap{conflictCount === 1 ? "" : "s"} — same resource booked twice
             </span>
           ) : (
-            <span className="bg-green-100 text-green-800 px-3 py-1 rounded">✓ No scheduling conflicts</span>
+            <span className="inline-flex items-center rounded border border-[#A9CF38] bg-[#55681C] px-3 py-1 font-semibold text-white shadow-sm">✓ No scheduling conflicts</span>
           )}
         </div>
       </div>
-      <CalendarWorkflowReview context="resource" canManage={canManage} projectId={events[0]?.extendedProps.project_id} />
+      <CalendarWorkflowReview context="resource" canManage={canManage} projectId={events[0]?.extendedProps.project_id}>
       <div className="bg-white border rounded shadow-sm p-4">
         {!loaded ? <div className="text-gray-500">Loading…</div> : (
           <FullCalendar
@@ -74,6 +74,7 @@ export default function GlobalResourceSchedulePage() {
           />
         )}
       </div>
+      </CalendarWorkflowReview>
     </div>
   );
 }
