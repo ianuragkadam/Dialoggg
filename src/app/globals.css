@@ -247,6 +247,15 @@ body {
   color: #101a2b;
 }
 
+/* Native Users filters open on a light menu; keep their options readable
+   without changing the dark closed-select appearance. */
+.tenant-theme select[aria-label="Filter Internal Users by Role"] option,
+.tenant-theme select[aria-label="Filter Internal Users by Status"] option,
+.tenant-theme select[aria-label="Filter External Users / Clients by Status"] option {
+  background-color: #fff;
+  color: #101a2b;
+}
+
 /* High-contrast role-preview chip, independent of the tenant amber theme. */
 .role-preview-chip {
   background-color: #55681c !important;
@@ -373,6 +382,87 @@ body {
 }
 
 /* dhtmlx-gantt scoped tweaks */
+@media (max-width: 640px) {
+  .dialoggg-calendar,
+  .dialoggg-calendar .fc {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .dialoggg-calendar .fc-header-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "navigation" "views";
+    gap: 0.55rem;
+  }
+
+  .dialoggg-calendar .fc-header-toolbar .fc-toolbar-chunk:first-child {
+    grid-area: navigation;
+    display: flex;
+    justify-content: center;
+  }
+
+  .dialoggg-calendar .fc-header-toolbar .fc-toolbar-chunk:nth-child(2) {
+    grid-area: title;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .dialoggg-calendar .fc-header-toolbar .fc-toolbar-chunk:last-child {
+    grid-area: views;
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.35rem;
+  }
+
+  .dialoggg-calendar .fc-toolbar-title {
+    font-size: clamp(1.2rem, 6vw, 1.65rem);
+    line-height: 1.2;
+  }
+
+  .dialoggg-calendar .fc-button {
+    padding: 0.35rem 0.55rem;
+    font-size: 0.8rem;
+  }
+
+  .dialoggg-calendar:not(.dialoggg-calendar-timeline) .fc-scrollgrid,
+  .dialoggg-calendar:not(.dialoggg-calendar-timeline) .fc-scrollgrid table,
+  .dialoggg-calendar:not(.dialoggg-calendar-timeline) .fc-daygrid-body table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed !important;
+  }
+
+  .dialoggg-calendar .fc-daygrid-day-frame,
+  .dialoggg-calendar .fc-daygrid-event-harness,
+  .dialoggg-calendar .fc-daygrid-event {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .dialoggg-calendar .fc-daygrid-event .fc-event-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dialoggg-calendar-timeline {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .dialoggg-calendar-timeline .fc {
+    min-width: 620px;
+    max-width: none;
+  }
+}
+
 .gantt_container { border: 1px solid #d6dee6; border-radius: 6px; }
 .dhx-gantt-link.gantt_task_link .gantt_line_wrapper > div { background: #f08a24 !important; }
 .gantt_task_link .gantt_link_arrow_right { border-left-color: #f08a24 !important; }

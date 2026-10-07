@@ -5,7 +5,7 @@ import UsersAccessPrototype from "@/components/UsersAccessPrototype";
 import { getCurrentActor } from "@/lib/auth";
 import { listCompanyUsers } from "@/lib/user-management";
 
-export const metadata: Metadata = { title: "Users | Dialoggg" };
+export const metadata: Metadata = { title: "Internal Users | Dialoggg" };
 
 export default async function UsersPage() {
   const actor = await getCurrentActor();

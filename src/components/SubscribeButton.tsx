@@ -46,8 +46,8 @@ export default function SubscribeButton({
             <div className="p-5 space-y-4 text-sm">
               <p>Copy this private link:</p>
               <div className="flex gap-2">
-                <input readOnly value={url} className="flex-1 px-3 py-2 border rounded bg-gray-50 text-xs" />
-                <button onClick={copy} className="bg-blue-700 text-white px-3 py-2 rounded font-semibold hover:bg-blue-800">
+                <input readOnly value={url} className="min-w-0 flex-1 px-3 py-2 border rounded bg-gray-50 text-xs" />
+                <button onClick={copy} className="shrink-0 bg-blue-700 text-white px-3 py-2 rounded font-semibold hover:bg-blue-800">
                   {copied ? "Copied!" : "Copy"}
                 </button>
               </div>

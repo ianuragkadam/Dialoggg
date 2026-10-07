@@ -31,10 +31,10 @@ export default function ProjectCalendar({ projectId, canManage = true, projectNa
     <div className="space-y-3">
       <CalendarWorkflowReview context="project" canManage={canManage} projectId={projectId} projectName={projectName} onEventsChanged={reload} />
       {notice&&<div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</div>}
-      <div className="bg-white border rounded shadow-sm p-4">
+      <div className="dialoggg-calendar bg-white border rounded shadow-sm p-2 sm:p-4">
       <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
         <h2 className="font-semibold">Project Calendar</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <SubscribeButton feedUrlEndpoint={`/api/projects/${projectId}/feed-url`} />
           <div className="text-xs text-gray-500">Shows Tasks and Events.</div>
         </div>

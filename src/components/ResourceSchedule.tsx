@@ -22,8 +22,8 @@ export default function ResourceSchedule({ projectId }: { projectId: number }) {
   useEffect(()=>{fetch("/api/me").then(response=>response.json()).then(data=>setCompanyTimeZone(data.user?.company_time_zone||"UTC"));},[]);
 
   return (
-    <div className="bg-white border rounded shadow-sm p-4">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="dialoggg-calendar dialoggg-calendar-timeline bg-white border rounded shadow-sm p-2 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">Project Resources</h2>
         <div className="text-xs text-gray-500">Each row represents a Resource; bars show its assigned Tasks.</div>
       </div>

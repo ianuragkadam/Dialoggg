@@ -664,11 +664,6 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
             </button>
           )}
         </div>
-        <div className="plan-chart-help">
-          {canEdit
-            ? "Drag task rows to reorder within their Header · Double-click a bar to edit · Drag bars to reschedule · Drag from a bar's edge circle to link · Resize grid columns by dragging their edges (saved for this project in this browser)"
-            : "View only. Drag a grid-column edge to resize; widths are saved for this project in this browser."}
-        </div>
       </div>
       {message && <div role="status" className="m-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">{message}</div>}
       <div className="plan-chart-scroll"><div ref={containerRef} style={{ width: "100%", minWidth: 760, height: 580 }} /></div>
@@ -890,7 +885,6 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
         .dialoggg-plan-chart .plan-chart-add { background:#0E123B; color:#fff; border:1px solid #0E123B; padding:7px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; }
         .dialoggg-plan-chart .plan-chart-add:hover { background:#3B417D; }
         .dialoggg-plan-chart .plan-chart-add:focus-visible { outline:3px solid #A9CF38; outline-offset:3px; }
-        .dialoggg-plan-chart .plan-chart-help { color:#6b7280; font-size:11px; max-width:420px; }
         .dialoggg-plan-chart .plan-chart-scroll { width:100%; overflow-x:auto; }
         .dialoggg-plan-chart .gantt_container { --dhx-gantt-font-family:'Space Grotesk',sans-serif; --dhx-gantt-font-size:13px; --dhx-gantt-base-colors-select:#eeedf5; border:none; border-radius:0; background:#fff; color:#1c2233; }
         .dialoggg-plan-chart .gantt_grid, .dialoggg-plan-chart .gantt_task, .dialoggg-plan-chart .gantt_grid_data, .dialoggg-plan-chart .gantt_task_bg { background:#fff; color:#1c2233; }

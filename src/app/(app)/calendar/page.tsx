@@ -82,7 +82,7 @@ export default function MasterCalendarPage() {
         onAddEventReady={registerAddEvent}
       >
       {notice&&<div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</div>}
-      <div className="bg-white border rounded shadow-sm p-4">
+      <div className="dialoggg-calendar bg-white border rounded shadow-sm p-2 sm:p-4">
         <FullCalendar
           plugins={[dayGridPlugin,interactionPlugin,luxonPlugin]}
           initialView="dayGridMonth"

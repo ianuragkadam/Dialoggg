@@ -52,10 +52,11 @@ function validateAssignments(companyId: number, ids: number[]) {
 }
 function setAssignments(projectId:number, companyId:number, ids:number[], actorMembershipId:number) {
   const wanted=new Set(validateAssignments(companyId,[...ids,actorMembershipId]));
-  const current=new Set((db.prepare("SELECT company_membership_id id FROM project_membership WHERE project_id=?").all(projectId) as Array<{id:number}>).map(x=>x.id));
+  const currentRows=db.prepare("SELECT pm.company_membership_id id, cm.status FROM project_membership pm JOIN company_membership cm ON cm.id=pm.company_membership_id WHERE pm.project_id=? AND cm.company_id=?").all(projectId,companyId) as Array<{id:number;status:string}>;
+  const current=new Set(currentRows.map(x=>x.id));
   const del=db.prepare("DELETE FROM project_membership WHERE project_id=? AND company_membership_id=?");
   const add=db.prepare("INSERT OR IGNORE INTO project_membership(project_id,company_membership_id) VALUES(?,?)");
-  for(const id of current) if(!wanted.has(id)) del.run(projectId,id);
+  for(const row of currentRows) if(row.status!=="pending"&&!wanted.has(row.id)) del.run(projectId,row.id);
   for(const id of wanted) if(!current.has(id)) add.run(projectId,id);
 }
 

@@ -183,9 +183,9 @@ export default function GlobalResourceSchedulePage() {
     </div>
 
     <CalendarWorkflowReview context="resource" canManage={canManage} resourceCategories={categories.map(category => category.name)} selectedResourceCategories={selectedCategories} onResourceCategoriesChange={setSelectedCategories} onEventsChanged={() => { void loadSchedule(); }}>
-      <div className="overflow-hidden rounded-b border border-t-0 bg-white p-3 shadow-sm sm:p-4">
+      <div className="overflow-hidden rounded-b border border-t-0 bg-white p-2 shadow-sm sm:p-4">
         {!loaded ? <div className="p-8 text-center text-slate-500">Loading Resource Calendar…</div> : loadError ? <div role="alert" className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError}</div> : selectedCategories.length === 0 ? <div role="status" className="p-10 text-center text-slate-600">No resource types selected.</div> : calendarView === "timeline" ? (
-          <FullCalendar
+          <div className="dialoggg-calendar dialoggg-calendar-timeline"><FullCalendar
             key="resource-timeline"
             plugins={[resourceTimelinePlugin, interactionPlugin, luxonPlugin]}
             initialView="resourceTimelineMonth"
@@ -199,12 +199,12 @@ export default function GlobalResourceSchedulePage() {
             eventClick={info => openEvent(info.event as any)}
             timeZone={companyTimeZone}
             resourceAreaHeaderContent="Resources"
-            resourceAreaWidth="22%"
+            resourceAreaWidth={isMobile ? 150 : "22%"}
             height={650}
             schedulerLicenseKey="GPL-My-Project-Is-Open-Source"
-          />
+          /></div>
         ) : (
-          <div className="resource-calendar-grid-wrapper">
+          <div className="dialoggg-calendar resource-calendar-grid-wrapper">
             <FullCalendar
               key="resource-calendar-grid"
               plugins={[dayGridPlugin, interactionPlugin, luxonPlugin]}
