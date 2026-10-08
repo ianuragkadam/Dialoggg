@@ -26,10 +26,10 @@ function externalScheduleLabel(item: ExternalCalendarItem, timeZone: string) {
   if (item.allDay) {
     const start = item.start.slice(0, 10);
     const end = shiftDateKey(item.end.slice(0, 10), -1);
-    const format = (key: string) => new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" }).format(new Date(`${key}T12:00:00Z`));
+    const format = (key: string) => new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" }).format(new Date(`${key}T12:00:00Z`));
     return `${format(start)}${end !== start ? `–${format(end)}` : ""} · All day`;
   }
-  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: item.extendedProps?.timeZone || timeZone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: item.extendedProps?.timeZone || timeZone, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   return `${formatter.format(new Date(item.start))}–${formatter.format(new Date(item.end))}`;
 }
 

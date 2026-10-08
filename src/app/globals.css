@@ -468,3 +468,45 @@ body {
 .gantt_task_link .gantt_link_arrow_right { border-left-color: #f08a24 !important; }
 .gantt_task_link .gantt_link_arrow_left  { border-right-color: #f08a24 !important; }
 .weekend { background: #f0f0f0 !important; }
+
+/* Resource Calendar date headers and subtle weekend columns. */
+.resource-calendar-timeline .fc .resource-calendar-timeline-date,
+.resource-calendar-grid-wrapper .fc .resource-calendar-week-date {
+  display: inline-flex;
+  min-height: 2.5rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+}
+
+.resource-calendar-timeline .fc .resource-calendar-timeline-weekday,
+.resource-calendar-grid-wrapper .fc .resource-calendar-week-weekday {
+  color: #9aaac0;
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.resource-calendar-timeline .fc .resource-calendar-timeline-day,
+.resource-calendar-grid-wrapper .fc .resource-calendar-week-day {
+  color: #e5edf7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.resource-calendar-timeline .fc .resource-calendar-timeline-day.is-today,
+.resource-calendar-grid-wrapper .fc .resource-calendar-week-day.is-today {
+  color: #f59e0b;
+}
+
+.tenant-theme .resource-calendar-timeline .fc .resource-calendar-weekend,
+.tenant-theme .resource-calendar-grid-wrapper .fc .resource-calendar-weekend {
+  background-color: #1d2d48 !important;
+}
+
+.tenant-theme .resource-calendar-grid-wrapper .fc .fc-daygrid-day.resource-calendar-weekend .fc-daygrid-day-frame {
+  background-color: #1d2d48 !important;
+}

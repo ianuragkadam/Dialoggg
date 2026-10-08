@@ -36,7 +36,6 @@ export default function ProjectCalendar({ projectId, canManage = true, projectNa
         <h2 className="font-semibold">Project Calendar</h2>
         <div className="flex flex-wrap items-center gap-2">
           <SubscribeButton feedUrlEndpoint={`/api/projects/${projectId}/feed-url`} />
-          <div className="text-xs text-gray-500">Shows Tasks and Events.</div>
         </div>
       </div>
       <FullCalendar

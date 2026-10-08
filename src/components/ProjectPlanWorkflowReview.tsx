@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
+import { formatProjectDate } from "@/lib/projects-ui";
 
 type PlanTask = {
   id: number;
@@ -23,11 +24,7 @@ const LINK_LABELS: Record<PlanLink["type"], string> = {
   "0": "FS", "1": "SS", "2": "FF", "3": "SF",
 };
 
-function formatDate(value?: string | null) {
-  if (!value) return "Not scheduled";
-  const date = new Date(`${value.slice(0, 10)}T12:00:00`);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
+function formatDate(value?: string | null) { return value ? formatProjectDate(value) : "Not scheduled"; }
 
 export default function ProjectPlanWorkflowReview({ projectId, projectName, canEdit }: { projectId: number; projectName: string; canEdit: boolean }) {
   const [plan, setPlan] = useState<PlanData | null>(null);

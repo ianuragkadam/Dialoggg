@@ -6,12 +6,20 @@ import { formatProjectDate, normalizeProjectStatus, projectTypeFor, type Project
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
 
 type StatusFilter = "all" | ProjectUiStatus;
+const PROJECT_DIRECTORY_GUIDE = [
+  "Click + Add Project to start a new job. Only Owners and Admins can add projects.",
+  "The boxes at the top count your projects by status, and the menu next to the search box switches between them. Search by name, client, or type, or use the Project Type checkboxes to narrow the list.",
+  "Active jobs are in progress. Inactive jobs are on hold, and you can switch one back to Active to restart it. Completed jobs are finished. Archived jobs are kept for your records.",
+  "Click Open to go into a project. Use Edit Project inside it to change its details.",
+  "This page shows every job in your company. To see only the jobs you're assigned to, use My Projects.",
+];
 
 export default function ProjectsPrototype({ projects, projectTypes, canManage, external = false }: { projects: ProjectUiRecord[]; projectTypes: string[]; canManage: boolean; external?: boolean }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");
   const [page, setPage] = useState(1);
   const [types, setTypes] = useState<string[]>(projectTypes);
+  const [guideOpen, setGuideOpen] = useState(false);
   const filtered = useMemo(() => projects.filter(project => {
     const matchesQuery = `${project.name} ${project.client_name || ""} ${projectTypeFor(project)}`.toLowerCase().includes(query.trim().toLowerCase());
     return matchesQuery && (status === "all" || normalizeProjectStatus(project.status) === status) && types.includes(projectTypeFor(project));
@@ -22,6 +30,13 @@ export default function ProjectsPrototype({ projects, projectTypes, canManage, e
 
   return <div className="mx-auto max-w-7xl space-y-6 pb-10">
     <div><h1 className="text-4xl font-bold text-slate-950 sm:text-5xl">Projects</h1></div>
+    <section className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50 text-amber-950 shadow-sm" aria-labelledby="project-directory-guide-heading">
+      <button type="button" aria-expanded={guideOpen} aria-controls="project-directory-guide-details" onClick={() => setGuideOpen(open => !open)} className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-bold hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-inset">
+        <span id="project-directory-guide-heading">How it works</span>
+        <svg aria-hidden="true" viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 transition-transform ${guideOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {guideOpen && <ul id="project-directory-guide-details" className="list-disc space-y-2 border-t border-amber-200 px-4 py-4 pl-9 text-sm leading-6">{PROJECT_DIRECTORY_GUIDE.map(line => <li key={line}>{line}</li>)}</ul>}
+    </section>
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="project-directory-title">
       <div className="space-y-4 border-b border-slate-200 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

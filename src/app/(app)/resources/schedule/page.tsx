@@ -30,6 +30,23 @@ function dateKeyInZone(value: string | Date, timeZone: string) {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+function calendarDateParts(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", day: "numeric" }).formatToParts(value);
+  return {
+    weekday: parts.find(part => part.type === "weekday")?.value ?? "",
+    day: parts.find(part => part.type === "day")?.value ?? "",
+    dateKey: dateKeyInZone(value, timeZone),
+  };
+}
+
+function resourceCalendarDateClasses(value: Date, timeZone: string) {
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(value);
+  const classes: string[] = [];
+  if (weekday === "Sat" || weekday === "Sun") classes.push("resource-calendar-weekend");
+  if (dateKeyInZone(value, timeZone) === dateKeyInZone(new Date(), timeZone)) classes.push("resource-calendar-today");
+  return classes;
+}
+
 function addDaysToKey(value: string, amount: number) {
   const date = new Date(`${value}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + amount);
@@ -199,6 +216,16 @@ export default function GlobalResourceSchedulePage() {
             customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined } }}
             resources={groupedResources as any}
             events={filteredEvents as any}
+            stickyHeaderDates
+            slotMinWidth={54}
+            slotLabelContent={arg => {
+              if (!arg.date) return arg.text;
+              const { weekday, day, dateKey } = calendarDateParts(arg.date, companyTimeZone);
+              const today = dateKey === dateKeyInZone(new Date(), companyTimeZone);
+              return <span className="resource-calendar-timeline-date"><span className="resource-calendar-timeline-weekday">{weekday}</span><span className={`resource-calendar-timeline-day${today ? " is-today" : ""}`}>{day}</span></span>;
+            }}
+            slotLabelClassNames={arg => arg.date ? resourceCalendarDateClasses(arg.date, companyTimeZone) : []}
+            slotLaneClassNames={arg => arg.date ? resourceCalendarDateClasses(arg.date, companyTimeZone) : []}
             eventOrder={[(a: any, b: any) => String(a.extendedProps.resourceName).localeCompare(String(b.extendedProps.resourceName)) || a.title.localeCompare(b.title)]}
             eventOrderStrict
             eventDidMount={info => { info.el.title = tooltip(info.event as any, companyTimeZone); if (info.event.extendedProps.kind === "event") info.el.classList.add("resource-calendar-event"); }}
@@ -219,6 +246,15 @@ export default function GlobalResourceSchedulePage() {
               headerToolbar={{ left: "prev,next today", center: filteredLabel ? "title resourceFilterSummary" : "title", right: "dayGridMonth,dayGridWeek,dayGridDay" }}
               customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined } }}
               events={filteredEvents as any}
+              stickyHeaderDates
+              dayHeaderContent={arg => {
+                if (arg.view.type !== "dayGridWeek") return arg.text;
+                const { weekday, day, dateKey } = calendarDateParts(arg.date, companyTimeZone);
+                const today = dateKey === dateKeyInZone(new Date(), companyTimeZone);
+                return <span className="resource-calendar-week-date"><span className="resource-calendar-week-weekday">{weekday}</span><span className={`resource-calendar-week-day${today ? " is-today" : ""}`}>{day}</span></span>;
+              }}
+              dayHeaderClassNames={arg => resourceCalendarDateClasses(arg.date, companyTimeZone)}
+              dayCellClassNames={arg => resourceCalendarDateClasses(arg.date, companyTimeZone)}
               dayMaxEvents
               eventOrder={[(a: any, b: any) => String(a.extendedProps.resourceName).localeCompare(String(b.extendedProps.resourceName)) || a.title.localeCompare(b.title)]}
               eventOrderStrict

@@ -3,6 +3,7 @@ import db from "@/db";
 import { getCurrentActor } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { statusLabel } from "@/lib/product-language";
+import { formatProjectDate } from "@/lib/projects-ui";
 
 type Project = { id: number; name: string; status: string; client_name: string | null; start_date: string };
 
@@ -20,7 +21,10 @@ export default async function MyProjectsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">My Projects</h1>
+      <div>
+        <h1 className="text-2xl font-bold">My Projects</h1>
+        <p className="mt-1 text-sm text-gray-600">The projects you have access to. Click Open to open one.</p>
+      </div>
       {projects.length === 0 ? (
         <div className="bg-white p-12 rounded shadow-sm text-center text-gray-500">
           You're not assigned to any projects yet.
@@ -43,8 +47,8 @@ export default async function MyProjectsPage() {
                   <td className="px-4 py-3 font-medium">{p.name}</td>
                   <td className="px-4 py-3 text-sm">{statusLabel(p.status)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{p.client_name || "—"}</td>
-                  <td className="px-4 py-3 text-sm text-gray-600">{p.start_date}</td>
-                  <td className="px-4 py-3"><Link className="text-blue-700 hover:underline" href={`/projects/${p.id}`}>View →</Link></td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{formatProjectDate(p.start_date)}</td>
+                  <td className="px-4 py-3"><Link className="text-blue-700 hover:underline" href={`/projects/${p.id}`}>Open →</Link></td>
                 </tr>
               ))}
             </tbody>

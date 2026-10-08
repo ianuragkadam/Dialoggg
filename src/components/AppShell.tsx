@@ -193,7 +193,10 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
               if (user.user_type === "external" && ["My Projects", "Master Calendar", "Resource Calendar", "Resources"].includes(m.label)) return false;
               return !m.adminOnly || user.user_type === "admin" || user.user_type === "owner";
             }).map(m => {
-              const active = pathname === m.href || pathname.startsWith(m.href);
+              const activeMenuItem = MENU
+                .filter(item => pathname === item.href || pathname.startsWith(`${item.href}/`))
+                .sort((left, right) => right.href.length - left.href.length)[0];
+              const active = activeMenuItem?.href === m.href;
               return (
                 <Link
                   key={m.href} href={m.href} onClick={() => setOpen(false)}
