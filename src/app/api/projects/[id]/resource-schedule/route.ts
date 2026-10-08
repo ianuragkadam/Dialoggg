@@ -31,7 +31,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     WHERE t.project_id = ? AND t.is_header = 0
   `).all(projectId) as any[];
 
-  const now=new Date();const eventOccurrences=listEventOccurrences(actor,{rangeStart:request.nextUrl.searchParams.get("start")||new Date(now.getTime()-366*86400000).toISOString(),rangeEnd:request.nextUrl.searchParams.get("end")||new Date(now.getTime()+732*86400000).toISOString(),projectId,includeCompleted:true}).filter(item=>item.pushToProject);
+  const now=new Date();const eventOccurrences=listEventOccurrences(actor,{rangeStart:request.nextUrl.searchParams.get("start")||new Date(now.getTime()-366*86400000).toISOString(),rangeEnd:request.nextUrl.searchParams.get("end")||new Date(now.getTime()+732*86400000).toISOString(),projectId,includeArchived:true}).filter(item=>item.pushToProject);
   return NextResponse.json({
     resources: resources.map(r => ({ id: String(r.id), title: r.name })),
     events: [...events.map(e => ({

@@ -163,12 +163,12 @@ export const REQUIREMENTS_SECTIONS: RequirementSection[] = [
       {
         id: "q09",
         number: 9,
-        prompt: "What should happen when a Project is marked Completed?",
-        context: "Completed work should retain history without cluttering current schedules.",
+        prompt: "What should happen when a job is complete?",
+        context: "Archived jobs should retain history without cluttering active schedules.",
         options: [
-          option("readonly_reopen", "Read-only by default, with Reopen", "Hide it from current calendars but retain historical access and allow an Owner/Admin to reopen it.", true),
+          option("readonly_reopen", "Move to Archived; Owner/Admin can restore", "Hide it from active-only calendar views while retaining history and allowing an Owner/Admin to restore it to Active.", true),
           option("editable", "Remain fully editable", "Completion changes filtering only."),
-          option("locked", "Permanently locked", "A Completed Project cannot be reopened or edited."),
+          option("locked", "Permanently locked", "An Archived Project cannot be restored or edited."),
         ],
       },
       {
@@ -196,12 +196,12 @@ export const REQUIREMENTS_SECTIONS: RequirementSection[] = [
       {
         id: "q44",
         number: 44,
-        prompt: "Should historical calendar views include Completed Projects?",
-        context: "Managers may need to look back without seeing completed work in today's schedule.",
+        prompt: "Should historical calendar views include Archived Projects?",
+        context: "Managers may need to look back without seeing archived work in today's schedule.",
         options: [
-          option("historical", "Yes, on historical dates or when enabled", "Hide Completed Projects by default but allow them in history/filter controls.", true),
-          option("always", "Yes, always", "Completed work remains on all calendar views."),
-          option("never", "No", "Completed Project entries disappear from calendars entirely."),
+          option("historical", "Yes, on historical dates or when enabled", "Hide Archived Projects by default but allow them in history/filter controls.", true),
+          option("always", "Yes, always", "Archived work remains on all calendar views."),
+          option("never", "No", "Archived Project entries disappear from calendars entirely."),
         ],
       },
       {

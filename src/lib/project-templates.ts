@@ -243,7 +243,7 @@ export function listTemplateSourceProjects(companyId: number) {
   const projects = db.prepare(`
     SELECT id, name, start_date
     FROM project
-    WHERE company_id = ? AND status IN ('active', 'completed')
+    WHERE company_id = ? AND status IN ('active', 'archived')
     ORDER BY lower(name), id
   `).all(companyId) as Array<{ id: number; name: string; start_date: string }>;
   return projects.map(project => {
@@ -308,7 +308,7 @@ export function saveProjectAsTemplate(input: {
 
     const source = db.prepare(`
       SELECT id, name, start_date FROM project
-      WHERE id = ? AND company_id = ? AND status IN ('active', 'completed')
+      WHERE id = ? AND company_id = ? AND status IN ('active', 'archived')
     `).get(input.sourceProjectId, input.companyId) as { id: number; name: string; start_date: string } | undefined;
     if (!source) throw new ProjectTemplateDomainError("TEMPLATE_SOURCE_NOT_FOUND", "Source Project not found.");
 

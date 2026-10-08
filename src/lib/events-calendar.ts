@@ -108,12 +108,12 @@ export function expandEventSeries(row:EventRow,rangeStart:string,rangeEnd:string
   return output;
 }
 
-export function listEventOccurrences(actor:Actor,options:{rangeStart:string;rangeEnd:string;projectId?:number|null;projectTypeIds?:number[];includeCompleted?:boolean;resourceId?:number|null}){
+export function listEventOccurrences(actor:Actor,options:{rangeStart:string;rangeEnd:string;projectId?:number|null;projectTypeIds?:number[];includeArchived?:boolean;resourceId?:number|null}){
   if(actor.contextType!=="company"||!actor.companyId)throw new EventDomainError("ACTION_FORBIDDEN","Calendar access is unavailable.",403);
   const conditions=["es.company_id=?","es.status='active'"];const args:Array<number|string>=[actor.companyId];
   if(options.projectId){conditions.push("es.project_id=?");args.push(options.projectId);}
   if(options.projectTypeIds?.length){conditions.push(`(es.project_id IS NULL OR es.project_id IN (SELECT id FROM project WHERE project_type_id IN (${options.projectTypeIds.map(()=>"?").join(",")})))`);args.push(...options.projectTypeIds);}
-  if(!options.includeCompleted)conditions.push("(es.project_id IS NULL OR p.status='active')");
+  if(!options.includeArchived)conditions.push("(es.project_id IS NULL OR p.status='active')");
   if(options.resourceId){conditions.push("EXISTS (SELECT 1 FROM event_resource er WHERE er.series_id=es.id AND er.resource_id=?)");args.push(options.resourceId);}
   if(actor.companyRole==="external"){conditions.push("es.project_id IS NOT NULL AND es.external_visible=1 AND es.push_to_project=1 AND EXISTS (SELECT 1 FROM project_membership pm WHERE pm.project_id=es.project_id AND pm.company_membership_id=?)");args.push(actor.membershipId!);}
   const rows=db.prepare(`SELECT es.* FROM event_series es LEFT JOIN project p ON p.id=es.project_id WHERE ${conditions.join(" AND ")} ORDER BY es.id`).all(...args) as EventRow[];
@@ -123,12 +123,13 @@ export function listEventOccurrences(actor:Actor,options:{rangeStart:string;rang
 function saveResources(seriesId:number,resourceIds:number[]){db.prepare("DELETE FROM event_resource WHERE series_id=?").run(seriesId);const insert=db.prepare("INSERT INTO event_resource(series_id,resource_id) VALUES(?,?)");for(const resourceId of resourceIds)insert.run(seriesId,resourceId);}
 function eventConflicts(companyId:number,seriesId:number){
   const row=db.prepare("SELECT * FROM event_series WHERE id=? AND company_id=?") .get(seriesId,companyId) as EventRow|undefined;if(!row)return [];
+  if(row.project_id && !db.prepare("SELECT 1 FROM project WHERE id=? AND company_id=? AND status='active'").get(row.project_id,companyId))return [];
   const start=row.timing_mode==="all_day"?`${row.start_date}T00:00:00.000Z`:row.start_at!;const horizon=new Date(Date.parse(start)+366*86400000).toISOString();const occurrences=expandEventSeries(row,start,horizon);const output:Array<{occurrenceKey:string;resourceId:number;resourceName:string;withKind:"Task"|"Event";withTitle:string;start:string;end:string;timeZone:string}>=[];
   const resourceName=db.prepare("SELECT name FROM resource WHERE id=?");
   for(const occurrence of occurrences){for(const resourceId of occurrence.resourceIds){
     const tasks=db.prepare(`SELECT t.name,t.start_date,t.duration,t.allow_saturday,t.allow_sunday FROM task t JOIN task_resource tr ON tr.task_id=t.id JOIN project p ON p.id=t.project_id WHERE tr.resource_id=? AND p.company_id=? AND p.status='active' AND t.is_header=0`).all(resourceId,companyId) as Array<{name:string;start_date:string;duration:number;allow_saturday:number;allow_sunday:number}>;
     for(const task of tasks){const taskStart=`${task.start_date}T00:00:00.000Z`,taskEnd=`${addDays(workingDayEnd(task.start_date,task.duration,{allowSaturday:!!task.allow_saturday,allowSunday:!!task.allow_sunday}),1)}T00:00:00.000Z`;if(Date.parse(occurrence.end)>Date.parse(taskStart)&&Date.parse(occurrence.start)<Date.parse(taskEnd))output.push({occurrenceKey:occurrence.occurrenceKey,resourceId,resourceName:(resourceName.get(resourceId) as {name:string}).name,withKind:"Task",withTitle:task.name,start:occurrence.start,end:occurrence.end,timeZone:row.time_zone});}
-    const others=db.prepare(`SELECT es.* FROM event_series es JOIN event_resource er ON er.series_id=es.id WHERE er.resource_id=? AND es.company_id=? AND es.status='active' AND es.id<>?`).all(resourceId,companyId,seriesId) as EventRow[];
+    const others=db.prepare(`SELECT es.* FROM event_series es JOIN event_resource er ON er.series_id=es.id LEFT JOIN project p ON p.id=es.project_id WHERE er.resource_id=? AND es.company_id=? AND es.status='active' AND es.id<>? AND (es.project_id IS NULL OR p.status='active')`).all(resourceId,companyId,seriesId) as EventRow[];
     for(const other of others)for(const candidate of expandEventSeries(other,occurrence.start,occurrence.end))if(Date.parse(occurrence.end)>Date.parse(candidate.start)&&Date.parse(occurrence.start)<Date.parse(candidate.end))output.push({occurrenceKey:occurrence.occurrenceKey,resourceId,resourceName:(resourceName.get(resourceId) as {name:string}).name,withKind:"Event",withTitle:candidate.title,start:occurrence.start,end:occurrence.end,timeZone:row.time_zone});
   }}
   return output.slice(0,100);

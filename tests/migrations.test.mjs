@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 22/);
+    assert.match(second.stdout, /version 23/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -330,7 +330,7 @@ test("Resource migration enforces fixed categories, tenant scope, one-to-one Use
   }
 });
 
-test("Project lifecycle migration enforces approved transitions and archived-only deletion", async () => {
+test("Project lifecycle allows only Active and Archived and requires Archived for deletion", async () => {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-lifecycle-"));
   try {
     const result = migrate(dataDirectory);
@@ -346,17 +346,50 @@ test("Project lifecycle migration enforces approved transitions and archived-onl
       );
       const projectId = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Lifecycle Project', '2026-09-19')").run(companyId, projectTypeId).lastInsertRowid);
       assert.throws(() => database.prepare("DELETE FROM project WHERE id = ?").run(projectId), /PROJECT_ARCHIVE_REQUIRED/);
-      database.prepare("UPDATE project SET status = 'completed' WHERE id = ?").run(projectId);
-      database.prepare("UPDATE project SET status = 'active' WHERE id = ?").run(projectId);
+      assert.throws(() => database.prepare("UPDATE project SET status = 'completed' WHERE id = ?").run(projectId), /PROJECT_LIFECYCLE_INVALID/);
+      assert.throws(() => database.prepare("UPDATE project SET status = 'inactive' WHERE id = ?").run(projectId), /PROJECT_LIFECYCLE_INVALID/);
       database.prepare("UPDATE project SET status = 'archived' WHERE id = ?").run(projectId);
       assert.throws(() => database.prepare("UPDATE project SET status = 'completed' WHERE id = ?").run(projectId), /PROJECT_LIFECYCLE_INVALID/);
       database.prepare("UPDATE project SET status = 'active' WHERE id = ?").run(projectId);
-      database.prepare("UPDATE project SET status = 'completed' WHERE id = ?").run(projectId);
       database.prepare("UPDATE project SET status = 'archived' WHERE id = ?").run(projectId);
       database.prepare("INSERT INTO audit_event(project_id,action,target_type,target_id,result) VALUES(?,'project.archive','project',?,'success')").run(projectId, String(projectId));
       assert.equal(database.prepare("DELETE FROM project WHERE id = ?").run(projectId).changes, 1);
       assert.deepEqual(database.prepare("SELECT project_id,target_id FROM audit_event WHERE action='project.archive'").get(), { project_id: null, target_id: String(projectId) });
       assert.ok(database.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_project_company_status_updated'").get());
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+      database.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("project lifecycle migration archives existing completed and inactive projects", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-status-migration-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const companyId = Number(database.prepare("INSERT INTO company (name) VALUES ('Status Migration Company')").run().lastInsertRowid);
+      const projectTypeId = Number(database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, 'Migration', 'migration')").run(companyId).lastInsertRowid);
+      const completedProjectId = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Legacy Completed', '2026-09-19')").run(companyId, projectTypeId).lastInsertRowid);
+      const inactiveProjectId = Number(database.prepare("INSERT INTO project (company_id, project_type_id, name, start_date) VALUES (?, ?, 'Legacy Inactive', '2026-09-19')").run(companyId, projectTypeId).lastInsertRowid);
+      database.exec("DROP TRIGGER IF EXISTS trg_project_lifecycle_update;");
+      database.prepare("UPDATE project SET status = 'completed' WHERE id = ?").run(completedProjectId);
+      database.prepare("UPDATE project SET status = 'inactive' WHERE id = ?").run(inactiveProjectId);
+      const migration = await import("../src/db/migrations.ts");
+      const lifecycleMigration = migration.MIGRATIONS.find(entry => entry.version === 23);
+      assert.ok(lifecycleMigration);
+      lifecycleMigration.up(database);
+      for (const projectId of [completedProjectId, inactiveProjectId]) {
+        const project = database.prepare("SELECT status, archived_at FROM project WHERE id = ?").get(projectId);
+        assert.equal(project.status, "archived");
+        assert.ok(project.archived_at);
+        assert.throws(() => database.prepare("UPDATE project SET status = 'inactive' WHERE id = ?").run(projectId), /PROJECT_LIFECYCLE_INVALID/);
+      }
     } finally {
       assert.equal(database.pragma("foreign_key_check").length, 0);
       database.close();

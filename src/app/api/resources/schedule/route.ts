@@ -24,6 +24,7 @@ type ScheduleItem = {
   allDay: boolean;
   timeZone?: string;
   recurring?: boolean;
+  activeForConflict: boolean;
 };
 
 export async function GET(request: NextRequest) {
@@ -40,17 +41,19 @@ export async function GET(request: NextRequest) {
   const categories = db.prepare("SELECT id, name FROM resource_category WHERE company_id = ? ORDER BY lower(name), id")
     .all(actor.companyId) as Array<{ id: number; name: string }>;
   const resourceById = new Map(resources.map(resource => [resource.id, resource]));
+  const includeArchived = request.nextUrl.searchParams.get("include_archived") === "true";
   const taskRows = db.prepare(`
     SELECT t.id, t.name, t.start_date, t.duration, t.color, t.allow_saturday, t.allow_sunday,
-      tr.resource_id, p.id AS project_id, p.name AS project_name
+      tr.resource_id, p.id AS project_id, p.name AS project_name, p.status AS project_status
     FROM task t
     JOIN task_resource tr ON tr.task_id = t.id
     JOIN project p ON p.id = t.project_id
     JOIN resource r ON r.id = tr.resource_id AND r.company_id = p.company_id
-    WHERE p.company_id = ? AND t.is_header = 0
-  `).all(actor.companyId) as Array<{ id: number; name: string; start_date: string; duration: number; color: string; allow_saturday: number; allow_sunday: number; resource_id: number; project_id: number; project_name: string }>;
+    WHERE p.company_id = ? AND t.is_header = 0 AND (? = 1 OR p.status = 'active')
+  `).all(actor.companyId, includeArchived ? 1 : 0) as Array<{ id: number; name: string; start_date: string; duration: number; color: string; allow_saturday: number; allow_sunday: number; resource_id: number; project_id: number; project_name: string; project_status: string }>;
   const now=new Date();const rangeStart=request.nextUrl.searchParams.get("start")||new Date(now.getTime()-366*86400000).toISOString();const rangeEnd=request.nextUrl.searchParams.get("end")||new Date(now.getTime()+732*86400000).toISOString();
-  const eventOccurrences=listEventOccurrences(actor,{rangeStart,rangeEnd,includeCompleted:request.nextUrl.searchParams.get("include_completed")==="true"});
+  const eventOccurrences=listEventOccurrences(actor,{rangeStart,rangeEnd,includeArchived});
+  const activeProjectIds = new Set((db.prepare("SELECT id FROM project WHERE company_id = ? AND status = 'active'").all(actor.companyId) as Array<{ id: number }>).map(project => project.id));
 
   const items: ScheduleItem[] = [
     ...taskRows.map(row => ({
@@ -67,6 +70,7 @@ export async function GET(request: NextRequest) {
       taskId: row.id,
       kind: "Task" as const,
       allDay: true,
+      activeForConflict: row.project_status === "active",
     })),
     ...eventOccurrences.flatMap(occurrence => occurrence.resourceIds.map(resourceId => ({
         id: `${occurrence.id}-r${resourceId}`,
@@ -86,12 +90,13 @@ export async function GET(request: NextRequest) {
         allDay: occurrence.allDay,
         timeZone: occurrence.timeZone,
         recurring: occurrence.recurring,
+        activeForConflict: occurrence.projectId === null || activeProjectIds.has(occurrence.projectId),
       }))),
   ];
 
   const conflicts = new Set<string>();
   const byResource = new Map<number, ScheduleItem[]>();
-  for (const item of items) byResource.set(item.resourceId, [...(byResource.get(item.resourceId) ?? []), item]);
+  for (const item of items) if (item.activeForConflict) byResource.set(item.resourceId, [...(byResource.get(item.resourceId) ?? []), item]);
   for (const resourceItems of byResource.values()) {
     resourceItems.sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
     for (let left = 0; left < resourceItems.length; left += 1) {

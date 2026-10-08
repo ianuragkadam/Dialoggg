@@ -22,7 +22,7 @@ export default function MasterCalendarPage() {
   const [selectedProjectTypeIds, setSelectedProjectTypeIds] = useState<number[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [companyTimeZone,setCompanyTimeZone]=useState("UTC");
-  const [includeCompleted,setIncludeCompleted]=useState(false);
+  const [includeArchived,setIncludeArchived]=useState(false);
   const [notice,setNotice]=useState("");
   const [selectedEvent,setSelectedEvent]=useState<any>(null);
   const [selectedTask,setSelectedTask]=useState<any>(null);
@@ -52,11 +52,11 @@ export default function MasterCalendarPage() {
     if (projects.length && !selectedProjectTypeIds.length) { setEvents([]); return; }
     const params = new URLSearchParams();
     if (projectId !== "all") params.set("project_id", projectId);
-    if(includeCompleted)params.set("include_completed","true");
+    if(includeArchived)params.set("include_archived","true");
     for (const typeId of selectedProjectTypeIds) params.append("project_type_id", String(typeId));
     const query = params.toString();
     fetch(query ? `/api/calendar?${query}` : "/api/calendar").then(r => r.json()).then(j => setEvents(j.events || []));
-  }, [projectId, selectedProjectTypeIds, projects.length, projectsLoaded,includeCompleted]);
+  }, [projectId, selectedProjectTypeIds, projects.length, projectsLoaded,includeArchived]);
   useEffect(() => {loadEvents();}, [loadEvents]);
   async function moveEvent(info:any){const props=info.event.extendedProps;if(props.kind!=="event"){info.revert();return;}const start=info.event.startStr,end=info.event.endStr||start;if(!window.confirm(`Move ${info.event.title} to ${start}? Cancel returns it to the original position.`)){info.revert();return;}info.revert();const replacement=info.event.allDay?{startDate:start.slice(0,10),endDate:new Date(Date.parse(end)-86400000).toISOString().slice(0,10)}:{startAt:info.event.start?.toISOString(),endAt:info.event.end?.toISOString()};async function save(confirmConflicts=false){const response=await authenticatedFetch(`/api/events/${props.seriesId}/exceptions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({version:props.version,occurrenceKey:props.occurrenceKey,action:"replace",replacement,confirmConflicts})});const data=await response.json();if(response.status===409&&data?.error?.code==="RESOURCE_CONFLICT"&&!confirmConflicts){if(window.confirm("This move overlaps another Resource assignment. Keep the assignment anyway?"))await save(true);return;}setNotice(response.ok?"Event moved after confirmation. All applicable calendars were refreshed.":data?.error?.message||"The Event could not be moved.");if(response.ok)loadEvents();}await save();}
 
@@ -77,7 +77,7 @@ export default function MasterCalendarPage() {
         projectTypes={projectTypes}
         selectedProjectTypeIds={selectedProjectTypeIds}
         onProjectTypeIdsChange={setSelectedProjectTypeIds}
-        onIncludeCompletedChange={setIncludeCompleted}
+        onIncludeArchivedChange={setIncludeArchived}
         onEventsChanged={loadEvents}
         onAddEventReady={registerAddEvent}
       >

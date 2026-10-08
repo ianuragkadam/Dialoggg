@@ -2333,7 +2333,35 @@ const migration022: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022];
+const migration023: Migration = {
+  version: 23,
+  name: "two_state_project_lifecycle",
+  signature: "normalize legacy non-active project states to archived and restrict lifecycle to active or archived v1",
+  up(database) {
+    database.exec(`
+      UPDATE project
+      SET status = 'archived',
+        archived_at = COALESCE(archived_at, completed_at, updated_at, created_at, CURRENT_TIMESTAMP),
+        updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+      WHERE status NOT IN ('active', 'archived');
+
+      DROP TRIGGER IF EXISTS trg_project_lifecycle_update;
+      CREATE TRIGGER trg_project_lifecycle_update
+      BEFORE UPDATE OF status ON project
+      WHEN NEW.status NOT IN ('active','archived')
+        OR NOT (
+          NEW.status = OLD.status
+          OR (OLD.status = 'active' AND NEW.status = 'archived')
+          OR (OLD.status = 'archived' AND NEW.status = 'active')
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'PROJECT_LIFECYCLE_INVALID');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

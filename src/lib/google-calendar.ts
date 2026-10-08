@@ -324,7 +324,7 @@ function eligibleGoogleItemsForActor(actor: Actor): DeliveryItem[] {
   const now = new Date();
   const rangeStart = new Date(now.getTime() - 366 * 86_400_000).toISOString();
   const rangeEnd = new Date(now.getTime() + 732 * 86_400_000).toISOString();
-  const occurrences = listEventOccurrences(actor, { rangeStart, rangeEnd, includeCompleted: false })
+  const occurrences = listEventOccurrences(actor, { rangeStart, rangeEnd, includeArchived: false })
     .filter(item => external || item.resourceIds.some(resourceId => resourceIds.has(resourceId)));
   const events: DeliveryItem[] = occurrences.map(event => ({
     sourceType: "event",

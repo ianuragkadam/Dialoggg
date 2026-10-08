@@ -1498,9 +1498,9 @@ try {
 
   await check("Project lifecycle transitions persist and reject stale or cross-tenant changes", async () => {
     let current = (await adminA.request(`/api/projects/${lifecycleProjectId}`)).data.project;
-    const crossTenant = await adminB.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action: "archive", version: current.version } });
+    const crossTenant = await adminB.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action: "complete", version: current.version } });
     assert.equal(crossTenant.status, 404);
-    for (const [action, expected, actor] of [["deactivate", "inactive", adminA], ["activate", "active", ownerA], ["deactivate", "inactive", ownerA], ["activate", "active", adminA], ["complete", "completed", adminA], ["reopen", "active", adminA], ["archive", "archived", adminA], ["restore", "active", adminA], ["archive", "archived", adminA]]) {
+    for (const [action, expected, actor] of [["complete", "archived", adminA], ["restore", "active", ownerA], ["complete", "archived", adminA]]) {
       const changed = await actor.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action, version: current.version } });
       assert.equal(changed.status, 200, `${action}: ${JSON.stringify(changed.data)}`);
       current = changed.data.data.project;
@@ -1509,6 +1509,10 @@ try {
         const stale = await adminA.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action: "complete", version: current.version } });
         assert.equal(stale.status, 409);
       }
+    }
+    for (const action of ["deactivate", "archive", "reopen"]) {
+      const removedAction = await adminA.request(`/api/v1/projects/${lifecycleProjectId}/lifecycle`, { method: "PATCH", body: { action, version: current.version } });
+      assert.equal(removedAction.status, 400, `${action}: ${JSON.stringify(removedAction.data)}`);
     }
   });
 
@@ -1914,6 +1918,32 @@ try {
     assert.equal(schedule.status, 200);
     const conflicted = schedule.data.events.filter(event => event.extendedProps.conflict);
     assert.equal(conflicted.length, 2);
+  });
+
+  await check("archived job assignments stay historical and stop resource overlap warnings", async () => {
+    const before = await adminA.request(`/api/projects/${projectAId}`);
+    assert.equal(before.status, 200);
+    const completed = await adminA.request(`/api/v1/projects/${projectAId}/lifecycle`, {
+      method: "PATCH",
+      body: { action: "complete", version: before.data.project.version },
+    });
+    assert.equal(completed.status, 200, JSON.stringify(completed.data));
+    const activeSchedule = await adminA.request("/api/resources/schedule");
+    assert.equal(activeSchedule.status, 200);
+    assert.ok(!activeSchedule.data.events.some(event => event.extendedProps.project_id === projectAId));
+    const history = await adminA.request("/api/resources/schedule?include_archived=true");
+    assert.equal(history.status, 200);
+    const archivedAssignments = history.data.events.filter(event => event.extendedProps.project_id === projectAId);
+    assert.ok(archivedAssignments.length >= 2);
+    assert.ok(archivedAssignments.every(event => !event.extendedProps.conflict));
+    const restored = await ownerA.request(`/api/v1/projects/${projectAId}/lifecycle`, {
+      method: "PATCH",
+      body: { action: "restore", version: completed.data.data.project.version },
+    });
+    assert.equal(restored.status, 200, JSON.stringify(restored.data));
+    const activeAgain = await adminA.request("/api/resources/schedule");
+    assert.equal(activeAgain.status, 200);
+    assert.equal(activeAgain.data.events.filter(event => event.extendedProps.project_id === projectAId && event.extendedProps.conflict).length, 2);
   });
 
   await check("Template save rejects a source Task placed on its excluded weekend without partial rows", async () => {

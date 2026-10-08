@@ -247,16 +247,20 @@ test("Resources UI covers fixed Categories, one-to-one links, lifecycle, and con
 test("Projects UI covers complete fields, lifecycle, rebase, and External boundaries", async () => {
   const data = await read("src/lib/projects-ui.ts");
   const list = await read("src/components/ProjectsPrototype.tsx");
+  const lifecycle = await read("src/components/ProjectStatusControl.tsx");
   const form = await read("src/components/ProjectFormPrototype.tsx");
   const detail = await read("src/components/ProjectWorkspacePrototype.tsx");
   assert.match(data, /project_type_id/);
   assert.doesNotMatch(data, /PROJECT_TYPES\s*=/);
-  assert.match(list, /External\/Client assigned Projects only/);
+  assert.match(list, /All jobs/);
+  assert.match(list, /Archived/);
   for (const field of ["Project Name", "Client Name", "Client Email", "Address", "City", "State", "Zip", "Phone Number", "Project Type", "Project Start Date"]) assert.match(form, new RegExp(field));
   assert.match(form, /Completed Tasks never move/);
   assert.match(form, /Shift unfinished Tasks/);
-  assert.match(detail, /Complete Project\?/);
-  assert.match(detail, /Archive Project\?/);
+  assert.match(lifecycle, /Complete Job/);
+  assert.match(lifecycle, /Are you sure you want to mark this job complete\? It will be moved to Archived\./);
+  assert.match(lifecycle, /Restore to Active/);
+  assert.doesNotMatch(`${list}\n${lifecycle}\n${detail}`, /Deactivated|Inactive|Completed/);
   assert.match(detail, /Permanently delete Project\?/);
   assert.match(detail, /Simple read-only Gantt/);
   assert.match(`${form}\n${detail}`, /authenticatedFetch/);
@@ -282,7 +286,7 @@ test("Events and Calendar UI covers all three views and approved recurrence deci
   const master = await read("src/app/(app)/calendar/page.tsx");
   const project = await read("src/components/ProjectCalendar.tsx");
   const resource = await read("src/app/(app)/resources/schedule/page.tsx");
-  for (const value of ["Project Calendar", "Master Calendar", "Resource Calendar", "Day", "Week", "Month", "Task · all-day schedule", "Event · calendar-only", "Push to Project Calendar", "Include Completed Projects", "Daily", "Weekly", "Monthly", "No User-selected end date", "This occurrence", "Entire series", "Resource scheduling conflict", "Edit in Project Plan"]) assert.match(review, new RegExp(value.replace(/[+?()]/g, "\\$&")));
+  for (const value of ["Project Calendar", "Master Calendar", "Resource Calendar", "Day", "Week", "Month", "Push to Project Calendar", "Active Jobs", "All Jobs", "Daily", "Weekly", "Monthly", "Company Time Zone", "This occurrence", "Entire series", "Resource scheduling conflict", "Edit in Project Plan"]) assert.match(review, new RegExp(value.replace(/[+?()]/g, "\\$&")));
   assert.match(review, /This and following.+not part of v1/s);
   assert.match(review, /Task dragging is disabled/);
   assert.match(review, /Company Time Zone/);

@@ -24,7 +24,7 @@ type ResourceRow = {
   linked_email: string | null;
 };
 
-type AssignmentInterval = ResourceAssignmentUi & { start: number; end: number };
+type AssignmentInterval = ResourceAssignmentUi & { start: number; end: number; activeForConflict: boolean };
 
 export class ResourceValidationError extends Error {
   constructor(public fields: Record<string, string>) {
@@ -79,16 +79,16 @@ function displayDate(value: string | null) {
 function assignmentsForResource(resourceId: number, companyId: number): ResourceAssignmentUi[] {
   const taskRows = db.prepare(`
     SELECT t.id, t.name, t.start_date, t.duration, t.allow_saturday, t.allow_sunday,
-      p.name AS project_name
+      p.name AS project_name, p.status AS project_status
     FROM task_resource tr
     JOIN task t ON t.id = tr.task_id
     JOIN project p ON p.id = t.project_id
     WHERE tr.resource_id = ? AND p.company_id = ?
     ORDER BY t.start_date, t.id
-  `).all(resourceId, companyId) as Array<{ id: number; name: string; start_date: string; duration: number; allow_saturday: number; allow_sunday: number; project_name: string }>;
+  `).all(resourceId, companyId) as Array<{ id: number; name: string; start_date: string; duration: number; allow_saturday: number; allow_sunday: number; project_name: string; project_status: string }>;
   const eventRows = db.prepare(`
     SELECT es.id, es.title, es.timing_mode, es.start_date, es.end_date, es.start_at, es.end_at,
-      COALESCE(p.name, 'Company calendar') AS project_name
+      COALESCE(p.name, 'Company calendar') AS project_name, es.project_id, p.status AS project_status
     FROM event_resource er
     JOIN event_series es ON es.id = er.series_id
     LEFT JOIN project p ON p.id = es.project_id AND p.company_id = es.company_id
@@ -96,7 +96,7 @@ function assignmentsForResource(resourceId: number, companyId: number): Resource
     ORDER BY COALESCE(es.start_at, es.start_date), es.id
   `).all(resourceId, companyId) as Array<{
     id: number; title: string; timing_mode: "all_day" | "timed"; start_date: string | null; end_date: string | null;
-    start_at: string | null; end_at: string | null; project_name: string;
+    start_at: string | null; end_at: string | null; project_name: string; project_id: number | null; project_status: string | null;
   }>;
 
   const intervals: AssignmentInterval[] = [
@@ -105,7 +105,7 @@ function assignmentsForResource(resourceId: number, companyId: number): Resource
       return {
         id: task.id, kind: "Task" as const, title: task.name, project: task.project_name,
         timing: `${displayDate(task.start_date)} – ${displayDate(endDate)} · All day`, conflict: false,
-        start: dateValue(task.start_date), end: dateValue(endDate, true),
+        start: dateValue(task.start_date), end: dateValue(endDate, true), activeForConflict: task.project_status === "active",
       };
     }),
     ...eventRows.map(event => {
@@ -117,12 +117,13 @@ function assignmentsForResource(resourceId: number, companyId: number): Resource
           ? `${displayDate(event.start_at)} – ${displayDate(event.end_at)}`
           : `${displayDate(event.start_date)} – ${displayDate(event.end_date || event.start_date)} · All day`,
         conflict: false, start: dateValue(startValue), end: dateValue(endValue, event.timing_mode === "all_day"),
+        activeForConflict: event.project_id === null || event.project_status === "active",
       };
     }),
   ];
   for (let left = 0; left < intervals.length; left += 1) {
     for (let right = left + 1; right < intervals.length; right += 1) {
-      if (intervals[left].start < intervals[right].end && intervals[right].start < intervals[left].end) {
+      if (intervals[left].activeForConflict && intervals[right].activeForConflict && intervals[left].start < intervals[right].end && intervals[right].start < intervals[left].end) {
         intervals[left].conflict = true;
         intervals[right].conflict = true;
       }
@@ -130,7 +131,7 @@ function assignmentsForResource(resourceId: number, companyId: number): Resource
   }
   return intervals
     .sort((a, b) => a.start - b.start || a.kind.localeCompare(b.kind) || a.id - b.id)
-    .map(({ start: _start, end: _end, ...assignment }) => assignment);
+    .map(({ start: _start, end: _end, activeForConflict: _activeForConflict, ...assignment }) => assignment);
 }
 
 function toDto(row: ResourceRow): ResourceUi {

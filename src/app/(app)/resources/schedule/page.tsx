@@ -106,7 +106,7 @@ export default function GlobalResourceSchedulePage() {
 
   const loadSchedule = useCallback(async () => {
     const [scheduleResponse, resourceResponse, projectResponse] = await Promise.all([
-      fetch(projectId ? "/api/resources/schedule?include_completed=true" : "/api/resources/schedule", { cache: "no-store" }),
+      fetch(projectId ? "/api/resources/schedule?include_archived=true" : "/api/resources/schedule", { cache: "no-store" }),
       fetch("/api/resources", { cache: "no-store" }),
       fetch("/api/projects", { cache: "no-store" }),
     ]);

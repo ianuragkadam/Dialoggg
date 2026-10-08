@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     if (found !== projectTypeIds.length) return NextResponse.json({ error: "Invalid project_type_id" }, { status: 400, headers: noStore });
   }
 
-  const includeCompleted = request.nextUrl.searchParams.get("include_completed") === "true";
+  const includeArchived = request.nextUrl.searchParams.get("include_archived") === "true";
   const now = new Date();
   const rangeStart = request.nextUrl.searchParams.get("start") || new Date(now.getTime() - 366 * 86400000).toISOString();
   const rangeEnd = request.nextUrl.searchParams.get("end") || new Date(now.getTime() + 732 * 86400000).toISOString();
@@ -37,12 +37,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const occurrences = listEventOccurrences(actor, { rangeStart, rangeEnd, projectId, projectTypeIds, includeCompleted });
+    const occurrences = listEventOccurrences(actor, { rangeStart, rangeEnd, projectId, projectTypeIds, includeArchived });
     const conditions = ["p.company_id=?", "t.is_header=0"];
     const args: Array<number> = [actor.companyId];
     if (projectId) { conditions.push("p.id=?"); args.push(projectId); }
     if (projectTypeIds.length) { conditions.push(`p.project_type_id IN (${projectTypeIds.map(() => "?").join(",")})`); args.push(...projectTypeIds); }
-    if (!includeCompleted) conditions.push("p.status='active'");
+    if (!includeArchived) conditions.push("p.status='active'");
     if (actor.companyRole === "external") {
       conditions.push("t.external_visible=1", "EXISTS (SELECT 1 FROM project_membership pm WHERE pm.project_id=p.id AND pm.company_membership_id=?)");
       args.push(actor.membershipId!);
