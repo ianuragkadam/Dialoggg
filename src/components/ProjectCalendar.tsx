@@ -29,9 +29,9 @@ export default function ProjectCalendar({ projectId, canManage = true, projectNa
 
   return (
     <div className="space-y-3">
-      <CalendarWorkflowReview context="project" canManage={canManage} projectId={projectId} projectName={projectName} onEventsChanged={reload} />
-      {notice&&<div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</div>}
-      <div className="dialoggg-calendar bg-white border rounded shadow-sm p-2 sm:p-4">
+      <CalendarWorkflowReview context="project" canManage={canManage} projectId={projectId} projectName={projectName} onEventsChanged={reload}>
+      {notice&&<div role="status" className="mx-4 mt-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</div>}
+      <div className="dialoggg-calendar mx-4 mt-4 rounded border bg-white p-2 shadow-sm sm:p-4">
       <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
         <h2 className="font-semibold">Project Calendar</h2>
         <div className="flex flex-wrap items-center gap-2">
@@ -52,6 +52,7 @@ export default function ProjectCalendar({ projectId, canManage = true, projectNa
       />
       </div>
       {selectedEvent&&<EventOccurrenceDialog event={selectedEvent} canManage={canManage} onClose={()=>setSelectedEvent(null)} onChanged={reload}/>}
+      </CalendarWorkflowReview>
     </div>
   );
 }

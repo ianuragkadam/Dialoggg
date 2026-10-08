@@ -5,10 +5,11 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
 import interactionPlugin from "@fullcalendar/interaction";
 import luxonPlugin from "@fullcalendar/luxon3";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 import EventOccurrenceDialog from "@/components/EventOccurrenceDialog";
 import TaskOccurrenceDialog from "@/components/TaskOccurrenceDialog";
+import { ProjectResourceContext } from "@/components/ProjectResourceContext";
 
 type Resource = { id: string; title: string; category: string };
 type ScheduleEvent = {
@@ -64,6 +65,9 @@ function toOccurrenceDialogEvent(event: ScheduleEvent) {
 }
 
 export default function GlobalResourceSchedulePage() {
+  const projectContext = useContext(ProjectResourceContext);
+  const projectId = projectContext?.projectId;
+  const projectName = projectContext?.projectName;
   const [resources, setResources] = useState<Resource[]>([]);
   const [categories, setCategories] = useState<ResourceCategory[]>([]);
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
@@ -85,25 +89,27 @@ export default function GlobalResourceSchedulePage() {
 
   const loadSchedule = useCallback(async () => {
     const [scheduleResponse, resourceResponse, projectResponse] = await Promise.all([
-      fetch("/api/resources/schedule", { cache: "no-store" }),
+      fetch(projectId ? "/api/resources/schedule?include_completed=true" : "/api/resources/schedule", { cache: "no-store" }),
       fetch("/api/resources", { cache: "no-store" }),
       fetch("/api/projects", { cache: "no-store" }),
     ]);
     const [schedule, resourceData, projectData] = await Promise.all([scheduleResponse.json(), resourceResponse.json(), projectResponse.json()]);
     if (!scheduleResponse.ok) throw new Error(schedule.error || "The Resource Calendar could not be loaded.");
-    const nextResources = (schedule.resources || []) as Resource[];
+    const projectEvents = projectId ? (schedule.events || []).filter((event: ScheduleEvent) => Number(event.extendedProps?.project_id) === projectId) : (schedule.events || []);
+    const projectResourceIds = new Set(projectEvents.map((event: ScheduleEvent) => String(event.resourceId)));
+    const nextResources = ((schedule.resources || []) as Resource[]).filter(resource => !projectId || projectResourceIds.has(String(resource.id)));
     const nextCategories = ((schedule.categories || resourceData.categories || []) as ResourceCategory[]).map(item => item.name);
     setResources(nextResources);
     setCategories((schedule.categories || resourceData.categories || []) as ResourceCategory[]);
-    setEvents((schedule.events || []).map((event: any) => ({ ...event, extendedProps: { ...event.extendedProps, kind: String(event.extendedProps?.kind || "").toLowerCase() } })) as ScheduleEvent[]);
-    setProjects((projectData.projects || []) as Project[]);
+    setEvents(projectEvents.map((event: any) => ({ ...event, extendedProps: { ...event.extendedProps, kind: String(event.extendedProps?.kind || "").toLowerCase() } })) as ScheduleEvent[]);
+    setProjects(((projectData.projects || []) as Project[]).filter(item => !projectId || item.id === projectId));
     if (!preferencesReady) {
       const userResponse = await fetch("/api/me", { cache: "no-store" });
       const userData = await userResponse.json();
       const user = userData.user || {};
       setCanManage(["owner", "admin"].includes(user.user_type));
       setCompanyTimeZone(user.company_time_zone || "UTC");
-      const key = `dialoggg:resource-calendar:${user.membership_id ?? user.identity_id ?? "user"}`;
+      const key = `dialoggg:${projectId ? `project-${projectId}-resource-calendar` : "resource-calendar"}:${user.membership_id ?? user.identity_id ?? "user"}`;
       setPreferencesKey(key);
       const savedView = localStorage.getItem(`${key}:view`);
       if (savedView === "calendar" || savedView === "timeline") setCalendarView(savedView);
@@ -125,7 +131,7 @@ export default function GlobalResourceSchedulePage() {
     }
     setLoaded(true);
     setLoadError("");
-  }, [preferencesReady]);
+  }, [preferencesReady, projectId]);
 
   useEffect(() => { void loadSchedule().catch(error => { setLoadError(error instanceof Error ? error.message : "The Resource Calendar could not be loaded."); setLoaded(true); }); }, [loadSchedule]);
   useEffect(() => {
@@ -173,16 +179,16 @@ export default function GlobalResourceSchedulePage() {
 
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-2xl font-bold">Resource Calendar</h1>
+      {projectId ? <h2 className="text-2xl font-bold">Project Resources</h2> : <h1 className="text-2xl font-bold">Resource Calendar</h1>}
       <div className="flex flex-wrap items-center gap-3">
-        <div role="tablist" aria-label="Resource Calendar view" className="inline-flex rounded-lg border border-slate-300 bg-white p-1 shadow-sm">
+        <div role="tablist" aria-label={projectId ? "Project Resources view" : "Resource Calendar view"} className="inline-flex rounded-lg border border-slate-300 bg-white p-1 shadow-sm">
           {(["timeline", "calendar"] as CalendarView[]).map(view => <button key={view} type="button" role="tab" aria-selected={calendarView === view} onClick={() => setCalendarView(view)} className={`rounded-md px-4 py-2 text-sm font-semibold capitalize ${calendarView === view ? "bg-blue-900 text-white" : "text-slate-700 hover:bg-slate-100"}`}>{view}</button>)}
         </div>
         <div className="text-sm">{conflictCount > 0 ? <span className="rounded bg-red-100 px-3 py-1 text-red-800">⚠️ {conflictCount} overlap{conflictCount === 1 ? "" : "s"} — same resource booked twice</span> : <span className="inline-flex items-center rounded border border-[#A9CF38] bg-[#55681C] px-3 py-1 font-semibold text-white shadow-sm">✓ No scheduling conflicts</span>}</div>
       </div>
     </div>
 
-    <CalendarWorkflowReview context="resource" canManage={canManage} resourceCategories={categories.map(category => category.name)} selectedResourceCategories={selectedCategories} onResourceCategoriesChange={setSelectedCategories} onEventsChanged={() => { void loadSchedule(); }}>
+    <CalendarWorkflowReview context="resource" canManage={canManage} projectId={projectId} projectName={projectName} resourceCategories={categories.map(category => category.name)} selectedResourceCategories={selectedCategories} onResourceCategoriesChange={setSelectedCategories} onEventsChanged={() => { void loadSchedule(); }}>
       <div className="overflow-hidden rounded-b border border-t-0 bg-white p-2 shadow-sm sm:p-4">
         {!loaded ? <div className="p-8 text-center text-slate-500">Loading Resource Calendar…</div> : loadError ? <div role="alert" className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError}</div> : selectedCategories.length === 0 ? <div role="status" className="p-10 text-center text-slate-600">No resource types selected.</div> : calendarView === "timeline" ? (
           <div className="dialoggg-calendar dialoggg-calendar-timeline"><FullCalendar

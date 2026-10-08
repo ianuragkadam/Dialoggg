@@ -2314,7 +2314,26 @@ const migration021: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021];
+const migration022: Migration = {
+  version: 22,
+  name: "project_creator_membership",
+  signature: "record project creator membership and backfill legacy project creators v1",
+  up(database) {
+    addColumn(database, "project", "created_by_membership_id", "created_by_membership_id INTEGER");
+    database.exec(`
+      UPDATE project
+      SET created_by_membership_id = (
+        SELECT cm.id FROM company_membership cm
+        WHERE cm.company_id = project.company_id
+          AND cm.legacy_user_id = project.created_by
+        LIMIT 1
+      )
+      WHERE created_by IS NOT NULL;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

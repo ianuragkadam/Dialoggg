@@ -15,6 +15,7 @@ type Project = {
   address: string | null; city: string | null; state: string | null; zip: string | null;
   phone: string | null; start_date: string; end_date: string | null; note: string | null;
 };
+type ProjectUser = { full_name: string | null; email: string; role: string };
 
 const TABS = [
   { id: "details",       label: "Project Details" },
@@ -25,13 +26,19 @@ const TABS = [
 ];
 
 export default function ProjectTabs({
-  project, internalUsers, canEdit = true, canManage = canEdit, assigned = false,
-}: { project: Project; internalUsers: any[]; canEdit?: boolean; canManage?: boolean; assigned?: boolean; }) {
+  project, projectUsers, createdBy, canEdit = true, canManage = canEdit, assigned = false,
+}: { project: Project; projectUsers: ProjectUser[]; createdBy: string | null; canEdit?: boolean; canManage?: boolean; assigned?: boolean; }) {
   // Read initial tab from URL hash (e.g. #calendar) so deep-links and refresh preserve state
   const [tab, setTab] = useState("plan");
   useEffect(() => {
-    const hash = window.location.hash.replace(/^#/, "");
-    if (hash && TABS.some(t => t.id === hash)) setTab(hash);
+    const syncTab = () => {
+      const hash = window.location.hash.replace(/^#/, "");
+      if (hash && TABS.some(t => t.id === hash)) setTab(hash);
+    };
+    syncTab();
+    window.addEventListener("hashchange", syncTab);
+    window.addEventListener("popstate", syncTab);
+    return () => { window.removeEventListener("hashchange", syncTab); window.removeEventListener("popstate", syncTab); };
   }, []);
   function selectTab(id: string) {
     setTab(id);
@@ -56,7 +63,7 @@ export default function ProjectTabs({
       </nav>
 
       <div>
-        {tab === "details" && <Details project={project} internalUsers={internalUsers} />}
+        {tab === "details" && <Details project={project} projectUsers={projectUsers} createdBy={createdBy} />}
         {tab === "plan"      && (
           <div className="space-y-3">
             <div className="flex flex-wrap items-end justify-between gap-2 px-1">
@@ -71,7 +78,7 @@ export default function ProjectTabs({
           </div>
         )}
         {tab === "calendar"  && <ProjectCalendar projectId={project.id} canManage={canEdit} projectName={project.name} />}
-        {tab === "resources" && <ResourceSchedule projectId={project.id} />}
+        {tab === "resources" && <ResourceSchedule projectId={project.id} projectName={project.name} />}
         {tab === "folders" && <ProjectFoldersPrototype projectId={project.id} projectName={project.name} canManage={canManage} canEdit={canEdit} assigned={assigned} />}
       </div>
     </div>
@@ -119,7 +126,9 @@ function ProjectPlanGuide() {
   );
 }
 
-function Details({ project, internalUsers }: { project: Project; internalUsers: any[] }) {
+function Details({ project, projectUsers, createdBy }: { project: Project; projectUsers: ProjectUser[]; createdBy: string | null }) {
+  const internalUsers = projectUsers.filter(user => user.role !== "external");
+  const externalUsers = projectUsers.filter(user => user.role === "external");
   const row = (label: string, value: any) => (
     <div className="flex border-b py-2">
       <div className="w-40 text-sm text-gray-500">{label}</div>
@@ -127,20 +136,35 @@ function Details({ project, internalUsers }: { project: Project; internalUsers: 
     </div>
   );
   return (
-    <div className="bg-white border rounded shadow-sm p-6 max-w-2xl">
-      <h2 className="font-semibold mb-4">Project Details</h2>
-      {row("Project Name", project.name)}
-      {row("Status", project.status)}
-      {row("Start Date", project.start_date)}
-      {row("End Date", project.end_date)}
-      {row("Client Name", project.client_name)}
-      {row("Client Email", project.client_email)}
-      {row("Address",
-        [project.address, project.city, project.state, project.zip].filter(Boolean).join(", "))}
-      {row("Phone", project.phone)}
-      {row("Notes", project.note)}
-      {row("Internal Users",
-        internalUsers.length ? internalUsers.map(u => u.full_name || u.email).join(", ") : "—")}
+    <div className="max-w-2xl space-y-4">
+      <section className="rounded border bg-white p-6 shadow-sm" aria-labelledby="project-details-heading">
+        <h2 id="project-details-heading" className="mb-4 font-semibold">Project Details</h2>
+        {row("Project Name", project.name)}
+        {row("Created by", createdBy)}
+        {row("Status", project.status)}
+        {row("Start Date", project.start_date)}
+        {row("End Date", project.end_date)}
+        {row("Client Name", project.client_name)}
+        {row("Client Email", project.client_email)}
+        {row("Address",
+          [project.address, project.city, project.state, project.zip].filter(Boolean).join(", "))}
+        {row("Phone", project.phone)}
+        {row("Notes", project.note)}
+      </section>
+      <section className="rounded border bg-white p-6 shadow-sm" aria-labelledby="project-users-heading">
+        <h2 id="project-users-heading" className="mb-4 font-semibold">Users</h2>
+        <div className="space-y-5">
+          <ProjectUserSection title="Internal Users" users={internalUsers} />
+          <ProjectUserSection title="External Users" users={externalUsers} />
+        </div>
+      </section>
     </div>
   );
+}
+
+function ProjectUserSection({ title, users }: { title: string; users: ProjectUser[] }) {
+  return <div>
+    <h3 className="border-b pb-2 text-sm font-semibold">{title}</h3>
+    {users.length ? <ul className="divide-y">{users.map(user => <li key={user.email} className="py-2 text-sm"><span className="font-medium">{user.full_name?.trim() || user.email}</span>{user.full_name?.trim() && <span className="ml-2 text-gray-500">{user.email}</span>}</li>)}</ul> : <p className="py-3 text-sm text-gray-500">No users assigned.</p>}
+  </div>;
 }

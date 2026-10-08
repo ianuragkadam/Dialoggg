@@ -1,18 +1,18 @@
 @import "tailwindcss";
 
-/* Keep Resource Calendar task summaries on-brand and readable. */
-section[aria-label="Resource Calendar workflow review"] section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md {
-  background-color: #3B417D;
-  border-color: #3B417D;
-  color: #fff;
+/* Keep upcoming Task cards readable in the dark tenant theme across calendars. */
+.tenant-theme section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md {
+  background-color: #24355c !important;
+  border-color: #53678d !important;
+  color: #fff !important;
 }
 
-section[aria-label="Resource Calendar workflow review"] section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md :is(p, span) {
-  color: #fff;
+.tenant-theme section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md :is(p, span) {
+  color: #fff !important;
 }
 
-section[aria-label="Resource Calendar workflow review"] section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md a {
-  color: #D1850B;
+.tenant-theme section[aria-label="Upcoming Tasks and Events"] > article:first-of-type li.rounded-md a {
+  color: #ffd166 !important;
 }
 
 :root {

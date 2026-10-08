@@ -38,10 +38,16 @@ export default async function ProjectViewPage({ params }: { params: Promise<{ id
     }, null);
     project = { ...project, derived_end_date: derivedEnd };
   }
-  const internalUsers = external ? [] : db.prepare(`SELECT trim(i.first_name || ' ' || i.last_name) AS full_name, i.normalized_email AS email
+  const projectUsers = external ? [] : db.prepare(`SELECT trim(i.first_name || ' ' || i.last_name) AS full_name, i.normalized_email AS email, cm.role
     FROM identity i JOIN company_membership cm ON cm.identity_id = i.id
     JOIN project_membership pm ON pm.company_membership_id = cm.id
-    WHERE pm.project_id = ? AND cm.company_id = ? AND cm.status = 'active' ORDER BY lower(i.first_name), lower(i.last_name)`).all(project.id, actor.companyId) as Array<{ full_name: string | null; email: string }>;
+    WHERE pm.project_id = ? AND cm.company_id = ? AND cm.status = 'active' ORDER BY lower(i.first_name), lower(i.last_name)`).all(project.id, actor.companyId) as Array<{ full_name: string | null; email: string; role: string }>;
+  const creator = external ? null : db.prepare(`SELECT COALESCE(NULLIF(trim(i.first_name || ' ' || i.last_name), ''), NULLIF(u.full_name, ''), u.email) AS name
+    FROM project p
+    LEFT JOIN company_membership cm ON cm.id = p.created_by_membership_id AND cm.company_id = p.company_id
+    LEFT JOIN identity i ON i.id = cm.identity_id
+    LEFT JOIN user u ON u.id = p.created_by AND u.company_id = p.company_id
+    WHERE p.id = ? AND p.company_id = ?`).get(project.id, actor.companyId) as { name: string | null } | undefined;
   const assigned = isProjectAssigned(project.id, actor.membershipId);
-  return <ProjectWorkspacePrototype project={project} internalUsers={internalUsers} canManage={actor.companyRole === "owner" || actor.companyRole === "admin"} isOwner={actor.companyRole === "owner"} external={external} assigned={assigned} />;
+  return <ProjectWorkspacePrototype project={project} projectUsers={projectUsers} createdBy={creator?.name || null} canManage={actor.companyRole === "owner" || actor.companyRole === "admin"} isOwner={actor.companyRole === "owner"} external={external} assigned={assigned} />;
 }
