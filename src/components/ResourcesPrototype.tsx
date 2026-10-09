@@ -5,9 +5,21 @@ import { useEffect, useMemo, useState } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
 import { RESOURCE_CATEGORIES, type ResourceCategoryUi, type ResourceStatusUi, type ResourceUi } from "@/lib/resources-ui";
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
+import HowItWorks from "@/components/HowItWorks";
+
+type ConflictSummary = { count: number; error: string };
 
 type CategoryFilter = "all" | ResourceCategoryUi;
 type StatusFilter = "all" | ResourceStatusUi;
+const RESOURCE_DIRECTORY_GUIDE = [
+  "A Resource is anything you schedule on a job: an employee, subcontractor, supplier, or piece of equipment. A User is someone who logs in to Dialoggg. Resources do not log in.",
+  "One person can be both. An employee who logs in as a User can also be assigned to Tasks as a Resource. Add them as a Resource when you invite them under Users, or later by opening the Resource and clicking Link User.",
+  "Linking connects the two records. It does not give anyone login access or change what they can do. Each User can be linked to one Resource.",
+  "Click + Add Resource and choose a category: Employee, Subcontractor, Supplier, Equipment, or Other. Categories let you filter the Resource Calendar.",
+  "Assign Resources to Tasks in the Resources column of the Project Plan. Their work then appears on the Resource Calendar.",
+  "Deactivate a Resource that is no longer available. They cannot be assigned to new Tasks or Events, but past assignments and calendar history stay. Deactivating a Resource does not affect a linked User's login.",
+  "Schedule conflicts counts Resources booked for two things at the same time.",
+];
 
 export default function ResourcesPrototype({ initialResources, canManage }: { initialResources: ResourceUi[]; canManage: boolean }) {
   const [resources, setResources] = useState(initialResources);
@@ -19,12 +31,33 @@ export default function ResourcesPrototype({ initialResources, canManage }: { in
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
+  const [conflictSummary, setConflictSummary] = useState<ConflictSummary>({ count: 0, error: "" });
   const filtered = useMemo(() => resources.filter(resource => `${resource.name} ${resource.email} ${resource.category}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) && (category === "all" || resource.category === category) && (status === "all" || resource.status === status)), [category, query, resources, status]);
   const visible = pageItems(filtered, page);
 
   useEffect(() => { if (!target) return; const before = document.body.style.overflow; document.body.style.overflow = "hidden"; const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) setTarget(null); }; document.addEventListener("keydown", close); return () => { document.body.style.overflow = before; document.removeEventListener("keydown", close); }; }, [busy, target]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 4500); return () => window.clearTimeout(timer); }, [toast]);
   useEffect(() => { setPage(1); }, [category, query, status]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/resources/schedule", { cache: "no-store" }).then(async response => {
+      const payload = await response.json();
+      if (!response.ok) throw new Error("Schedule conflicts unavailable");
+      return payload.events || [];
+    }).then((events: Array<{ id: string; resourceId: string; start: string; end: string; extendedProps?: { conflict?: boolean } }>) => {
+      const conflicts = new Set<string>();
+      const byResource = new Map<string, typeof events>();
+      for (const event of events) if (event.extendedProps?.conflict) byResource.set(event.resourceId, [...(byResource.get(event.resourceId) ?? []), event]);
+      for (const resourceEvents of byResource.values()) {
+        const ordered = [...resourceEvents].sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+        for (let left = 0; left < ordered.length; left += 1) for (let right = left + 1; right < ordered.length; right += 1) {
+          if (Date.parse(ordered[left].start) < Date.parse(ordered[right].end) && Date.parse(ordered[right].start) < Date.parse(ordered[left].end)) conflicts.add(`${ordered[left].id}:${ordered[right].id}`);
+        }
+      }
+      if (!cancelled) setConflictSummary({ count: conflicts.size, error: "" });
+    }).catch(() => { if (!cancelled) setConflictSummary({ count: 0, error: "Could not load conflicts" }); });
+    return () => { cancelled = true; };
+  }, []);
 
   async function changeStatus() {
     if (!target || busy) return;
@@ -43,7 +76,8 @@ export default function ResourcesPrototype({ initialResources, canManage }: { in
 
   return <div className="mx-auto max-w-7xl space-y-6 pb-10">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><h1 className="text-3xl font-bold tracking-tight text-slate-950">Resources</h1>{canManage && <Link href="/resources/new" className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white">+ Add Resource</Link>}</div>
-    <section aria-label="Resource summary" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Summary label="Resources" value={resources.length} /><Summary label="Active" value={resources.filter(item => item.status === "active").length} /><Summary label="Linked Users" value={resources.filter(item => item.linkedUser).length} /><Summary label="Schedule conflicts" value={resources.flatMap(item => item.assignments).filter(item => item.conflict).length} tone="amber" /></section>
+    <HowItWorks items={RESOURCE_DIRECTORY_GUIDE} />
+    <section aria-label="Resource summary" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Summary label="Resources" value={resources.length} /><Summary label="Active" value={resources.filter(item => item.status === "active").length} /><Summary label="Linked Users" value={resources.filter(item => item.linkedUser).length} /><Link href="/resources/conflicts" aria-label="View schedule conflicts" className="block rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2"><Summary label="Schedule conflicts" value={conflictSummary.count} tone="amber" note={conflictSummary.error || undefined} /></Link></section>
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="resource-directory-title">
       <div className="space-y-4 border-b border-slate-200 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -86,4 +120,4 @@ export default function ResourcesPrototype({ initialResources, canManage }: { in
   </div>;
 }
 
-function Summary({ label, value, tone = "blue" }: { label: string; value: number; tone?: "blue" | "amber" }) { return <div className={`rounded-xl border p-4 ${tone === "amber" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-slate-950">{value}</p></div>; }
+function Summary({ label, value, tone = "blue", note }: { label: string; value: number; tone?: "blue" | "amber"; note?: string }) { return <div className={`rounded-xl border p-4 transition hover:shadow-sm ${tone === "amber" ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"}`}><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-slate-950">{note || value}</p></div>; }

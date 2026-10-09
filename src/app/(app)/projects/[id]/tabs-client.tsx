@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import ProjectFoldersPrototype from "@/components/ProjectFoldersPrototype";
 import { formatProjectDate } from "@/lib/projects-ui";
+import HowItWorks from "@/components/HowItWorks";
 
 const GanttChart = dynamic(() => import("@/components/GanttChart"), { ssr: false });
 const ProjectPlanWorkflowReview = dynamic(() => import("@/components/ProjectPlanWorkflowReview"), { ssr: false });
@@ -96,38 +97,7 @@ export default function ProjectTabs({
 }
 
 function ProjectPlanHowItWorks() {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <section className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50 text-amber-950 shadow-sm">
-      <h2>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls="project-plan-how-it-works-content"
-          onClick={() => setOpen(value => !value)}
-          className="flex min-h-12 w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm font-bold transition-colors hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-inset"
-        >
-          <span>How it works</span>
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            className={`h-5 w-5 shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
-          </svg>
-        </button>
-      </h2>
-      <div id="project-plan-how-it-works-content" hidden={!open} className="border-t border-amber-200">
-        <ul className="list-disc space-y-2 px-4 py-4 pl-9 text-sm leading-6">
-          {PROJECT_PLAN_HOW_IT_WORKS.map(point => <li key={point}>{point}</li>)}
-        </ul>
-      </div>
-    </section>
-  );
+  return <HowItWorks items={PROJECT_PLAN_HOW_IT_WORKS} />;
 }
 
 function ProjectPlanGuide() {

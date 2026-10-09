@@ -8,6 +8,7 @@ import type { CompanyUserUi } from "@/lib/users-access-ui";
 import { PROJECT_CALENDAR_COLORS } from "@/lib/project-colors";
 import ColorSwatches from "@/components/ColorSwatches";
 import ProjectStatusControl from "@/components/ProjectStatusControl";
+import HowItWorks from "@/components/HowItWorks";
 
 type Form = {
   name: string; clientName: string; clientEmail: string; address: string; city: string;
@@ -60,7 +61,6 @@ export default function ProjectFormPrototype({ mode, project, projectTypes, avai
   const [inviteError, setInviteError] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteOutcome, setInviteOutcome] = useState("");
-  const [guideOpen, setGuideOpen] = useState(false);
   const [idempotencyKey] = useState(() => typeof crypto === "undefined" ? `project-${Date.now()}` : crypto.randomUUID());
   const dirty = JSON.stringify(form) !== JSON.stringify(initial) || queuedInvites.length > 0;
 
@@ -141,13 +141,7 @@ export default function ProjectFormPrototype({ mode, project, projectTypes, avai
 
   return <div className="mx-auto max-w-4xl space-y-6 pb-10">
     <h1 className="text-3xl font-bold text-slate-950">{mode === "create" ? "Add Project" : `Edit ${project?.name}`}</h1>
-    {mode === "create" && <section className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50 text-amber-950 shadow-sm" aria-labelledby="add-project-guide-heading">
-      <button type="button" aria-expanded={guideOpen} aria-controls="add-project-guide-details" onClick={() => setGuideOpen(open => !open)} className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-bold hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-600 focus-visible:ring-inset">
-        <span id="add-project-guide-heading">How it works</span>
-        <svg aria-hidden="true" viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 transition-transform ${guideOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg>
-      </button>
-      {guideOpen && <ul id="add-project-guide-details" className="list-disc space-y-2 border-t border-amber-200 px-4 py-4 pl-9 text-sm leading-6">{ADD_PROJECT_GUIDE.map(line => <li key={line}>{line}</li>)}</ul>}
-    </section>}
+    {mode === "create" && <HowItWorks items={ADD_PROJECT_GUIDE} />}
     {mode === "edit" && project && <ProjectStatusControl project={project} />}
     {message && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-900">{message}</div>}
     <form onSubmit={event => { event.preventDefault(); review(); }} className="space-y-6" noValidate>

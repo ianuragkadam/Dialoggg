@@ -6,8 +6,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
 import type { ProjectTemplateUiItem } from "@/lib/project-templates-ui";
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
+import HowItWorks from "@/components/HowItWorks";
 
 type ApiError = { error?: { message?: string; fields?: Record<string, string> } };
+const PROJECT_TEMPLATES_GUIDE = [
+  "A Template is a saved Task list you can reuse, so you do not rebuild the same plan for every job. Click + Save Project as Template, pick a Project you have already set up, and name the Template. The original Project does not change.",
+  "A Template saves your Tasks and Headers, how long each takes, how they are linked, your weekend settings, and the default Resource Category for each Task. It saves days from the start, not calendar dates, and progress starts at 0% on every new Project.",
+  "Also save current Resource assignments is optional and off by default. If you leave it off, new Projects get only the Category (Employee, Subcontractor, and so on), and you pick the people for each job. If you turn it on, the specific people and equipment are saved too. Anyone who is inactive or missing never stops a Project from being created.",
+  "To start a job from a Template, click Use Template. Enter the Project name, type, and start date, and Dialoggg builds the whole plan from that date, with every Task and link shifted to match. The new plan is a normal one you can edit freely, and your changes never affect the Template.",
+  "View shows what is saved in a Template. Templates cannot be edited. To change one, update a Project Plan the way you want it, save it as a new Template, and delete the old one.",
+  "Rename and Delete change the Template only. Projects already created from it are not affected.",
+];
 
 function SearchIcon() {
   return (
@@ -29,7 +38,6 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [pageError, setPageError] = useState("");
-  const [guideOpen, setGuideOpen] = useState(false);
   const [page, setPage] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -171,6 +179,8 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
         </Link>
       </div>
 
+      <HowItWorks items={PROJECT_TEMPLATES_GUIDE} />
+
       {pageError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">{pageError}</p>}
 
       <section aria-label="Template summary" className="grid gap-3 sm:grid-cols-3">
@@ -221,21 +231,6 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
           </div>
         )}
         <PaginationControls page={page} totalItems={filteredItems.length} onPageChange={setPage} label="Templates" />
-      </section>
-
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="template-guide-title">
-        <button type="button" aria-expanded={guideOpen} aria-controls="template-guide-content" onClick={() => setGuideOpen(open => !open)} className="flex min-h-16 w-full items-center justify-between gap-4 px-5 py-4 text-left font-bold text-slate-950 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-inset">
-          <span id="template-guide-title">How Project Templates Work</span>
-          <svg aria-hidden="true" viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${guideOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg>
-        </button>
-        {guideOpen && <div id="template-guide-content" className="border-t border-slate-200 p-5">
-          <ul className="grid gap-3 text-sm leading-6 text-slate-600 md:grid-cols-2 xl:grid-cols-4">
-            <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Plan structure</strong>Task names, Headers, durations, links, lag, colors, and relative offsets.</li>
-            <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Working rules</strong>Saturday and Sunday settings travel with the saved Tasks.</li>
-            <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Clean start</strong>Fixed dates are recalculated and every Task begins at 0% progress.</li>
-            <li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Independent Projects</strong>Renaming or deleting a Template never changes Projects already made from it.</li>
-          </ul>
-        </div>}
       </section>
 
       {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-md rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl"><span aria-hidden="true" className="mr-2 text-emerald-400">✓</span>{toast}</div>}

@@ -100,11 +100,11 @@ export default function CompanyLogoSettings({ initialLogoUrl }: { initialLogoUrl
   return (
     <section className="rounded border border-blue-200 bg-white p-6 shadow-sm" aria-labelledby="company-logo-heading">
       <h2 id="company-logo-heading" className="font-semibold">Company Logo</h2>
-      <p className="mt-1 text-sm text-gray-600">Upload a logo to show in the header on pages across your company.</p>
+      <p className="mt-1 text-sm text-gray-600">Upload a logo to show in the header on pages across your company. Use a PNG with a transparent background. It appears on a dark header.</p>
       <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start">
         <div className="relative flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3" aria-label={previewUrl ? "Company logo preview" : "Company logo placeholder"}>
           {previewUrl ? <img src={previewUrl} alt="Company logo preview" className="h-full w-full object-contain" /> : <span className="text-center text-sm text-gray-500">Company Logo Here</span>}
-          {previewUrl && <button type="button" onClick={removeLogo} disabled={busy} aria-label={selectedFile ? "Clear selected logo preview" : "Remove company logo"} title={selectedFile ? "Clear selected image" : "Remove company logo"} className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900/80 text-lg leading-none text-white shadow hover:bg-red-600 disabled:opacity-50">×</button>}
+          {previewUrl && <button type="button" onClick={removeLogo} disabled={busy} aria-label={selectedFile ? "Clear selected logo preview" : "Remove company logo"} title={selectedFile ? "Clear selected image" : "Remove company logo"} className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-slate-900/80 text-white shadow hover:bg-red-600 disabled:opacity-50"><svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6 18 18M18 6 6 18" /></svg></button>}
         </div>
         <form onSubmit={submit} className="flex flex-col items-start gap-2">
           <label htmlFor="company-logo-file" className="text-sm font-medium text-gray-800">{logoUrl ? "Replace company logo" : "Choose company logo"}</label>

@@ -8,6 +8,7 @@ import PlatformAdministratorManagement, { type PlatformAdministrator } from "@/c
 import CompanyLogoSettings from "@/components/CompanyLogoSettings";
 import EditAccountProfile from "@/components/EditAccountProfile";
 import path from "node:path";
+import ContactPlatformOwner from "@/components/ContactPlatformOwner";
 
 export default async function AccountPage() {
   const user = await getCurrentUser();
@@ -43,7 +44,10 @@ export default async function AccountPage() {
 
   return (
     <div className="max-w-2xl space-y-4">
-      <h1 className="text-2xl font-bold">Account Settings</h1>
+      <div>
+        <h1 className="text-2xl font-bold">Account Settings</h1>
+        <p className="mt-1 text-sm text-gray-600">Your login details and calendar connection. Owners also manage the company logo and subscription here.</p>
+      </div>
       <div className="bg-white border rounded shadow-sm p-6 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-semibold">Profile information</h2>
@@ -66,7 +70,8 @@ export default async function AccountPage() {
           <div><dt className="text-sm text-gray-500">Start Date</dt><dd className="mt-1 font-semibold">{accountDateLabel(company.signup_date)}</dd></div>
           <div><dt className="text-sm text-gray-500">End Date</dt><dd className="mt-1 font-semibold">{accountDateLabel(company.expiration_date)}</dd></div>
         </dl>
-        <p className="mt-3 text-sm text-gray-600">Only the Platform Owner can change the subscription end date.</p>
+        <p className="mt-3 text-sm text-gray-600">To renew or change your plan, contact Dialoggg support</p>
+        <div className="mt-4 flex justify-end"><ContactPlatformOwner /></div>
       </section>}
       {company && user.company_role === "owner" && actor?.actualCompanyRole === "owner" && !actor.rolePreview && <CompanyLogoSettings
         initialLogoUrl={company.logo_path ? `/api/v1/company/logo?v=${encodeURIComponent(path.basename(company.logo_path))}` : null}
@@ -77,7 +82,7 @@ export default async function AccountPage() {
       />}
       {company ? <div className="rounded border border-blue-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div><h2 className="font-semibold">Google Calendar</h2><p className="mt-1 text-sm text-gray-600">Manage your personal one-way Dialoggg calendar connection and synchronization health.</p></div>
+          <div><h2 className="font-semibold">Google Calendar</h2><p className="mt-1 text-sm text-gray-600">Add your Dialoggg schedule to your own Google Calendar. It&apos;s one-way: changes in Dialoggg show up there, but changes made in Google Calendar are not saved. Make all edits in Dialoggg.</p></div>
           <Link href="/account/google-calendar" className="rounded bg-blue-700 px-4 py-2 text-center text-sm font-semibold text-white hover:bg-blue-800">Manage Google Calendar</Link>
         </div>
       </div> : <div className="rounded border border-blue-200 bg-blue-50 p-6 text-blue-950 shadow-sm">

@@ -7,6 +7,7 @@ import { requireCompanyRole } from "@/lib/guard";
 import { validateMutationRequest } from "@/lib/request-security";
 import { normalizeEmail, recordAudit, requestId } from "@/lib/security";
 import { listCompanyUsers } from "@/lib/user-management";
+import { RESOURCE_CATEGORIES, type ResourceCategoryUi } from "@/lib/resources-ui";
 
 function parseRole(value: unknown): CompanyRole | null {
   return value === "owner" || value === "admin" || value === "employee" || value === "external" ? value : null;
@@ -56,8 +57,12 @@ export async function POST(request: NextRequest) {
   const role = parseRole(body.role);
   const projectIds = parseProjectIds(body.projectIds ?? body.project_ids);
   const addAsResource = body.addAsResource === true || body.add_as_resource === true;
+  const resourceCategory = typeof body.resourceCategory === "string" ? body.resourceCategory : "Employee";
   if (!email || !/^\S+@\S+\.\S+$/.test(email) || !firstName || !lastName || !role || !projectIds) {
     return NextResponse.json({ error: "First name, last name, valid email, role, and valid Project IDs are required." }, { status: 400 });
+  }
+  if (addAsResource && !RESOURCE_CATEGORIES.includes(resourceCategory as ResourceCategoryUi)) {
+    return NextResponse.json({ error: "Choose a valid Resource type." }, { status: 400, headers: { "x-request-id": traceId } });
   }
   if (actor.companyRole !== "owner" && (role === "owner" || role === "admin")) {
     return NextResponse.json({ error: "Only an Owner can invite an Owner or Admin." }, { status: 403 });
@@ -109,19 +114,26 @@ export async function POST(request: NextRequest) {
       const assign = db.prepare("INSERT INTO project_membership (project_id, company_membership_id) VALUES (?, ?)");
       for (const projectId of projectIds) assign.run(projectId, membershipId);
       if (addAsResource) {
-        const employeeCategory = db.prepare(`
-          SELECT id FROM resource_category WHERE company_id = ? AND lower(name) = 'employee'
-        `).get(actor.companyId) as { id: number } | undefined;
-        if (!employeeCategory) throw new Error("EMPLOYEE_CATEGORY_MISSING");
+        const category = db.prepare(`
+          SELECT id FROM resource_category WHERE company_id = ? AND lower(name) = lower(?)
+        `).get(actor.companyId, resourceCategory) as { id: number } | undefined;
+        if (!category) throw new Error("RESOURCE_CATEGORY_MISSING");
         const resourceName = `${firstName} ${lastName}`.trim().replace(/\s+/g, " ");
         const normalizedResourceName = resourceName.toLocaleLowerCase("en-US");
-        db.prepare(`
-          INSERT OR IGNORE INTO resource (company_id, category_id, name, normalized_name, email, linked_membership_id)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(actor.companyId, employeeCategory.id, resourceName, normalizedResourceName, email, membershipId);
-        db.prepare(`UPDATE resource SET name = ?, normalized_name = ?, email = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
-          WHERE company_id = ? AND linked_membership_id = ?`)
-          .run(resourceName, normalizedResourceName, email, actor.companyId, membershipId);
+        const nameTaken = db.prepare(`SELECT 1 FROM resource WHERE company_id = ? AND normalized_name = ? AND linked_membership_id IS NOT ? LIMIT 1`)
+          .get(actor.companyId, normalizedResourceName, membershipId);
+        if (nameTaken) throw new Error("RESOURCE_NAME_EXISTS");
+        const linkedResource = db.prepare(`SELECT id FROM resource WHERE company_id = ? AND linked_membership_id = ?`)
+          .get(actor.companyId, membershipId) as { id: number } | undefined;
+        if (linkedResource) {
+          db.prepare(`UPDATE resource SET category_id = ?, name = ?, normalized_name = ?, email = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND company_id = ?`)
+            .run(category.id, resourceName, normalizedResourceName, email, linkedResource.id, actor.companyId);
+        } else {
+          db.prepare(`INSERT INTO resource (company_id, category_id, name, normalized_name, email, linked_membership_id)
+            VALUES (?, ?, ?, ?, ?, ?)`)
+            .run(actor.companyId, category.id, resourceName, normalizedResourceName, email, membershipId);
+        }
       }
       issueInvitation({
         membershipId,
@@ -137,7 +149,7 @@ export async function POST(request: NextRequest) {
         targetType: "company_membership",
         targetId: membershipId,
         result: "success",
-        metadata: { role, projectCount: projectIds.length, addAsResource },
+        metadata: { role, projectCount: projectIds.length, addAsResource, ...(addAsResource ? { resourceCategory } : {}) },
       });
       return membershipId;
     })();
@@ -148,6 +160,9 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof Error && error.message === "MEMBERSHIP_RESTORE_REQUIRED") {
       return NextResponse.json({ error: "Restore the deactivated membership before creating new invitations or assignments." }, { status: 409 });
+    }
+    if (error instanceof Error && error.message === "RESOURCE_NAME_EXISTS") {
+      return NextResponse.json({ error: "A Resource with this name already exists. Rename the User or link the existing Resource instead." }, { status: 409, headers: { "x-request-id": traceId } });
     }
     recordAudit({
       requestId: traceId,

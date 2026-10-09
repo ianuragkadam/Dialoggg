@@ -247,13 +247,20 @@ body {
   color: #101a2b;
 }
 
-/* Native Users filters open on a light menu; keep their options readable
-   without changing the dark closed-select appearance. */
-.tenant-theme select[aria-label="Filter Internal Users by Role"] option,
-.tenant-theme select[aria-label="Filter Internal Users by Status"] option,
-.tenant-theme select[aria-label="Filter External Users / Clients by Status"] option {
+/* Keep native dropdown menus readable across the tenant app. The closed
+   controls retain their dark styling; only the platform popup uses a light
+   palette so option text stays high-contrast on Windows and other browsers. */
+.tenant-theme select {
+  color-scheme: light;
+}
+
+.tenant-theme select option {
   background-color: #fff;
   color: #101a2b;
+}
+
+.tenant-theme select option:disabled {
+  color: #526174;
 }
 
 /* High-contrast role-preview chip, independent of the tenant amber theme. */
@@ -284,7 +291,6 @@ body {
 }
 
 .tenant-theme input,
-.tenant-theme select,
 .tenant-theme textarea {
   color-scheme: dark;
 }
