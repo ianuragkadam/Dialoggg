@@ -5,9 +5,8 @@ import type { ProjectTemplateUiItem } from "@/lib/project-templates-ui";
 export default function TemplateDetailPrototype({ template }: { template: ProjectTemplateUiItem }) {
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-10">
-      <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm text-slate-500"><Link href="/templates" className="hover:text-blue-700">Project Templates</Link><span aria-hidden="true">/</span><span className="font-medium text-slate-800">{template.name}</span></nav>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Template details</span><h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950">{template.name}</h1><p className="mt-2 text-sm text-slate-600">Saved from {template.sourceProject} · Updated {template.updatedLabel}</p></div>
+        <div><h1 className="text-3xl font-bold tracking-tight text-slate-950">{template.name}</h1><p className="mt-2 text-sm text-slate-600">Saved from {template.sourceProject} · Updated {template.updatedLabel}</p></div>
         <div className="flex flex-wrap gap-2"><Link href="/templates" className="inline-flex min-h-11 items-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-600">Back to Library</Link><Link href={`/templates/${template.id}/use`} className="inline-flex min-h-11 items-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600">Use Template</Link></div>
       </div>
 
