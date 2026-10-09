@@ -2,9 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import ModuleRestricted from "@/components/ModuleRestricted";
-import TemplateUsePrototype from "@/components/TemplateUsePrototype";
+import ProjectFormPrototype from "@/components/ProjectFormPrototype";
 import { getCurrentActor } from "@/lib/auth";
-import { getProjectTemplate } from "@/lib/project-templates";
+import { getProjectTemplate, listProjectTemplates } from "@/lib/project-templates";
+import { listProjectUsers } from "@/lib/projects";
 import { listProjectTypes } from "@/lib/project-types";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -18,5 +19,11 @@ export default async function UseProjectTemplatePage({ params }: { params: Promi
   if (!actor || actor.contextType !== "company" || !actor.companyId || !["owner", "admin"].includes(actor.companyRole ?? "")) return <ModuleRestricted title="Project Templates are restricted" description="Only an Owner or Admin can start a Project from a Template." />;
   const template = getProjectTemplate(Number((await params).id), actor.companyId);
   if (!template) notFound();
-  return <TemplateUsePrototype template={template} projectTypes={listProjectTypes(actor.companyId).map(({ id, name }) => ({ id, name }))} />;
+  return <ProjectFormPrototype
+    mode="create"
+    projectTypes={listProjectTypes(actor.companyId).map(({ id, name }) => ({ id, name }))}
+    availableUsers={listProjectUsers(actor.companyId)}
+    templates={listProjectTemplates(actor.companyId).map(({ id, name }) => ({ id, name }))}
+    initialTemplateId={String(template.id)}
+  />;
 }

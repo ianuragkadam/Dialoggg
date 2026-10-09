@@ -30,10 +30,11 @@ const ADD_PROJECT_GUIDE = [
   "Click Review Project to check everything before it's saved.",
 ];
 
-export default function ProjectFormPrototype({ mode, project, projectTypes, availableUsers, templates = [] }: {
+export default function ProjectFormPrototype({ mode, project, projectTypes, availableUsers, templates = [], initialTemplateId = "" }: {
   mode: "create" | "edit"; project?: ProjectUiRecord;
   projectTypes: Array<{ id: number; name: string }>;
   availableUsers: ProjectUserOptionUi[]; templates?: ProjectTemplateOptionUi[];
+  initialTemplateId?: string;
 }) {
   const initial = useMemo<Form>(() => project ? {
     name: project.name, clientName: project.client_name || "", clientEmail: project.client_email || "",
@@ -41,7 +42,7 @@ export default function ProjectFormPrototype({ mode, project, projectTypes, avai
     phone: (project.phone || "").replace(/\D/g, "").slice(0, 10), projectTypeId: String(project.project_type_id), startDate: project.start_date,
     calendarColor: project.calendar_color || PROJECT_CALENDAR_COLORS[0], note: project.note || "", planSource: "blank", templateId: "",
     assignments: availableUsers.filter(user => user.assigned).map(user => String(user.id)),
-  } : empty, [availableUsers, project]);
+  } : initialTemplateId ? { ...empty, planSource: "template", templateId: initialTemplateId } : empty, [availableUsers, initialTemplateId, project]);
   const [form, setForm] = useState(initial);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
