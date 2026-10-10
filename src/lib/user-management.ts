@@ -151,11 +151,11 @@ export function removeMembership(actor: Actor, membershipId: number) {
   if (row.id === actor.membershipId) throw new Error("SELF_LIFECYCLE_FORBIDDEN");
 
   db.transaction(() => {
-    // Retain the resource and all project/audit history, but sever access and any live links.
+    // Retain the resource link as part of the global identity record. Removing this
+    // company's membership ends login access here without making the same email available
+    // as an unlinked Resource for reuse elsewhere on the platform.
     db.prepare(`UPDATE company_membership SET status = 'deactivated', deactivated_at = COALESCE(deactivated_at, CURRENT_TIMESTAMP),
       removed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(row.id);
-    db.prepare("UPDATE resource SET linked_membership_id = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE linked_membership_id = ? AND company_id = ?")
-      .run(row.id, actor.companyId);
     db.prepare("DELETE FROM project_membership WHERE company_membership_id = ?").run(row.id);
     if (row.legacy_user_id) {
       db.prepare(`DELETE FROM project_user WHERE user_id = ? AND project_id IN (SELECT id FROM project WHERE company_id = ?)`)

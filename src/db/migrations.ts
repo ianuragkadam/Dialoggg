@@ -2235,8 +2235,9 @@ const migration017: Migration = {
   name: "company_expiration_dates",
   signature: "one-year company expiration default with administrator override and never option v1",
   up(database) {
+    addColumn(database, "company", "signup_date", "signup_date TEXT");
     addColumn(database, "company", "expiration_date", "expiration_date TEXT");
-    database.exec("UPDATE company SET expiration_date = date(signup_date, '+1 year') WHERE expiration_date IS NULL");
+    database.exec("UPDATE company SET expiration_date = date(COALESCE(signup_date, CURRENT_TIMESTAMP), '+1 year') WHERE expiration_date IS NULL");
   },
 };
 

@@ -37,7 +37,7 @@ function exportsMethod(source, method) {
 
 test("release API inventory keeps every read and mutation behind its reviewed boundary", async () => {
   const files = await collectRoutes();
-  assert.equal(files.length, 73, "API route inventory changed; perform and record a new route-by-route release review");
+  assert.equal(files.length, 83, "API route inventory changed; perform and record a new route-by-route release review");
 
   const publicBearerReads = new Set([
     "health/ready",

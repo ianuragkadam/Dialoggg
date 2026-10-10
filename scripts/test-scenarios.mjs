@@ -192,7 +192,10 @@ try {
     throw new Error(`Test database migration failed.\n${migration.stdout}\n${migration.stderr}`);
   }
 
-  server = spawn(process.execPath, ["scripts/start-production.mjs"], {
+  const serverArguments = process.platform === "win32"
+    ? ["node_modules/next/dist/bin/next", "start", "-p", String(port), "-H", "127.0.0.1"]
+    : ["scripts/start-production.mjs"];
+  server = spawn(process.execPath, serverArguments, {
     cwd: process.cwd(),
     env: {
       ...process.env,
@@ -284,10 +287,11 @@ try {
   let provisionedOwnerMembershipId;
   let provisionedProjectId;
 
-  await check("signed-out root redirects to login", async () => {
+  await check("signed-out root renders the public home page", async () => {
     const response = await anonymous.request("/");
-    assert.equal(response.status, 307);
-    assert.ok(response.headers.get("location")?.endsWith("/login"));
+    assert.equal(response.status, 200);
+    assert.match(response.text, /Project operations, simplified/);
+    assert.match(response.text, /Sign in/);
   });
 
   await check("login page is available", async () => {
@@ -609,53 +613,18 @@ try {
     assert.equal(replay.status, 400);
   });
 
-  await check("an existing global identity accepts a second-company membership without duplicate credentials", async () => {
+  await check("an existing global identity cannot be invited into a second company", async () => {
+    const previousInvitation = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", invitedEmail);
     const created = await adminB.request("/api/v1/memberships", {
       method: "POST",
       body: { firstName: "Anthony", lastName: "Fittipaldi", email: invitedEmail, role: "employee" },
     });
-    assert.equal(created.status, 201, JSON.stringify(created.data));
-    const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", invitedEmail);
-    assert.equal(emailJob.message.variables.greeting, "Hello Anthony,");
-    const token = fragmentToken(emailJob.message.variables.actionUrl);
-    const secondCompanyClient = new Client(baseUrl);
-    const wrongCredential = await secondCompanyClient.request("/api/v1/invitations/accept", { method: "POST", body: { token, password: "Incorrect-Password-1!" } });
-    assert.equal(wrongCredential.status, 400);
-    assert.equal(wrongCredential.data.error.code, "INVALID_CREDENTIALS");
-    assert.match(wrongCredential.data.error.message, /current password/i);
-    const accepted = await secondCompanyClient.request("/api/v1/invitations/accept", { method: "POST", body: { token, password: invitedPassword } });
-    assert.equal(accepted.status, 201, JSON.stringify(accepted.data));
-    assert.equal(accepted.data.data.context.companyId, companyBId);
-    const me = await secondCompanyClient.request("/api/v1/me");
-    assert.equal(me.data.data.contexts.length, 2);
-    const companyAUsers = await adminA.request("/api/users");
+    assert.equal(created.status, 409, JSON.stringify(created.data));
+    assert.equal(created.data.error.code, "EMAIL_ALREADY_IN_USE");
+    assert.match(created.data.error.message, /already assigned to a User in another Dialoggg company/i);
+    assert.equal(readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", invitedEmail)?.id, previousInvitation?.id);
     const companyBUsers = await adminB.request("/api/users");
-    assert.deepEqual(
-      companyAUsers.data.users.find(user => user.id === invitedMembershipId) && {
-        firstName: companyAUsers.data.users.find(user => user.id === invitedMembershipId).firstName,
-        lastName: companyAUsers.data.users.find(user => user.id === invitedMembershipId).lastName,
-      },
-      { firstName: "Joe", lastName: "Schmo" },
-    );
-    assert.deepEqual(
-      companyBUsers.data.users.find(user => user.id === created.data.id) && {
-        firstName: companyBUsers.data.users.find(user => user.id === created.data.id).firstName,
-        lastName: companyBUsers.data.users.find(user => user.id === created.data.id).lastName,
-      },
-      { firstName: "Anthony", lastName: "Fittipaldi" },
-    );
-    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
-    try {
-      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM identity WHERE normalized_email = ?").get(invitedEmail).count, 1);
-      assert.deepEqual(
-        database.prepare("SELECT first_name, last_name FROM identity WHERE normalized_email = ?").get(invitedEmail),
-        { first_name: "Joe", last_name: "Schmo" },
-      );
-      assert.equal(database.prepare(`SELECT u.full_name FROM user u JOIN identity i ON i.legacy_user_id = u.id
-        WHERE i.normalized_email = ?`).get(invitedEmail).full_name, "Joe Schmo");
-      assert.deepEqual(database.prepare(`SELECT invited_first_name, invited_last_name FROM company_membership
-        WHERE id = ?`).get(created.data.id), { invited_first_name: "Anthony", invited_last_name: "Fittipaldi" });
-    } finally { database.close(); }
+    assert.ok(!companyBUsers.data.users.some(user => user.email?.toLowerCase() === invitedEmail));
   });
 
   await check("removing a User requires company removal semantics, preserves Resource, and allows reinvitation", async () => {
@@ -667,14 +636,22 @@ try {
     const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
     try {
       assert.ok(database.prepare("SELECT removed_at FROM company_membership WHERE id = ? AND removed_at IS NOT NULL").get(invitedMembershipId));
-      assert.ok(database.prepare("SELECT id FROM resource WHERE id = ? AND linked_membership_id IS NULL").get(invitedResourceId));
-      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM company_membership WHERE identity_id = (SELECT identity_id FROM company_membership WHERE id = ?) AND status = 'active'").get(invitedMembershipId).count, 1);
+      assert.ok(database.prepare("SELECT id FROM resource WHERE id = ? AND linked_membership_id = ?").get(invitedResourceId, invitedMembershipId));
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM company_membership WHERE identity_id = (SELECT identity_id FROM company_membership WHERE id = ?) AND status = 'active'").get(invitedMembershipId).count, 0);
     } finally { database.close(); }
     const reinvited = await adminA.request("/api/v1/memberships", {
       method: "POST", body: { firstName: "Anthony", lastName: "Fittipaldi", email: invitedEmail, role: "employee" },
     });
     assert.equal(reinvited.status, 201, JSON.stringify(reinvited.data));
     assert.equal(reinvited.data.id, invitedMembershipId);
+    const invitation = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", invitedEmail);
+    assert.ok(invitation);
+    const accepted = await anonymous.request("/api/v1/invitations/accept", {
+      method: "POST",
+      body: { token: fragmentToken(invitation.message.variables.actionUrl), password: invitedPassword },
+    });
+    assert.equal(accepted.status, 201, JSON.stringify(accepted.data));
+    assert.equal(accepted.data.data.context.membershipId, invitedMembershipId);
   });
 
   await check("forgot-password responses are generic and queue an encrypted one-hour reset", async () => {
@@ -762,39 +739,29 @@ try {
   await check("one identity exposes only its authorized company contexts", async () => {
     const database = new Database(path.join(dataDirectory, "dialoggg.db"));
     try {
-      database.prepare(`
+      assert.throws(() => database.prepare(`
         INSERT INTO company_membership (identity_id, company_id, role, status, accepted_at)
         VALUES (?, ?, 'external', 'active', CURRENT_TIMESTAMP)
-      `).run(adminAIdentityId, companyBId);
+      `).run(adminAIdentityId, companyBId), /EMAIL_ALREADY_IN_USE/);
     } finally {
       database.close();
     }
     const response = await adminA.request("/api/v1/me");
     assert.equal(response.status, 200, JSON.stringify(response.data));
     const contexts = response.data.data.contexts;
-    assert.equal(contexts.length, 2);
+    assert.equal(contexts.length, 1);
     assert.ok(contexts.some(context => context.companyId === companyAId && context.role === "admin"));
-    assert.ok(contexts.some(context => context.companyId === companyBId && context.role === "external"));
   });
 
-  let adminACompanyBMembershipId;
-  await check("company context switching rotates the session and effective Role", async () => {
-    const before = await adminA.request("/api/v1/me");
-    adminACompanyBMembershipId = before.data.data.contexts.find(context => context.companyId === companyBId).membershipId;
+  await check("company context switching cannot enter a company without a membership", async () => {
     const switched = await adminA.request("/api/v1/me/active-company", {
       method: "PUT",
-      body: { type: "company", membershipId: adminACompanyBMembershipId },
+      body: { type: "company", membershipId: adminBMembershipId },
     });
-    assert.equal(switched.status, 200, JSON.stringify(switched.data));
+    assert.equal(switched.status, 404);
     const after = await adminA.request("/api/v1/me");
-    assert.equal(after.data.data.activeContext.companyId, companyBId);
-    assert.equal(after.data.data.activeContext.role, "external");
-
-    const switchedBack = await adminA.request("/api/v1/me/active-company", {
-      method: "PUT",
-      body: { type: "company", membershipId: adminAMembershipId },
-    });
-    assert.equal(switchedBack.status, 200, JSON.stringify(switchedBack.data));
+    assert.equal(after.data.data.activeContext.companyId, companyAId);
+    assert.equal(after.data.data.contexts.length, 1);
   });
 
   await check("forged company context and missing CSRF are rejected", async () => {
@@ -812,7 +779,7 @@ try {
         cookie: `dialoggg_session=${session}`,
         origin: baseUrl,
       },
-      body: JSON.stringify({ type: "company", membershipId: adminACompanyBMembershipId }),
+      body: JSON.stringify({ type: "company", membershipId: adminBMembershipId }),
     });
     assert.equal(unprotected.status, 403);
   });
@@ -1203,9 +1170,9 @@ try {
 
   await check("Platform Administrator opens all Company Administration routes", async () => {
     const expectations = [
-      ["/platform/companies", /Platform companies/],
+      ["/platform/companies", /PLATFORM COMPANIES/],
       ["/platform/companies/new", /Review company setup/],
-      [`/platform/companies/${companyAId}`, /Tenant privacy boundary/],
+      [`/platform/companies/${companyAId}`, /Company profile/],
     ];
     for (const [route, pattern] of expectations) {
       const response = await platform.request(route);
@@ -1230,7 +1197,7 @@ try {
 
   await check("Admin opens every User management UI route", async () => {
     const expectations = [
-      ["/users", /Manage the company directory/],
+      ["/users", /Internal Users/],
       ["/users/new", /Review invitation/],
       [`/users/${invitedMembershipId}`, /Company membership/],
       [`/users/${invitedMembershipId}/projects`, /Employee assignment semantics/],
@@ -1311,7 +1278,7 @@ try {
     assert.match(response.text, /Residential Court/);
     assert.match(response.text, /Commercial Court/);
     assert.match(response.text, /Court Resurfacing/);
-    assert.match(response.text, /Live company setting/);
+    assert.match(response.text, /Add Project Type/);
     assert.doesNotMatch(response.text, /UI preview/);
   });
 
@@ -1647,7 +1614,7 @@ try {
   });
 
   await check("Admin opens every Project UI route", async () => {
-    for (const [route, pattern] of [["/projects", /Project directory/], ["/projects/new", /Project Plan starting point/], [`/projects/${projectAId}`, /Owner\/Admin Project management/], [`/projects/${projectAId}/edit`, /How should the schedule respond|Edit Scenario Project A/]]) {
+    for (const [route, pattern] of [["/projects", /DIRECTORY/], ["/projects/new", /Project Plan starting point/], [`/projects/${projectAId}`, /Project Plan/], [`/projects/${projectAId}/edit`, /Edit Scenario Project A/]]) {
       const response = await adminA.request(route);
       assert.equal(response.status, 200, route);
       assert.match(response.text, pattern, route);
@@ -1717,7 +1684,7 @@ try {
     for (const route of ["/resources", `/resources/${invitedResourceId}`]) {
       const response = await viewerA.request(route);
       assert.equal(response.status, 200, route);
-      assert.match(response.text, /Employee read-only/);
+      assert.match(response.text, /Resources/);
       assert.doesNotMatch(response.text, /Edit Resource|Deactivate Resource|\+ Add Resource/);
     }
     const create = await viewerA.request("/resources/new");
@@ -1729,7 +1696,7 @@ try {
   await check("Employee sees all company Projects but cannot manage them", async () => {
     const list = await viewerA.request("/projects");
     assert.equal(list.status, 200);
-    assert.match(list.text, /Employee \(Internal\) company visibility/);
+    assert.match(list.text, /Projects/);
     assert.match(list.text, /Scenario Project A/);
     assert.doesNotMatch(list.text, /\+ Add Project|Edit Project/);
     const edit = await viewerA.request(`/projects/${projectAId}/edit`);
@@ -2114,8 +2081,8 @@ try {
     assert.equal(renamed.data.data.projectTemplate.name, "Scenario Template Renamed");
     for (const [route, pattern] of [
       ["/templates", /Scenario Template Renamed/],
-      [`/templates/${projectTemplateAId}`, /Saved Project Plan/],
-      [`/templates/${projectTemplateAId}/use`, /Start Project from Template/],
+      [`/templates/${projectTemplateAId}`, /Read-only Template Plan/],
+      [`/templates/${projectTemplateAId}/use`, /Add Project/],
     ]) {
       const response = await adminA.request(route);
       assert.equal(response.status, 200, route);

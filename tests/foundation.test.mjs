@@ -62,7 +62,7 @@ test("Project Types UI covers the complete safe management workflow", async () =
   assert.match(component, /role="alertdialog"/);
   assert.match(component, /aria-modal="true"/);
   assert.match(component, /authenticatedFetch/);
-  assert.match(component, /Live company setting/);
+  assert.match(component, /reusable label for this company/);
   assert.match(component, /affectedProjects/);
   assert.match(page, /listProjectTypes/);
   assert.match(collectionApi, /createProjectType/);
@@ -182,7 +182,7 @@ test("Company Administration UI is isolated from tenant navigation and content",
   assert.match(list, /deleteTarget\.name/);
   assert.match(list, /\/edit`/);
   assert.match(edit, /Company Name/);
-  assert.match(edit, /supported company time zone/);
+  assert.match(edit, /company's required time zone/);
   assert.match(edit, /COMPANY_NAME_EXISTS|Company details could not be saved/);
   assert.match(itemApi, /validateMutationRequest/);
   assert.match(itemApi, /export async function DELETE/);
@@ -288,7 +288,7 @@ test("Events and Calendar UI covers all three views and approved recurrence deci
   const resource = await read("src/app/(app)/resources/schedule/page.tsx");
   for (const value of ["Project Calendar", "Master Calendar", "Resource Calendar", "Day", "Week", "Month", "Push to Project Calendar", "Active Jobs", "All Jobs", "Daily", "Weekly", "Monthly", "Company Time Zone", "This occurrence", "Entire series", "Resource scheduling conflict", "Edit in Project Plan"]) assert.match(review, new RegExp(value.replace(/[+?()]/g, "\\$&")));
   assert.match(review, /This and following.+not part of v1/s);
-  assert.match(review, /Task dragging is disabled/);
+  assert.match(review, /Tasks can't be dragged here/);
   assert.match(review, /Company Time Zone/);
   assert.match(`${master}\n${project}\n${resource}`, /CalendarWorkflowReview/);
   assert.match(master, /dayGridDay/);
@@ -300,9 +300,9 @@ test("Google Calendar UI covers one-way personal connection and synchronization 
   const component = await read("src/components/GoogleCalendarManager.tsx");
   const account = await read("src/app/(app)/account/page.tsx");
   const page = await read("src/app/(app)/account/google-calendar/page.tsx");
-  for (const value of ["Dialoggg stays the source of truth", "Synchronization is one-way", "dedicated calendar named", "Nothing is written to your primary Google calendar", "Google default reminders", "External/Client", "Remove managed items", "Retain existing items", "Safe Google item preview", "24 hours", "within two minutes", "Resume Google synchronization?"]) assert.match(component, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
-  assert.match(component, /one-to-one/);
-  assert.match(component, /least-privilege/);
+  for (const value of ["Dialoggg remains the source of truth", "It’s one-way", "calendar named", "Your own calendars and events are never read or changed", "Google default reminders", "Clients see only what’s shared with them", "Remove managed items", "Retain existing items", "Safe Google item preview", "24-hour retry window", "within a few minutes", "Resume Google synchronization?"]) assert.match(component, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
+  assert.match(component, /calendar\.app\.created/);
+  assert.match(component, /Each person connects their own/);
   assert.match(account, /Manage Google Calendar/);
   assert.match(account, /\/account\/google-calendar/);
   assert.match(page, /getCurrentUser/);
@@ -314,7 +314,7 @@ test("Microsoft Storage UI covers company setup and Project Common/Private bound
   const folders = await read("src/components/ProjectFoldersPrototype.tsx");
   const page = await read("src/app/(app)/settings/microsoft-storage/page.tsx");
   const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
-  for (const value of ["OneDrive for Business", "SharePoint document library", "Dialoggg does not store Project files", "Microsoft 365 administrators", "No anonymous links", "Change company folder root?", "Existing Project folders do not move", "Disconnect Microsoft Storage?"]) assert.match(company, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
+  for (const value of ["OneDrive for Business", "SharePoint document library", "Dialoggg never stores your files", "Microsoft 365 account", "No one at Dialoggg can see your files", "Change company folder root?", "Existing Project folders do not move", "Disconnect Microsoft Storage?"]) assert.match(company, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
   for (const value of ["Common", "Private", "Create automatically", "Link existing folder", "Stable Microsoft IDs", "Missing or moved", "Permission denied", "Company disconnected"]) assert.match(folders, new RegExp(value, "i"));
   assert.match(folders, /never renames, moves, or deletes Microsoft folders/);
   assert.match(page, /Owner or Admin/);
