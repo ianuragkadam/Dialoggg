@@ -217,7 +217,7 @@ export default function GlobalResourceSchedulePage() {
             resources={groupedResources as any}
             events={filteredEvents as any}
             stickyHeaderDates
-            slotMinWidth={54}
+            slotMinWidth={58}
             slotLabelContent={arg => {
               if (!arg.date) return arg.text;
               const { weekday, day, dateKey } = calendarDateParts(arg.date, companyTimeZone);

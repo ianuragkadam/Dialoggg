@@ -562,7 +562,7 @@ try {
   await check("Admin invitation creates pending membership, linked Resource, and encrypted 72-hour email", async () => {
     const response = await adminA.request("/api/v1/memberships", {
       method: "POST",
-      body: { firstName: "Invited", lastName: "Employee", email: invitedEmail, role: "employee", addAsResource: true },
+      body: { firstName: "Joe", lastName: "Schmo", email: invitedEmail, role: "employee", addAsResource: true },
     });
     assert.equal(response.status, 201, JSON.stringify(response.data));
     invitedMembershipId = response.data.id;
@@ -612,23 +612,69 @@ try {
   await check("an existing global identity accepts a second-company membership without duplicate credentials", async () => {
     const created = await adminB.request("/api/v1/memberships", {
       method: "POST",
-      body: { firstName: "Invited", lastName: "Employee", email: invitedEmail, role: "employee" },
+      body: { firstName: "Anthony", lastName: "Fittipaldi", email: invitedEmail, role: "employee" },
     });
     assert.equal(created.status, 201, JSON.stringify(created.data));
     const emailJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", invitedEmail);
+    assert.equal(emailJob.message.variables.greeting, "Hello Anthony,");
     const token = fragmentToken(emailJob.message.variables.actionUrl);
     const secondCompanyClient = new Client(baseUrl);
     const wrongCredential = await secondCompanyClient.request("/api/v1/invitations/accept", { method: "POST", body: { token, password: "Incorrect-Password-1!" } });
     assert.equal(wrongCredential.status, 400);
+    assert.equal(wrongCredential.data.error.code, "INVALID_CREDENTIALS");
+    assert.match(wrongCredential.data.error.message, /current password/i);
     const accepted = await secondCompanyClient.request("/api/v1/invitations/accept", { method: "POST", body: { token, password: invitedPassword } });
     assert.equal(accepted.status, 201, JSON.stringify(accepted.data));
     assert.equal(accepted.data.data.context.companyId, companyBId);
     const me = await secondCompanyClient.request("/api/v1/me");
     assert.equal(me.data.data.contexts.length, 2);
+    const companyAUsers = await adminA.request("/api/users");
+    const companyBUsers = await adminB.request("/api/users");
+    assert.deepEqual(
+      companyAUsers.data.users.find(user => user.id === invitedMembershipId) && {
+        firstName: companyAUsers.data.users.find(user => user.id === invitedMembershipId).firstName,
+        lastName: companyAUsers.data.users.find(user => user.id === invitedMembershipId).lastName,
+      },
+      { firstName: "Joe", lastName: "Schmo" },
+    );
+    assert.deepEqual(
+      companyBUsers.data.users.find(user => user.id === created.data.id) && {
+        firstName: companyBUsers.data.users.find(user => user.id === created.data.id).firstName,
+        lastName: companyBUsers.data.users.find(user => user.id === created.data.id).lastName,
+      },
+      { firstName: "Anthony", lastName: "Fittipaldi" },
+    );
     const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
     try {
       assert.equal(database.prepare("SELECT COUNT(*) AS count FROM identity WHERE normalized_email = ?").get(invitedEmail).count, 1);
+      assert.deepEqual(
+        database.prepare("SELECT first_name, last_name FROM identity WHERE normalized_email = ?").get(invitedEmail),
+        { first_name: "Joe", last_name: "Schmo" },
+      );
+      assert.equal(database.prepare(`SELECT u.full_name FROM user u JOIN identity i ON i.legacy_user_id = u.id
+        WHERE i.normalized_email = ?`).get(invitedEmail).full_name, "Joe Schmo");
+      assert.deepEqual(database.prepare(`SELECT invited_first_name, invited_last_name FROM company_membership
+        WHERE id = ?`).get(created.data.id), { invited_first_name: "Anthony", invited_last_name: "Fittipaldi" });
     } finally { database.close(); }
+  });
+
+  await check("removing a User requires company removal semantics, preserves Resource, and allows reinvitation", async () => {
+    const removed = await adminA.request(`/api/v1/memberships/${invitedMembershipId}`, { method: "DELETE" });
+    assert.equal(removed.status, 200, JSON.stringify(removed.data));
+    assert.equal(removed.data.data.removed, true);
+    const listed = await adminA.request("/api/users");
+    assert.equal(listed.data.users.some(user => user.id === invitedMembershipId), false);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.ok(database.prepare("SELECT removed_at FROM company_membership WHERE id = ? AND removed_at IS NOT NULL").get(invitedMembershipId));
+      assert.ok(database.prepare("SELECT id FROM resource WHERE id = ? AND linked_membership_id IS NULL").get(invitedResourceId));
+      assert.equal(database.prepare("SELECT COUNT(*) AS count FROM company_membership WHERE identity_id = (SELECT identity_id FROM company_membership WHERE id = ?) AND status = 'active'").get(invitedMembershipId).count, 1);
+    } finally { database.close(); }
+    const reinvited = await adminA.request("/api/v1/memberships", {
+      method: "POST", body: { firstName: "Anthony", lastName: "Fittipaldi", email: invitedEmail, role: "employee" },
+    });
+    assert.equal(reinvited.status, 201, JSON.stringify(reinvited.data));
+    assert.equal(reinvited.data.id, invitedMembershipId);
   });
 
   await check("forgot-password responses are generic and queue an encrypted one-hour reset", async () => {
@@ -704,6 +750,10 @@ try {
     const secondJob = readEmailOutbox(dataDirectory, testEncryptionKey, "invitation_email", email);
     const newToken = fragmentToken(secondJob.message.variables.actionUrl);
     assert.notEqual(newToken, oldToken);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(database.prepare("SELECT status FROM outbox_job WHERE id = ?").get(firstJob.id).status, "cancelled");
+    } finally { database.close(); }
     assert.equal((await anonymous.request("/api/v1/invitations/accept", { method: "POST", body: { token: oldToken, password: "Reissued-Password-1!" } })).status, 400);
     const reissuedClient = new Client(baseUrl);
     assert.equal((await reissuedClient.request("/api/v1/invitations/accept", { method: "POST", body: { token: newToken, password: "Reissued-Password-1!" } })).status, 201);
@@ -2484,8 +2534,8 @@ try {
     assert.equal(response.data.project.name, "Scenario Project A");
   });
 
-  await check("admin can delete another company user and revoke their sessions", async () => {
-    const response = await adminA.request(`/api/users/${viewerAMembershipId}`, { method: "DELETE" });
+  await check("admin can deactivate another company user and revoke their sessions", async () => {
+    const response = await adminA.request(`/api/v1/memberships/${viewerAMembershipId}`, { method: "PATCH", body: { action: "deactivate" } });
     assert.equal(response.status, 200);
     const revoked = await viewerA.request("/api/me");
     assert.equal(revoked.status, 401);
@@ -2502,6 +2552,9 @@ try {
       body: { projectIds: [projectAId] },
     });
     assert.equal(assign.status, 403);
+    const removed = await adminA.request(`/api/users/${viewerAMembershipId}`, { method: "DELETE" });
+    assert.equal(removed.status, 200, JSON.stringify(removed.data));
+    assert.equal((await adminA.request("/api/users")).data.users.some(user => user.id === viewerAMembershipId), false);
   });
 } finally {
   if (server && server.exitCode === null) {

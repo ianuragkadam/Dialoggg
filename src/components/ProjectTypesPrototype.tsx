@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { authenticatedFetch } from "@/lib/client-fetch";
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
+import HowItWorks from "@/components/HowItWorks";
 
 type AffectedProject = { id: number; name: string };
 type ProjectTypeItem = {
@@ -18,6 +19,15 @@ type ProjectTypeItem = {
 type EditorState = { mode: "create" | "rename"; itemId?: number; originalName: string };
 type ApiError = { error?: { message?: string; fields?: { name?: string }; details?: { affectedProjects?: AffectedProject[] } } };
 type ApiItem = Omit<ProjectTypeItem, "updatedLabel">;
+const PROJECT_TYPES_GUIDE = [
+  "Project Types are your own labels for the kinds of jobs you do, such as Acrylic, Modular, or Hardwood.",
+  "Click + Add Project Type to create one. Each name has to be different from the others.",
+  "Choose a type when you add a project. Every project needs one.",
+  "Use types to filter All Projects and the Master Calendar so you see just one kind of job.",
+  "Rename a type and every project using it shows the new name.",
+  "Delete works only when no project is using the type. If some are, you'll see which ones, and you'll need to change them to another type first.",
+  "Owners and Admins can add, rename, and delete types.",
+];
 
 function projectCountLabel(count: number) {
   return `${count} ${count === 1 ? "Project" : "Projects"}`;
@@ -54,7 +64,6 @@ export default function ProjectTypesPrototype({ initialItems }: { initialItems: 
   const [discardOpen, setDiscardOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
-  const [rulesOpen, setRulesOpen] = useState(false);
   const [page, setPage] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastTriggerRef = useRef<HTMLElement | null>(null);
@@ -170,17 +179,21 @@ export default function ProjectTypesPrototype({ initialItems }: { initialItems: 
 
   return <div className="mx-auto max-w-6xl space-y-6 pb-10">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h1 className="text-3xl font-bold tracking-tight text-slate-950">Project Types</h1></div><button type="button" onClick={openCreate} className="project-type-add-button inline-flex min-h-11 items-center justify-center rounded-lg px-4 py-2.5 text-sm font-bold"><span aria-hidden="true" className="mr-2 text-lg">+</span>Add Project Type</button></div>
+    <HowItWorks items={PROJECT_TYPES_GUIDE} />
     {pageError && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">{pageError}</div>}
-    <section aria-label="Project Type summary" className="grid gap-3 sm:grid-cols-2"><Summary label="Project Types" value={items.length}/><Summary label="Assigned Projects" value={assignedProjects}/></section>
+    <section aria-label="Project Type summary and search" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(260px,1.25fr)] lg:items-stretch">
+      <Summary label="Project Types" value={items.length}/>
+      <Summary label="Assigned Projects" value={assignedProjects}/>
+      <div className="flex items-center rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><div className="relative w-full"><label htmlFor="project-type-search" className="sr-only">Search Project Types</label><span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400"><SearchIcon/></span><input id="project-type-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search Project Types" className="min-h-11 w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm"/></div></div>
+    </section>
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="project-types-list-title">
-      <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 id="project-types-list-title" className="font-bold text-slate-950">Company Project Types</h2><p className="mt-1 text-sm text-slate-500">Names must be unique, including differences in uppercase and lowercase letters.</p></div><div className="relative w-full sm:w-72"><label htmlFor="project-type-search" className="sr-only">Search Project Types</label><span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400"><SearchIcon/></span><input id="project-type-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search Project Types" className="min-h-11 w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm"/></div></div>
+      <h2 id="project-types-list-title" className="sr-only">Project Types</h2>
       {!visibleItems.length ? <div className="px-6 py-14 text-center"><div aria-hidden="true" className="text-2xl">🏷️</div><h3 className="mt-4 font-bold text-slate-950">{items.length ? "No matching Project Types" : "No Project Types yet"}</h3><p className="mt-1 text-sm text-slate-500">{items.length ? `No Project Type matches “${query.trim()}”. Try another name or clear the search.` : "Add a Project Type before creating a Project."}</p>{items.length > 0 && <button type="button" onClick={() => setQuery("")} className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold">Clear search</button>}</div> : <>
         <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[720px]"><thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Project Type</th><th className="px-5 py-3">Used by</th><th className="px-5 py-3">Last updated</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-200">{visibleItems.map(item => <tr key={item.id}><td className="px-5 py-4 font-semibold">{item.name}</td><td className="px-5 py-4 text-sm text-blue-700">{projectCountLabel(item.projectCount)}</td><td className="px-5 py-4 text-sm text-slate-500">{item.updatedLabel}</td><td className="px-5 py-4">{actionButtons(item)}</td></tr>)}</tbody></table></div>
         <div className="divide-y divide-slate-200 md:hidden">{visibleItems.map(item => <article key={item.id} className="space-y-4 p-4"><div className="flex items-start justify-between gap-4"><div><h3 className="font-bold">{item.name}</h3><p className="mt-1 text-sm font-semibold text-blue-700">{projectCountLabel(item.projectCount)}</p></div><span className="text-xs text-slate-500">{item.updatedLabel}</span></div>{actionButtons(item)}</article>)}</div>
       </>}
       <PaginationControls page={page} totalItems={filteredItems.length} onPageChange={setPage} label="Project Types" />
     </section>
-    <section className="rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="project-type-rules"><button type="button" aria-expanded={rulesOpen} aria-controls="project-type-rules-content" onClick={() => setRulesOpen(open => !open)} className="relative z-10 flex min-h-16 w-full items-center justify-between gap-4 rounded-xl px-5 py-4 text-left font-bold text-slate-950 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"><span id="project-type-rules">How Project Types work</span><svg aria-hidden="true" viewBox="0 0 24 24" className={`h-5 w-5 shrink-0 text-slate-500 transition-transform ${rulesOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg></button>{rulesOpen && <ul id="project-type-rules-content" className="grid gap-3 border-t border-slate-200 p-5 text-sm leading-6 text-slate-600 md:grid-cols-3"><li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">One type per Project</strong>Every Project must always have exactly one Project Type.</li><li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Company-specific</strong>Each company sees and manages only its own Project Types.</li><li className="rounded-lg bg-slate-50 p-3"><strong className="block text-slate-900">Safe deletion</strong>A type in use cannot be deleted until its Projects are reassigned.</li></ul>}</section>
     {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-sm rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl"><span aria-hidden="true" className="mr-2 text-emerald-400">✓</span>{toast}</div>}
 
     {editor && !discardOpen && <Backdrop onClose={requestEditorClose}><div role="dialog" aria-modal="true" aria-labelledby="project-type-editor-title" className="w-full max-w-lg rounded-2xl bg-white shadow-2xl"><div className="flex items-start justify-between border-b px-5 py-4"><div><h2 id="project-type-editor-title" className="text-xl font-bold">{editor.mode === "create" ? "Add Project Type" : "Rename Project Type"}</h2><p className="mt-1 text-sm text-slate-500">{editor.mode === "create" ? "Create one reusable label for this company." : `Update “${editor.originalName}” everywhere it appears.`}</p></div><button type="button" aria-label="Close dialog" disabled={busy} onClick={requestEditorClose} className="rounded-lg p-2"><CloseIcon/></button></div><form onSubmit={saveEditor} noValidate><div className="space-y-4 px-5 py-5">{editor.mode === "rename" && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">The new name will appear in All Projects and Master Calendar filters. Existing Projects remain assigned to this type.</div>}<div><label htmlFor="project-type-name" className="block text-sm font-bold">Project Type name <span className="text-red-600">*</span></label><input ref={inputRef} id="project-type-name" value={draftName} onChange={event => { setDraftName(event.target.value); setFormError(""); }} aria-required="true" aria-invalid={!!formError} maxLength={51} placeholder="Example: Acrylic" className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/><div className="mt-1 flex justify-between gap-3"><p className="text-xs text-slate-500">1–50 characters. Names are unique regardless of capitalization.</p><span className="text-xs text-slate-400">{draftName.length}/50</span></div>{formError && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{formError}</p>}</div></div><div className="flex flex-col-reverse gap-2 rounded-b-2xl border-t bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end"><button type="button" disabled={busy} onClick={requestEditorClose} className="min-h-11 rounded-lg border px-4 py-2 text-sm font-bold">Cancel</button><button type="submit" disabled={busy} className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{busy ? "Saving…" : editor.mode === "create" ? "Add Project Type" : "Save new name"}</button></div></form></div></Backdrop>}
@@ -191,7 +204,7 @@ export default function ProjectTypesPrototype({ initialItems }: { initialItems: 
 }
 
 function Summary({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-slate-950">{value}</p></div>;
+  return <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm"><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-1 text-xl font-bold text-slate-950">{value}</p></div>;
 }
 
 function Backdrop({ children, onClose }: { children: React.ReactNode; onClose?: () => void }) {

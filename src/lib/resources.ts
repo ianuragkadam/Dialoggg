@@ -32,6 +32,31 @@ export class ResourceValidationError extends Error {
   }
 }
 
+export class ResourceEmailConflictError extends Error {
+  constructor() {
+    super("EMAIL_ALREADY_IN_USE");
+  }
+}
+
+function validateResourceEmailAvailability(emailValue: string, linkedMembershipId: number | null, resourceId?: number) {
+  const email = emailValue.trim().toLocaleLowerCase("en-US");
+  if (!email) return;
+
+  const identity = db.prepare("SELECT id FROM identity WHERE normalized_email = ? COLLATE NOCASE LIMIT 1").get(email) as { id: number } | undefined;
+  if (identity) {
+    const linkedToIdentity = linkedMembershipId
+      ? db.prepare("SELECT 1 FROM company_membership WHERE id = ? AND identity_id = ? LIMIT 1").get(linkedMembershipId, identity.id)
+      : undefined;
+    if (!linkedToIdentity) throw new ResourceEmailConflictError();
+  }
+
+  const duplicateResource = db.prepare(`
+    SELECT 1 FROM resource
+    WHERE lower(trim(COALESCE(email, ''))) = ? AND id IS NOT ? LIMIT 1
+  `).get(email, resourceId ?? null);
+  if (duplicateResource) throw new ResourceEmailConflictError();
+}
+
 export function normalizeResourceName(value: unknown) {
   const name = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
   return { name, normalizedName: name.toLocaleLowerCase("en-US") };
@@ -201,6 +226,7 @@ export function createResource(companyId: number, input: {
   name: string; normalizedName: string; category: ResourceCategoryUi; email: string; phone: string; linkedMembershipId: number | null;
 }) {
   validateLinkedMembership(companyId, input.linkedMembershipId);
+  validateResourceEmailAvailability(input.email, input.linkedMembershipId);
   const result = db.prepare(`
     INSERT INTO resource (
       company_id, category_id, name, normalized_name, email, phone, linked_membership_id,
@@ -214,6 +240,7 @@ export function updateResource(resourceId: number, companyId: number, input: {
   name: string; normalizedName: string; category: ResourceCategoryUi; email: string; phone: string; linkedMembershipId: number | null; version: number;
 }) {
   validateLinkedMembership(companyId, input.linkedMembershipId, resourceId);
+  validateResourceEmailAvailability(input.email, input.linkedMembershipId, resourceId);
   const result = db.prepare(`
     UPDATE resource SET category_id = ?, name = ?, normalized_name = ?, email = ?, phone = ?,
       linked_membership_id = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP

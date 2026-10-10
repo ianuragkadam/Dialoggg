@@ -72,6 +72,11 @@ export async function POST(request: NextRequest) {
         ownerEmail: "This identity is deactivated.",
       });
     }
+    if (code === "EMAIL_ALREADY_IN_USE" || /identity\.normalized_email/i.test(code)) {
+      return apiError(409, "EMAIL_ALREADY_IN_USE", "This email is already used by a User or Resource in Dialoggg. Use a different email address.", traceId, {
+        ownerEmail: "This email is already in use across the platform.",
+      });
+    }
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, action: "company.create", result: "failure", metadata: { reason: "creation_failed" } });
     return apiError(503, "COMPANY_CREATION_FAILED", "The company and invitation could not be created.", traceId);
   }

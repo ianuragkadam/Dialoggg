@@ -81,6 +81,22 @@ export async function POST(request: NextRequest) {
     id: number;
     status: string;
   } | undefined;
+  const existingMembership = identity
+    ? db.prepare("SELECT id FROM company_membership WHERE identity_id = ? AND company_id = ? LIMIT 1")
+      .get(identity.id, actor.companyId) as { id: number } | undefined
+    : undefined;
+  if (identity && !existingMembership) {
+    return NextResponse.json({ error: { code: "EMAIL_ALREADY_IN_USE", message: "This email is already assigned to a User in another Dialoggg company. Each email can be used only once across the platform.", fields: { email: "This email is already in use in another company." } } }, { status: 409, headers: { "x-request-id": traceId } });
+  }
+  const resourceEmailConflict = db.prepare(`
+    SELECT 1 FROM resource r
+    WHERE lower(trim(COALESCE(r.email, ''))) = lower(trim(?))
+      AND (? IS NULL OR r.linked_membership_id IS NOT ?)
+    LIMIT 1
+  `).get(email, existingMembership?.id ?? null, existingMembership?.id ?? null);
+  if (resourceEmailConflict) {
+    return NextResponse.json({ error: { code: "EMAIL_ALREADY_IN_USE", message: "This email is already assigned to a Resource in Dialoggg. Use a different email address.", fields: { email: "This email is already in use." } } }, { status: 409, headers: { "x-request-id": traceId } });
+  }
   const inaccessiblePassword = identity ? null : await hashPassword(randomBytes(32).toString("base64url"));
   try {
     const membershipId = db.transaction(() => {
@@ -92,22 +108,23 @@ export async function POST(request: NextRequest) {
         identity = { id: Number(inserted.lastInsertRowid), status: "pending" };
       }
       const existing = db.prepare(`
-        SELECT id, status FROM company_membership WHERE identity_id = ? AND company_id = ?
-      `).get(identity!.id, actor.companyId) as { id: number; status: string } | undefined;
+      SELECT id, status, removed_at FROM company_membership WHERE identity_id = ? AND company_id = ?
+      `).get(identity!.id, actor.companyId) as { id: number; status: string; removed_at: string | null } | undefined;
       if (existing?.status === "active") throw new Error("MEMBERSHIP_EXISTS");
-      if (existing?.status === "deactivated") throw new Error("MEMBERSHIP_RESTORE_REQUIRED");
+      if (existing?.status === "deactivated" && !existing.removed_at) throw new Error("MEMBERSHIP_RESTORE_REQUIRED");
       let membershipId: number;
       if (existing) {
         membershipId = existing.id;
         db.prepare(`
-          UPDATE company_membership SET role = ?, status = 'pending', deactivated_at = NULL,
+          UPDATE company_membership SET role = ?, status = 'pending', removed_at = NULL,
+            invited_first_name = ?, invited_last_name = ?, deactivated_at = NULL,
             invited_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-        `).run(role, membershipId);
+        `).run(role, firstName, lastName, membershipId);
       } else {
         const membership = db.prepare(`
-          INSERT INTO company_membership (identity_id, company_id, role, status, invited_at)
-          VALUES (?, ?, ?, 'pending', CURRENT_TIMESTAMP)
-        `).run(identity!.id, actor.companyId, role);
+          INSERT INTO company_membership (identity_id, company_id, role, status, invited_at, invited_first_name, invited_last_name)
+          VALUES (?, ?, ?, 'pending', CURRENT_TIMESTAMP, ?, ?)
+        `).run(identity!.id, actor.companyId, role, firstName, lastName);
         membershipId = Number(membership.lastInsertRowid);
       }
       db.prepare("DELETE FROM project_membership WHERE company_membership_id = ?").run(membershipId);
@@ -120,15 +137,23 @@ export async function POST(request: NextRequest) {
         if (!category) throw new Error("RESOURCE_CATEGORY_MISSING");
         const resourceName = `${firstName} ${lastName}`.trim().replace(/\s+/g, " ");
         const normalizedResourceName = resourceName.toLocaleLowerCase("en-US");
-        const nameTaken = db.prepare(`SELECT 1 FROM resource WHERE company_id = ? AND normalized_name = ? AND linked_membership_id IS NOT ? LIMIT 1`)
-          .get(actor.companyId, normalizedResourceName, membershipId);
-        if (nameTaken) throw new Error("RESOURCE_NAME_EXISTS");
         const linkedResource = db.prepare(`SELECT id FROM resource WHERE company_id = ? AND linked_membership_id = ?`)
           .get(actor.companyId, membershipId) as { id: number } | undefined;
+        const matchingUnlinkedResource = !linkedResource ? db.prepare(`
+          SELECT id FROM resource WHERE company_id = ? AND linked_membership_id IS NULL
+            AND lower(trim(COALESCE(email, ''))) = lower(?) LIMIT 1
+        `).get(actor.companyId, email) as { id: number } | undefined : undefined;
+        const nameTaken = db.prepare(`SELECT 1 FROM resource WHERE company_id = ? AND normalized_name = ? AND id IS NOT ? LIMIT 1`)
+          .get(actor.companyId, normalizedResourceName, linkedResource?.id ?? matchingUnlinkedResource?.id ?? null);
+        if (nameTaken) throw new Error("RESOURCE_NAME_EXISTS");
         if (linkedResource) {
           db.prepare(`UPDATE resource SET category_id = ?, name = ?, normalized_name = ?, email = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND company_id = ?`)
             .run(category.id, resourceName, normalizedResourceName, email, linkedResource.id, actor.companyId);
+        } else if (matchingUnlinkedResource) {
+          db.prepare(`UPDATE resource SET category_id = ?, name = ?, normalized_name = ?, email = ?, linked_membership_id = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND company_id = ?`)
+            .run(category.id, resourceName, normalizedResourceName, email, membershipId, matchingUnlinkedResource.id, actor.companyId);
         } else {
           db.prepare(`INSERT INTO resource (company_id, category_id, name, normalized_name, email, linked_membership_id)
             VALUES (?, ?, ?, ?, ?, ?)`)
@@ -155,6 +180,9 @@ export async function POST(request: NextRequest) {
     })();
     return NextResponse.json({ id: membershipId, status: "invited" }, { status: 201, headers: { "x-request-id": traceId } });
   } catch (error) {
+    if (error instanceof Error && /EMAIL_ALREADY_IN_USE|identity\.normalized_email/i.test(error.message)) {
+      return NextResponse.json({ error: { code: "EMAIL_ALREADY_IN_USE", message: "This email is already used by a User or Resource in Dialoggg. Use a different email address.", fields: { email: "This email is already in use." } } }, { status: 409, headers: { "x-request-id": traceId } });
+    }
     if (error instanceof Error && error.message === "MEMBERSHIP_EXISTS") {
       return NextResponse.json({ error: "This person already has an active company membership." }, { status: 409 });
     }

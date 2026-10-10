@@ -153,16 +153,26 @@ try {
   await check("Admin connects real company-scoped OneDrive for Business through the platform app", async () => {
     await page.goto(`${baseUrl}/settings/microsoft-storage`);
     await page.getByRole("heading", { name: "Microsoft Storage" }).waitFor();
+    const landing = await page.locator("body").innerText();
+    for (const expected of ["Link each job to its shared folders", "Optional: Dialoggg never stores your files", "Connect Microsoft Storage · about 5 minutes", "Common folder", "Private folder"]) assert.match(landing, new RegExp(expected, "i"));
+    assert.equal(await page.locator('section[aria-label="How It Works"] li').count(), 0, "How It Works starts collapsed");
+    await page.getByRole("button", { name: "How It Works" }).click();
+    await page.locator('section[aria-label="How It Works"] li').first().waitFor();
+    assert.match(await page.locator("body").innerText(), /Dialoggg keeps your schedule/);
+    await page.getByRole("button", { name: "How It Works" }).click();
     await page.getByRole("button", { name: "Connect Microsoft Storage" }).click();
     const dialog = page.getByRole("dialog", { name: "Connect Microsoft Storage" });
+    assert.match(await dialog.innerText(), /Choose where your company files live/);
+    assert.match(await dialog.innerText(), /Not sure\? Choose this/i);
+    assert.match(await dialog.innerText(), /What happens next/);
     await dialog.getByLabel(/OneDrive for Business/).check();
-    await dialog.getByLabel(/I understand Microsoft 365 administrators/).check();
+    await dialog.getByLabel(/I understand I control who can open these folders in Microsoft/).check();
     await dialog.getByRole("button", { name: "Continue to Microsoft" }).click();
     await page.waitForURL(/settings\/microsoft-storage\?oauth=microsoft&status=verified/);
     await page.getByText("Connected · healthy", { exact: true }).waitFor();
     const body = await page.locator("body").innerText();
     assert.match(body, /OneDrive for Business/);
-    assert.match(body, /Dialoggg does not store Project files/);
+    assert.match(body, /Dialoggg never stores your files/);
     assert.doesNotMatch(body, /fake-drive|refresh-token|client secret/i);
   });
 

@@ -61,6 +61,7 @@ try {
   const admin = bootstrapAccount(dataDirectory, { companyId: owner.companyId, fullName: "Avery Admin", email: `admin-${suffix}@example.test`, password, role: "admin" });
   const employee = bootstrapAccount(dataDirectory, { companyId: owner.companyId, fullName: "Jamie Employee", email: `employee-${suffix}@example.test`, password, role: "employee" });
   const external = bootstrapAccount(dataDirectory, { companyId: owner.companyId, fullName: "Alex Client", email: `external-${suffix}@example.test`, password, role: "external" });
+  const otherCompanyOwner = bootstrapAccount(dataDirectory, { companyName: "Separate Email QA Company", fullName: "Morgan Existing", email: `existing-${suffix}@example.test`, password, role: "owner" });
   const database = new Database(path.join(dataDirectory, "dialoggg.db"));
   let assignedProjectId;
   let hiddenProjectId;
@@ -127,6 +128,19 @@ try {
     await page.getByRole("button", { name: "Deactivate Jamie Employee" }).waitFor();
   });
 
+  await check("Admin removes a User only after explicit confirmation", async () => {
+    const card = page.locator("article").filter({ hasText: "Jamie Employee" });
+    await card.getByRole("button", { name: "Delete Jamie Employee" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Delete User?" });
+    assert.match(await dialog.innerText(), /linked Resources and historical records are kept/i);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    assert.equal(await page.locator("article").filter({ hasText: "Jamie Employee" }).count(), 1);
+    await page.locator("article").filter({ hasText: "Jamie Employee" }).getByRole("button", { name: "Delete Jamie Employee" }).click();
+    await page.getByRole("alertdialog", { name: "Delete User?" }).getByRole("button", { name: "Delete User" }).click();
+    await page.getByText("Jamie Employee was removed from this company.").waitFor();
+    assert.equal(await page.locator("article").filter({ hasText: "Jamie Employee" }).count(), 0);
+  });
+
   await check("Invitation validates identity fields and External minimum assignment", async () => {
     await page.goto(`${baseUrl}/users/new`);
     await page.getByRole("button", { name: "Review invitation" }).click();
@@ -137,6 +151,20 @@ try {
     await page.locator("#invite-role").selectOption("external");
     await page.getByRole("button", { name: "Review invitation" }).click();
     await page.getByText("Assign an External/Client to at least one Project.").waitFor();
+  });
+
+  await check("Invite screen blocks an email already used in another company with a clear message", async () => {
+    await page.goto(`${baseUrl}/users/new`);
+    await page.locator("#invite-first-name").fill("New");
+    await page.locator("#invite-last-name").fill("Member");
+    await page.locator("#invite-email").fill(otherCompanyOwner.email || `existing-${suffix}@example.test`);
+    await page.getByRole("button", { name: "Review invitation" }).click();
+    await page.getByRole("dialog", { name: "Confirm User invitation" }).getByRole("button", { name: "Create and send invitation" }).click();
+    await page.getByText(/already assigned to a User in another Dialoggg company/i).waitFor();
+    const verification = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      assert.equal(verification.prepare("SELECT COUNT(*) AS count FROM company_membership WHERE identity_id = ?").get(otherCompanyOwner.identityId).count, 1);
+    } finally { verification.close(); }
   });
 
   await check("Invitation creates a pending External membership and linked Resource", async () => {

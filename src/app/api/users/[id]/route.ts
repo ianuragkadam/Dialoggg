@@ -9,6 +9,7 @@ import { recordAudit, requestId } from "@/lib/security";
 import {
   getCompanyUser,
   normalizePersonName,
+  removeMembership,
   setMembershipLifecycle,
   targetMembership,
   updateMembershipRole,
@@ -130,5 +131,34 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 }
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  return lifecycle(request, context, "deactivate");
+  const traceId = requestId(request);
+  const auth = await manager(request, traceId);
+  if ("error" in auth) return auth.error;
+  const actor = auth.actor;
+  const membershipId = idFrom((await context.params).id);
+  const target = membershipId ? targetMembership(actor, membershipId) : null;
+  if (!target) return apiError(404, "RESOURCE_NOT_FOUND", "User not found.", traceId);
+  if (!canManageMembership(actor, { membershipId: target.id, role: target.role, status: target.status })) {
+    return apiError(403, "ACTION_FORBIDDEN", "You cannot manage this membership.", traceId);
+  }
+  try {
+    if (!removeMembership(actor, target.id)) return apiError(403, "ACTION_FORBIDDEN", "You cannot remove this membership.", traceId);
+    revokeIdentitySessions(target.identity_id, "membership_removed");
+    recordAudit({
+      requestId: traceId,
+      actorIdentityId: actor.identityId,
+      actorMembershipId: actor.membershipId,
+      companyId: actor.companyId,
+      action: "membership.remove",
+      targetType: "company_membership",
+      targetId: target.id,
+      result: "success",
+    });
+    return apiSuccess({ removed: true }, traceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message === "SELF_LIFECYCLE_FORBIDDEN") return apiError(409, "SELF_LIFECYCLE_FORBIDDEN", "You cannot remove your current membership.", traceId);
+    if (message.includes("FINAL_ACTIVE_OWNER_REQUIRED")) return apiError(409, "FINAL_OWNER_REQUIRED", "Add another active Owner before removing the final Owner.", traceId);
+    return apiError(503, "MEMBERSHIP_REMOVE_FAILED", "The User could not be removed.", traceId);
+  }
 }

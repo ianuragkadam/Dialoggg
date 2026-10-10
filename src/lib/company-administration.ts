@@ -212,7 +212,9 @@ export function updateCompanyProfile(companyId: number, input: { name: string; t
       const normalizedEmail = normalizeEmail(input.ownerEmail);
       const existingIdentity = db.prepare("SELECT id FROM identity WHERE normalized_email = ? AND id <> ?")
         .get(normalizedEmail, owner.identity_id) as { id: number } | undefined;
-      if (existingIdentity) throw new Error("OWNER_EMAIL_EXISTS");
+      const existingResource = db.prepare("SELECT 1 FROM resource WHERE lower(trim(COALESCE(email, ''))) = ? LIMIT 1")
+        .get(normalizedEmail);
+      if (existingIdentity || existingResource) throw new Error("OWNER_EMAIL_EXISTS");
 
       const oldInvitations = db.prepare(`
         SELECT 'invitation:' || id AS idempotency_key FROM invitation_token
@@ -336,6 +338,10 @@ export async function createCompanyWithFirstOwner(input: {
     SELECT id, status FROM identity WHERE normalized_email = ?
   `).get(normalizedEmail) as { id: number; status: string } | undefined;
   if (existingIdentity?.status === "deactivated") throw new Error("IDENTITY_DEACTIVATED");
+  if (existingIdentity) throw new Error("EMAIL_ALREADY_IN_USE");
+  const existingResource = db.prepare("SELECT 1 FROM resource WHERE lower(trim(COALESCE(email, ''))) = ? LIMIT 1")
+    .get(normalizedEmail);
+  if (existingResource) throw new Error("EMAIL_ALREADY_IN_USE");
   const inaccessiblePassword = existingIdentity ? null : await hashPassword(randomBytes(32).toString("base64url"));
 
   return db.transaction(() => {

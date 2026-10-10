@@ -55,8 +55,15 @@ export async function POST(request: NextRequest) {
     ? db.prepare("SELECT 1 FROM user WHERE lower(email) = lower(?) AND id <> ? LIMIT 1").get(email, identity.legacy_user_id)
     : db.prepare("SELECT 1 FROM user WHERE lower(email) = lower(?) LIMIT 1").get(email);
   const identityConflict = db.prepare("SELECT 1 FROM identity WHERE normalized_email = ? AND id <> ? LIMIT 1").get(email, identity.id);
-  if (email !== identity.normalized_email && (identityConflict || legacyConflict)) {
-    return apiError(409, "EMAIL_ALREADY_IN_USE", "That email address is already linked to another account. Use a different address.", traceId, { email: "This email is already in use." });
+  const resourceConflict = db.prepare(`
+    SELECT 1 FROM resource r
+    LEFT JOIN company_membership cm ON cm.id = r.linked_membership_id
+    WHERE lower(trim(COALESCE(r.email, ''))) = lower(trim(?))
+      AND (cm.identity_id IS NULL OR cm.identity_id <> ?)
+    LIMIT 1
+  `).get(email, identity.id);
+  if (email !== identity.normalized_email && (identityConflict || legacyConflict || resourceConflict)) {
+    return apiError(409, "EMAIL_ALREADY_IN_USE", "That email address is already used by a User or Resource in Dialoggg. Use a different address.", traceId, { email: "This email is already in use." });
   }
 
   const fullName = `${firstName} ${lastName}`.trim();

@@ -184,6 +184,17 @@ try {
     await page.getByText("Enter the Resource Name.", { exact: true }).waitFor();
     await page.getByText("Choose one Resource Category.", { exact: true }).waitFor();
   });
+  await check("Resource form blocks an email already used by a User", async () => {
+    await page.goto(`${baseUrl}/resources/new`);
+    await page.locator("#resource-name").fill("Duplicate Contact Resource");
+    await page.locator("#resource-category").selectOption({ label: "Supplier" });
+    await page.locator("#resource-email").fill(emails.employee);
+    await page.getByRole("button", { name: "Review Resource" }).click();
+    const review = page.getByRole("dialog", { name: "Confirm Resource" });
+    await review.getByRole("button", { name: "Create Resource" }).click();
+    await page.getByText(/already used by a User or Resource in Dialoggg/i).waitFor();
+    assert.equal(await page.getByRole("heading", { name: "Resource created" }).count(), 0);
+  });
   await check("Admin creates and reloads a Resource with a one-to-one User link", async () => {
     await page.locator("#resource-name").fill("Northline Crew");
     await page.locator("#resource-category").selectOption({ label: "Subcontractor" });

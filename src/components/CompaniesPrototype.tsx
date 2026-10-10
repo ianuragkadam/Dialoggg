@@ -134,7 +134,6 @@ export default function CompaniesPrototype({ initialItems, initialView = "all" }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 pb-10">
-      <nav aria-label="Breadcrumb" className="text-sm text-slate-500"><span>Platform Administration</span><span aria-hidden="true" className="px-2">/</span><span className="font-medium text-slate-800">Companies</span></nav>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h1 className="text-3xl font-bold tracking-tight text-slate-950">Companies</h1></div><div className="flex flex-wrap gap-2"><Link href="/platform/integration-setup" className="inline-flex min-h-11 items-center justify-center rounded-lg border border-blue-700 bg-white px-4 py-2.5 text-sm font-bold text-blue-800 shadow-sm hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2">Integration setup access</Link><Link href="/platform/companies/new" className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2"><span aria-hidden="true" className="mr-2 text-lg">+</span>Add Company</Link></div></div>
       {error && !statusTarget && !deleteTarget && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">{error}</div>}
 

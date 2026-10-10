@@ -22,7 +22,9 @@ export function issueInvitation(input: {
   baseUrl: string;
 }) {
   const target = db.prepare(`
-    SELECT cm.id, cm.company_id, cm.status, i.normalized_email, i.first_name, c.name AS company_name
+    SELECT cm.id, cm.company_id, cm.status, i.normalized_email,
+      COALESCE(cm.invited_first_name, i.first_name) AS greeting_first_name,
+      c.name AS company_name
     FROM company_membership cm
     JOIN identity i ON i.id = cm.identity_id
     JOIN company c ON c.id = cm.company_id
@@ -32,7 +34,7 @@ export function issueInvitation(input: {
     company_id: number;
     status: string;
     normalized_email: string;
-    first_name: string;
+    greeting_first_name: string;
     company_name: string;
   } | undefined;
   if (!target || target.status !== "pending") throw new Error("INVITATION_TARGET_INVALID");
@@ -40,10 +42,21 @@ export function issueInvitation(input: {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = expiresInHours(INVITATION_HOURS);
   return db.transaction(() => {
+    const supersededInvitations = db.prepare(`
+      SELECT id FROM invitation_token
+      WHERE membership_id = ? AND used_at IS NULL AND revoked_at IS NULL
+    `).all(target.id) as Array<{ id: number }>;
     db.prepare(`
       UPDATE invitation_token SET revoked_at = CURRENT_TIMESTAMP
       WHERE membership_id = ? AND used_at IS NULL AND revoked_at IS NULL
     `).run(target.id);
+    const cancelSupersededEmail = db.prepare(`
+      UPDATE outbox_job SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+      WHERE kind = 'invitation_email' AND idempotency_key = ? AND status IN ('pending','retry')
+    `);
+    for (const previous of supersededInvitations) {
+      cancelSupersededEmail.run(`invitation:${previous.id}`);
+    }
     const invitation = db.prepare(`
       INSERT INTO invitation_token (membership_id, token_hash, expires_at, created_by_identity_id)
       VALUES (?, ?, ?, ?)
@@ -58,7 +71,7 @@ export function issueInvitation(input: {
         to: target.normalized_email,
         template: "invitation",
         variables: {
-          greeting: `Hello ${target.first_name},`,
+          greeting: `Hello ${target.greeting_first_name},`,
           message: `You have been invited to join ${target.company_name} in Dialoggg.`,
           actionUrl: actionUrl(input.baseUrl, "/accept-invitation", token),
           expiresAt,

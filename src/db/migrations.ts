@@ -2361,7 +2361,135 @@ const migration023: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023];
+const migration024: Migration = {
+  version: 24,
+  name: "allow_owner_retirement_with_company",
+  signature: "last-active-owner protection remains for active companies but permits full company retirement v1",
+  up(database) {
+    database.exec(`
+      DROP TRIGGER IF EXISTS trg_membership_final_owner_update;
+      CREATE TRIGGER trg_membership_final_owner_update
+      BEFORE UPDATE OF role, status ON company_membership
+      WHEN OLD.role = 'owner' AND OLD.status = 'active'
+        AND (NEW.role <> 'owner' OR NEW.status <> 'active')
+        AND COALESCE((
+          SELECT lower(status) FROM company WHERE id = OLD.company_id
+        ), 'active') <> 'deleted'
+        AND (SELECT COUNT(*) FROM company_membership
+             WHERE company_id = OLD.company_id AND role = 'owner' AND status = 'active') <= 1
+      BEGIN
+        SELECT RAISE(ABORT, 'FINAL_ACTIVE_OWNER_REQUIRED');
+      END;
+    `);
+  },
+};
+
+const migration025: Migration = {
+  version: 25,
+  name: "membership_removal_and_invitation_profile",
+  signature: "soft remove memberships while preserving history and retain the invited profile until verified acceptance v1",
+  up(database) {
+    addColumn(database, "company_membership", "removed_at", "removed_at TEXT");
+    addColumn(database, "company_membership", "invited_first_name", "invited_first_name TEXT");
+    addColumn(database, "company_membership", "invited_last_name", "invited_last_name TEXT");
+  },
+};
+
+const migration026: Migration = {
+  version: 26,
+  name: "platform_wide_email_uniqueness",
+  signature: "prevent new cross-company user memberships and duplicate user-resource contact emails while preserving linked user resources v1",
+  up(database) {
+    database.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_membership_platform_email_unique
+      BEFORE INSERT ON company_membership
+      WHEN EXISTS (
+        SELECT 1 FROM company_membership existing
+        WHERE existing.identity_id = NEW.identity_id
+          AND existing.company_id <> NEW.company_id
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'EMAIL_ALREADY_IN_USE');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_identity_email_resource_unique_insert
+      BEFORE INSERT ON identity
+      WHEN EXISTS (
+        SELECT 1 FROM resource r
+        WHERE lower(trim(COALESCE(r.email, ''))) = lower(trim(NEW.normalized_email))
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'EMAIL_ALREADY_IN_USE');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_identity_email_resource_unique_update
+      BEFORE UPDATE OF normalized_email ON identity
+      WHEN lower(trim(NEW.normalized_email)) <> lower(trim(OLD.normalized_email))
+        AND EXISTS (
+          SELECT 1 FROM resource r
+          WHERE lower(trim(COALESCE(r.email, ''))) = lower(trim(NEW.normalized_email))
+            AND NOT EXISTS (
+              SELECT 1 FROM company_membership cm
+              WHERE cm.id = r.linked_membership_id AND cm.identity_id = OLD.id
+            )
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'EMAIL_ALREADY_IN_USE');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_identity_email_sync_linked_resources
+      AFTER UPDATE OF normalized_email ON identity
+      WHEN lower(trim(NEW.normalized_email)) <> lower(trim(OLD.normalized_email))
+      BEGIN
+        UPDATE resource SET email = NEW.normalized_email, updated_at = CURRENT_TIMESTAMP
+        WHERE linked_membership_id IN (
+          SELECT id FROM company_membership WHERE identity_id = NEW.id
+        ) AND lower(trim(COALESCE(email, ''))) = lower(trim(OLD.normalized_email));
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_resource_email_platform_unique_insert
+      BEFORE INSERT ON resource
+      WHEN NEW.email IS NOT NULL AND trim(NEW.email) <> '' AND (
+        EXISTS (
+          SELECT 1 FROM identity i
+          WHERE lower(trim(i.normalized_email)) = lower(trim(NEW.email))
+            AND NOT EXISTS (
+              SELECT 1 FROM company_membership cm
+              WHERE cm.id = NEW.linked_membership_id AND cm.identity_id = i.id
+            )
+        ) OR EXISTS (
+          SELECT 1 FROM resource existing
+          WHERE lower(trim(COALESCE(existing.email, ''))) = lower(trim(NEW.email))
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'EMAIL_ALREADY_IN_USE');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS trg_resource_email_platform_unique_update
+      BEFORE UPDATE OF email, linked_membership_id ON resource
+      WHEN NEW.email IS NOT NULL AND trim(NEW.email) <> '' AND (
+        EXISTS (
+          SELECT 1 FROM identity i
+          WHERE lower(trim(i.normalized_email)) = lower(trim(NEW.email))
+            AND NOT EXISTS (
+              SELECT 1 FROM company_membership cm
+              WHERE cm.id = NEW.linked_membership_id AND cm.identity_id = i.id
+            )
+        ) OR EXISTS (
+          SELECT 1 FROM resource existing
+          WHERE lower(trim(COALESCE(existing.email, ''))) = lower(trim(NEW.email))
+            AND existing.id <> NEW.id
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'EMAIL_ALREADY_IN_USE');
+      END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023, migration024, migration025, migration026];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

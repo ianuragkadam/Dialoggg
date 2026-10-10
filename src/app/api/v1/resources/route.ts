@@ -8,6 +8,7 @@ import {
   listAvailableResourceUsers,
   listResources,
   normalizeResourceName,
+  ResourceEmailConflictError,
   ResourceValidationError,
   validateResourceInput,
 } from "@/lib/resources";
@@ -77,6 +78,9 @@ export async function POST(request: NextRequest) {
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: "resource.create", targetType: "resource", targetId: resource.id, result: "success" });
     return apiSuccess({ resource }, traceId, { status: 201 });
   } catch (error) {
+    if (error instanceof ResourceEmailConflictError || (error instanceof Error && error.message.includes("EMAIL_ALREADY_IN_USE"))) {
+      return apiError(409, "EMAIL_ALREADY_IN_USE", "This email is already used by a User or Resource in Dialoggg. Use a different email address.", traceId, { email: "This email is already in use." });
+    }
     if (error instanceof ResourceValidationError) return apiError(400, "VALIDATION_FAILED", "Check the highlighted fields.", traceId, error.fields);
     if (error instanceof Error && /UNIQUE|ux_resource_company_normalized_name/i.test(error.message)) {
       return apiError(409, "RESOURCE_NAME_EXISTS", `A Resource named “${parsedName.name}” already exists.`, traceId, { name: `A Resource named “${parsedName.name}” already exists.` });

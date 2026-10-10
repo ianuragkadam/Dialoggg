@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 23/);
+    assert.match(second.stdout, /version 26/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -89,6 +89,17 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 13, name: "google_calendar_delivery" },
           { version: 14, name: "microsoft_onedrive_delivery" },
           { version: 15, name: "transactional_email_delivery" },
+          { version: 16, name: "multiple_platform_administrators" },
+          { version: 17, name: "company_expiration_dates" },
+          { version: 18, name: "email_change_verification" },
+          { version: 19, name: "recoverable_platform_company_retirement_and_editing" },
+          { version: 20, name: "reversible_project_deactivation" },
+          { version: 21, name: "project_calendar_color" },
+          { version: 22, name: "project_creator_membership" },
+          { version: 23, name: "two_state_project_lifecycle" },
+          { version: 24, name: "allow_owner_retirement_with_company" },
+          { version: 25, name: "membership_removal_and_invitation_profile" },
+          { version: 26, name: "platform_wide_email_uniqueness" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -111,6 +122,59 @@ test("versioned migration backfills identity/membership data and is idempotent",
       );
     } finally {
       migrated.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test("platform-wide email guards block cross-company memberships and duplicate resource emails", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-email-unique-"));
+  const databasePath = path.join(dataDirectory, "dialoggg.db");
+  try {
+    const migrated = migrate(dataDirectory);
+    assert.equal(migrated.status, 0, `${migrated.stdout}\n${migrated.stderr}`);
+    const database = new Database(databasePath);
+    try {
+      const assertEmailConflict = operation => assert.throws(operation, error => error.code === "SQLITE_CONSTRAINT_TRIGGER");
+      database.pragma("foreign_keys = ON");
+      const company = Number(database.prepare("INSERT INTO company (name) VALUES ('Email Guard Test')").run().lastInsertRowid);
+      const secondCompany = Number(database.prepare("INSERT INTO company (name) VALUES ('Email Guard Test 2')").run().lastInsertRowid);
+      const category = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(company).lastInsertRowid);
+      const secondCategory = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(secondCompany).lastInsertRowid);
+      const identity = Number(database.prepare(`
+        INSERT INTO identity (normalized_email, password_hash, first_name, last_name)
+        VALUES ('member@example.test', 'hash', 'Test', 'Member')
+      `).run().lastInsertRowid);
+      const membership = Number(database.prepare(`
+        INSERT INTO company_membership (identity_id, company_id, role, status)
+        VALUES (?, ?, 'employee', 'active')
+      `).run(identity, company).lastInsertRowid);
+
+      assertEmailConflict(() => database.prepare(`
+        INSERT INTO company_membership (identity_id, company_id, role, status)
+        VALUES (?, ?, 'employee', 'pending')
+      `).run(identity, secondCompany));
+
+      database.prepare(`
+        INSERT INTO resource (company_id, category_id, name, normalized_name, email, linked_membership_id)
+        VALUES (?, ?, 'Linked Member', 'linked member', 'member@example.test', ?)
+      `).run(company, category, membership);
+      assertEmailConflict(() => database.prepare(`
+        INSERT INTO resource (company_id, category_id, name, normalized_name, email)
+        VALUES (?, ?, 'Duplicate Member', 'duplicate member', 'MEMBER@example.test')
+      `).run(secondCompany, secondCategory));
+
+      database.prepare(`
+        INSERT INTO resource (company_id, category_id, name, normalized_name, email)
+        VALUES (?, ?, 'Standalone Resource', 'standalone resource', 'resource@example.test')
+      `).run(company, category);
+      assertEmailConflict(() => database.prepare(`
+        INSERT INTO identity (normalized_email, password_hash, first_name)
+        VALUES ('resource@example.test', 'hash', 'Conflict')
+      `).run());
+    } finally {
+      database.close();
     }
   } finally {
     await rm(dataDirectory, { recursive: true, force: true });
@@ -365,6 +429,45 @@ test("Project lifecycle allows only Active and Archived and requires Archived fo
   }
 });
 
+test("final-owner protection remains for active companies but permits full company retirement", async () => {
+  const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-company-retirement-owner-"));
+  try {
+    const result = migrate(dataDirectory);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const database = new Database(path.join(dataDirectory, "dialoggg.db"));
+    database.pragma("foreign_keys = ON");
+    try {
+      const activeCompanyId = Number(database.prepare("INSERT INTO company (name, time_zone) VALUES ('Active Owner Guard', 'UTC')").run().lastInsertRowid);
+      const retiredCompanyId = Number(database.prepare("INSERT INTO company (name, time_zone) VALUES ('Retired Owner Guard', 'UTC')").run().lastInsertRowid);
+      const identityId = Number(database.prepare(`
+        INSERT INTO identity (normalized_email, password_hash, first_name, last_name)
+        VALUES ('owner-active@example.test', 'test-hash', 'Test', 'Owner')
+      `).run().lastInsertRowid);
+      const retiredIdentityId = Number(database.prepare(`
+        INSERT INTO identity (normalized_email, password_hash, first_name, last_name)
+        VALUES ('owner-retired@example.test', 'test-hash', 'Test', 'Owner')
+      `).run().lastInsertRowid);
+      const addOwner = database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'owner', 'active')");
+      const activeMembershipId = Number(addOwner.run(identityId, activeCompanyId).lastInsertRowid);
+      const retiredMembershipId = Number(addOwner.run(retiredIdentityId, retiredCompanyId).lastInsertRowid);
+
+      assert.throws(
+        () => database.prepare("UPDATE company_membership SET status = 'deactivated' WHERE id = ?").run(activeMembershipId),
+        /FINAL_ACTIVE_OWNER_REQUIRED/,
+      );
+
+      database.prepare("UPDATE company SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP WHERE id = ?").run(retiredCompanyId);
+      assert.equal(database.prepare("UPDATE company_membership SET status = 'deactivated' WHERE id = ?").run(retiredMembershipId).changes, 1);
+      assert.equal(database.prepare("SELECT status FROM company_membership WHERE id = ?").get(retiredMembershipId).status, "deactivated");
+    } finally {
+      assert.equal(database.pragma("foreign_key_check").length, 0);
+      database.close();
+    }
+  } finally {
+    await rm(dataDirectory, { recursive: true, force: true });
+  }
+});
+
 test("project lifecycle migration archives existing completed and inactive projects", async () => {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), "dialoggg-project-status-migration-"));
   try {
@@ -510,7 +613,8 @@ test("Project Template migration enforces tenant-scoped sources, graph reference
       const projectRoot = database.prepare("SELECT id FROM task WHERE project_id=? AND is_root=1").get(projectOne).id;
       const identity = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('template@example.test', 'hash', 'Template', 'active')").run().lastInsertRowid);
       const membershipOne = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'admin', 'active')").run(identity, companyOne).lastInsertRowid);
-      const membershipTwo = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'admin', 'active')").run(identity, companyTwo).lastInsertRowid);
+      const identityTwo = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('template-two@example.test', 'hash', 'Template Two', 'active')").run().lastInsertRowid);
+      const membershipTwo = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'admin', 'active')").run(identityTwo, companyTwo).lastInsertRowid);
 
       assert.throws(() => database.prepare(`
         INSERT INTO project_template (company_id, source_project_id, name, normalized_name, created_by_membership_id)

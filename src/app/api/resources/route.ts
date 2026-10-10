@@ -7,6 +7,7 @@ import {
   createResource,
   listResources,
   normalizeResourceName,
+  ResourceEmailConflictError,
   ResourceValidationError,
   validateResourceInput,
 } from "@/lib/resources";
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: "resource.create", targetType: "resource", targetId: resource.id, result: "success", metadata: { endpoint: "legacy_compatibility" } });
     return NextResponse.json({ id: resource.id }, { headers: { "x-request-id": traceId, "cache-control": "no-store" } });
   } catch (error) {
+    if (error instanceof ResourceEmailConflictError || (error instanceof Error && error.message.includes("EMAIL_ALREADY_IN_USE"))) return NextResponse.json({ error: "This email is already used by a User or Resource in Dialoggg. Use a different email address.", fields: { email: "This email is already in use." } }, { status: 409, headers: { "x-request-id": traceId } });
     if (error instanceof ResourceValidationError) return NextResponse.json({ error: "Validation failed", fields: error.fields }, { status: 400 });
     if (error instanceof Error && /UNIQUE|ux_resource_company_normalized_name/i.test(error.message)) return NextResponse.json({ error: "Resource name already exists" }, { status: 409 });
     return NextResponse.json({ error: "Resource could not be created" }, { status: 503 });

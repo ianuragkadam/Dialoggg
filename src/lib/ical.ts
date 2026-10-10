@@ -12,10 +12,22 @@ export function getCompanyToken(companyId: number): string {
   return token;
 }
 
+export function resetCompanyToken(companyId: number): string {
+  const token = "cmp_" + randomBytes(18).toString("hex");
+  db.prepare("UPDATE company SET ical_token = ? WHERE id = ?").run(token, companyId);
+  return token;
+}
+
 // Return (creating if needed) the iCal token for one project's feed.
 export function getProjectToken(projectId: number): string {
   const row = db.prepare("SELECT ical_token FROM project WHERE id = ?").get(projectId) as { ical_token: string | null } | undefined;
   if (row?.ical_token) return row.ical_token;
+  const token = "prj_" + randomBytes(18).toString("hex");
+  db.prepare("UPDATE project SET ical_token = ? WHERE id = ?").run(token, projectId);
+  return token;
+}
+
+export function resetProjectToken(projectId: number): string {
   const token = "prj_" + randomBytes(18).toString("hex");
   db.prepare("UPDATE project SET ical_token = ? WHERE id = ?").run(token, projectId);
   return token;

@@ -221,13 +221,17 @@ try {
     await page.locator('[data-google-calendar-ready="true"]').waitFor();
     const body = await page.locator("body").innerText();
     for (const expected of [
-      "Personal one-way schedule delivery",
-      "dedicated calendar named Dialoggg",
-      "Dialoggg stays the source of truth",
-      "Synchronization is one-way: Dialoggg → Google",
-      "nothing is written to your primary Google calendar",
-      "Google default reminders",
+      "Google Calendar",
+      "See your Dialoggg schedule in your own Google Calendar.",
+      "Connect Google Calendar · about 1 minute",
+      "What goes to Google",
+      "What never goes to Google",
+      "Your other calendars are safe.",
     ]) assert.match(body, new RegExp(expected, "i"));
+    assert.equal(await page.locator('section[aria-label="How It Works"] li').count(), 0, "guide starts collapsed");
+    await page.getByRole("button", { name: "How It Works" }).click();
+    await page.locator('section[aria-label="How It Works"] li').first().waitFor();
+    assert.match(await page.locator("body").innerText(), /Changes made in Google are not saved/);
   });
 
   await check("Google mutations reject missing CSRF", async () => {
@@ -249,7 +253,9 @@ try {
     await dialog.getByLabel(/personal connection/).check();
     await action.click();
     await page.waitForURL(/\/account\/google-calendar\?oauth=google&status=verified/);
-    await page.getByText("Connected · healthy", { exact: true }).waitFor();
+    await page.getByText("Connected", { exact: true }).waitFor();
+    const connectedBody = await page.locator("body").innerText();
+    for (const expected of ["Your Dialoggg calendar", "Last updated", "Items in Google", "Troubleshooting details (Owners and Admins)", "What goes to Google", "What never goes to Google"]) assert.match(connectedBody, new RegExp(expected, "i"));
     const managed = await page.evaluate(async () => {
       const response = await fetch("/api/google-calendar", { cache: "no-store" });
       const result = await response.json();
@@ -259,6 +265,7 @@ try {
   });
 
   await check("safe Google item preview excludes sensitive details", async () => {
+    await page.getByText("Troubleshooting details (Owners and Admins)").click();
     await page.getByTestId("google-item-preview").click();
     const dialog = page.getByRole("dialog", { name: "Safe Google item preview" });
     const text = await dialog.innerText();
@@ -307,8 +314,7 @@ try {
     const employee = await context.newPage();
     await employee.goto(`${baseUrl}/account/google-calendar`);
     await employee.locator('[data-google-calendar-ready="true"]').waitFor();
-    assert.match(await employee.locator("body").innerText(), new RegExp(employeeEmail));
-    assert.match(await employee.locator("body").innerText(), /Current Role: Employee \(Internal\)/);
+    assert.match(await employee.locator("body").innerText(), /See your Dialoggg schedule in your own Google Calendar/);
     assert.equal(await employee.getByText("Not connected", { exact: true }).count(), 1);
     assert.equal(await employee.getByRole("link", { name: "Users" }).count(), 0);
     await context.close();

@@ -32,6 +32,7 @@ export type CompanyUserDto = {
     canRestore: boolean;
     canCancelInvitation: boolean;
     canResendInvitation: boolean;
+    canDelete: boolean;
     canAssignProjects: boolean;
     allowedRoles: CompanyRole[];
   };
@@ -53,20 +54,23 @@ type MembershipRow = {
   resource_id: number | null;
   resource_name: string | null;
   resource_status: string | null;
+  removed_at: string | null;
 };
 
 function rowForMembership(membershipId: number, companyId: number) {
   return db.prepare(`
     SELECT cm.id, cm.identity_id, cm.legacy_user_id,
-      i.first_name, i.last_name, i.normalized_email, i.phone,
-      cm.role, cm.status, cm.invited_at, cm.accepted_at,
+      COALESCE(cm.invited_first_name, i.first_name) AS first_name,
+      COALESCE(cm.invited_last_name, i.last_name) AS last_name,
+      i.normalized_email, i.phone,
+      cm.role, cm.status, cm.invited_at, cm.accepted_at, cm.removed_at,
       COALESCE(i.last_active_at, MAX(s.last_seen_at)) AS last_active_at,
       r.id AS resource_id, r.name AS resource_name, r.status AS resource_status
     FROM company_membership cm
     JOIN identity i ON i.id = cm.identity_id
     LEFT JOIN auth_session s ON s.identity_id = i.id
     LEFT JOIN resource r ON r.linked_membership_id = cm.id AND r.company_id = cm.company_id
-    WHERE cm.id = ? AND cm.company_id = ?
+    WHERE cm.id = ? AND cm.company_id = ? AND cm.removed_at IS NULL
     GROUP BY cm.id, r.id
   `).get(membershipId, companyId) as MembershipRow | undefined;
 }
@@ -87,6 +91,7 @@ function permissions(actor: Actor, row: MembershipRow) {
     canRestore: manageable && row.status === "deactivated",
     canCancelInvitation: manageable && row.status === "pending",
     canResendInvitation: manageable && row.status === "pending",
+    canDelete: manageable && !self,
     canAssignProjects: canAssignMembershipProjects(actor, target),
     allowedRoles: allowedRoles(actor, row),
   };
@@ -134,10 +139,45 @@ export function listCompanyUsers(actor: Actor): CompanyUserDto[] {
   const rows = db.prepare(`
     SELECT cm.id FROM company_membership cm
     JOIN identity i ON i.id = cm.identity_id
-    WHERE cm.company_id = ?
+    WHERE cm.company_id = ? AND cm.removed_at IS NULL
     ORDER BY lower(i.first_name), lower(i.last_name), lower(i.normalized_email), cm.id
   `).all(actor.companyId) as Array<{ id: number }>;
   return rows.map(row => getCompanyUser(actor, row.id)).filter((user): user is CompanyUserDto => !!user);
+}
+
+export function removeMembership(actor: Actor, membershipId: number) {
+  const row = targetMembership(actor, membershipId);
+  if (!row || row.removed_at || !canManageMembership(actor, { membershipId: row.id, role: row.role, status: row.status })) return null;
+  if (row.id === actor.membershipId) throw new Error("SELF_LIFECYCLE_FORBIDDEN");
+
+  db.transaction(() => {
+    // Retain the resource and all project/audit history, but sever access and any live links.
+    db.prepare(`UPDATE company_membership SET status = 'deactivated', deactivated_at = COALESCE(deactivated_at, CURRENT_TIMESTAMP),
+      removed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(row.id);
+    db.prepare("UPDATE resource SET linked_membership_id = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE linked_membership_id = ? AND company_id = ?")
+      .run(row.id, actor.companyId);
+    db.prepare("DELETE FROM project_membership WHERE company_membership_id = ?").run(row.id);
+    if (row.legacy_user_id) {
+      db.prepare(`DELETE FROM project_user WHERE user_id = ? AND project_id IN (SELECT id FROM project WHERE company_id = ?)`)
+        .run(row.legacy_user_id, actor.companyId);
+      db.prepare("UPDATE resource SET linked_user_id = NULL WHERE company_id = ? AND linked_user_id = ?")
+        .run(actor.companyId, row.legacy_user_id);
+    }
+    const invitationIds = db.prepare(`SELECT id FROM invitation_token WHERE membership_id = ? AND used_at IS NULL AND revoked_at IS NULL`)
+      .all(row.id) as Array<{ id: number }>;
+    db.prepare("UPDATE invitation_token SET revoked_at = CURRENT_TIMESTAMP WHERE membership_id = ? AND used_at IS NULL AND revoked_at IS NULL")
+      .run(row.id);
+    const cancelEmail = db.prepare(`UPDATE outbox_job SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+      WHERE kind = 'invitation_email' AND idempotency_key = ? AND status IN ('pending','retry')`);
+    for (const invitation of invitationIds) cancelEmail.run(`invitation:${invitation.id}`);
+    const otherAccess = db.prepare("SELECT COUNT(*) AS count FROM company_membership WHERE identity_id = ? AND status = 'active' AND id <> ?")
+      .get(row.identity_id, row.id) as { count: number };
+    const identity = db.prepare("SELECT is_platform_admin FROM identity WHERE id = ?").get(row.identity_id) as { is_platform_admin: number };
+    if (otherAccess.count === 0 && identity.is_platform_admin !== 1) {
+      db.prepare("UPDATE identity SET status = 'deactivated', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(row.identity_id);
+    }
+  })();
+  return true;
 }
 
 export function listAssignableProjects(companyId: number): Omit<UserProjectDto, "assigned">[] {

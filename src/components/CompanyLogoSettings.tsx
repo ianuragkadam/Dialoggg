@@ -12,6 +12,7 @@ export default function CompanyLogoSettings({ initialLogoUrl }: { initialLogoUrl
   const [logoUrl, setLogoUrl] = useState(initialLogoUrl);
   const [previewUrl, setPreviewUrl] = useState(initialLogoUrl);
   const [selectedFile, setSelectedFile] = useState(false);
+  const [selectedFileName, setSelectedFileName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
@@ -22,6 +23,7 @@ export default function CompanyLogoSettings({ initialLogoUrl }: { initialLogoUrl
     const file = event.currentTarget.files?.[0];
     if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
     setSelectedFile(!!file);
+    setSelectedFileName(file?.name ?? "");
     setPreviewUrl(file ? URL.createObjectURL(file) : logoUrl);
   }
 
@@ -29,6 +31,7 @@ export default function CompanyLogoSettings({ initialLogoUrl }: { initialLogoUrl
     if (inputRef.current) inputRef.current.value = "";
     if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
     setSelectedFile(false);
+    setSelectedFileName("");
     setPreviewUrl(logoUrl);
     setError("");
     setStatus("");
@@ -86,6 +89,7 @@ export default function CompanyLogoSettings({ initialLogoUrl }: { initialLogoUrl
       setLogoUrl(payload.data.logoUrl);
       setPreviewUrl(payload.data.logoUrl);
       setSelectedFile(false);
+      setSelectedFileName("");
       setStatus("Company logo updated.");
       if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
       if (inputRef.current) inputRef.current.value = "";
@@ -108,11 +112,17 @@ export default function CompanyLogoSettings({ initialLogoUrl }: { initialLogoUrl
         </div>
         <form onSubmit={submit} className="flex flex-col items-start gap-2">
           <label htmlFor="company-logo-file" className="text-sm font-medium text-gray-800">{logoUrl ? "Replace company logo" : "Choose company logo"}</label>
-          <input ref={inputRef} id="company-logo-file" name="logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={selectFile} className="max-w-full text-sm text-gray-700 file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-gray-800 hover:file:bg-gray-200" />
+          <input ref={inputRef} id="company-logo-file" name="logo" type="file" accept="image/png,image/jpeg,image/webp" onChange={selectFile} className="sr-only" />
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" onClick={() => inputRef.current?.click()} disabled={busy} className="rounded border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60">
+              {selectedFileName ? "Choose a different file" : "Choose file"}
+            </button>
+            <span className="text-sm text-gray-600">{selectedFileName || "No file chosen"}</span>
+          </div>
           <p className="text-xs text-gray-500">PNG, JPEG, or WebP · 2 MB maximum</p>
-          <button type="submit" disabled={busy} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60">
+          {selectedFile && <button type="submit" disabled={busy} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60">
             {busy ? "Saving…" : logoUrl ? "Update logo" : "Upload logo"}
-          </button>
+          </button>}
           {status && <p role="status" className="text-sm text-green-700">{status}</p>}
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         </form>

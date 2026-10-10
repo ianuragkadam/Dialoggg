@@ -58,8 +58,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       if (error instanceof Error && (error.message === "COMPANY_NAME_EXISTS" || error.message.includes("ux_company_normalized_name"))) {
         return apiError(409, "COMPANY_NAME_EXISTS", "A company with this name already exists.", traceId, { companyName: "Choose a different Company Name." });
       }
-      if (error instanceof Error && error.message === "OWNER_EMAIL_EXISTS") {
-        return apiError(409, "OWNER_EMAIL_EXISTS", "That login email is already attached to an account.", traceId, { ownerEmail: "This email address is already in use." });
+      if (error instanceof Error && (error.message === "OWNER_EMAIL_EXISTS" || error.message.includes("EMAIL_ALREADY_IN_USE"))) {
+        return apiError(409, "EMAIL_ALREADY_IN_USE", "This email is already used by a User or Resource in Dialoggg. Use a different email address.", traceId, { ownerEmail: "This email address is already in use across the platform." });
       }
       if (error instanceof Error && error.message === "OWNER_PROFILE_NOT_EDITABLE") {
         return apiError(409, "OWNER_PROFILE_NOT_EDITABLE", "The Owner's account is already active or linked elsewhere. Owner identity details must be changed from that user's Account settings.", traceId);
@@ -99,6 +99,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   } catch (error) {
     const code = error instanceof Error ? error.message : "";
     if (code === "COMPANY_NOT_FOUND") return apiError(404, "RESOURCE_NOT_FOUND", "Company not found or already deleted.", traceId);
+    console.error("Company retirement transaction failed", { traceId, companyId, error: code || "UNKNOWN_ERROR" });
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, action: "company.delete", targetType: "company", targetId: companyId, companyId, result: "failure", metadata: { reason: "retirement_failed" } });
     return apiError(503, "COMPANY_DELETE_FAILED", "Company access could not be retired. No company data was removed; please try again.", traceId);
   }

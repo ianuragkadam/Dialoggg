@@ -476,43 +476,104 @@ body {
 .weekend { background: #f0f0f0 !important; }
 
 /* Resource Calendar date headers and subtle weekend columns. */
-.resource-calendar-timeline .fc .resource-calendar-timeline-date,
+.dialoggg-calendar-timeline .fc,
+.resource-calendar-grid-wrapper .fc {
+  --fc-border-color: #2c3d57;
+}
+
+.dialoggg-calendar-timeline .fc .resource-calendar-timeline-date,
 .resource-calendar-grid-wrapper .fc .resource-calendar-week-date {
   display: inline-flex;
-  min-height: 2.5rem;
+  width: 100%;
+  min-height: 3rem;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.12rem;
   line-height: 1.05;
+  white-space: nowrap;
 }
 
-.resource-calendar-timeline .fc .resource-calendar-timeline-weekday,
+.dialoggg-calendar-timeline .fc .fc-timeline-slot-cushion {
+  min-width: 0;
+  padding: 0.25rem 0.15rem;
+}
+
+.dialoggg-calendar-timeline .fc .fc-timeline-header-row .fc-timeline-slot {
+  vertical-align: middle;
+}
+
+.tenant-theme .dialoggg-calendar-timeline .fc .fc-scrollgrid-section-sticky > *,
+.tenant-theme .resource-calendar-grid-wrapper .fc .fc-scrollgrid-section-sticky > * {
+  background-color: #101a2b;
+}
+
+.dialoggg-calendar-timeline .fc .resource-calendar-timeline-weekday,
 .resource-calendar-grid-wrapper .fc .resource-calendar-week-weekday {
   color: #9aaac0;
-  font-size: 0.65rem;
-  font-weight: 500;
-  text-transform: uppercase;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0.015em;
 }
 
-.resource-calendar-timeline .fc .resource-calendar-timeline-day,
+.dialoggg-calendar-timeline .fc .resource-calendar-timeline-day,
 .resource-calendar-grid-wrapper .fc .resource-calendar-week-day {
   color: #e5edf7;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 800;
   line-height: 1.2;
 }
 
-.resource-calendar-timeline .fc .resource-calendar-timeline-day.is-today,
+.dialoggg-calendar-timeline .fc .resource-calendar-timeline-day.is-today,
 .resource-calendar-grid-wrapper .fc .resource-calendar-week-day.is-today {
-  color: #f59e0b;
+  color: #d1850b;
 }
 
-.tenant-theme .resource-calendar-timeline .fc .resource-calendar-weekend,
+.tenant-theme .dialoggg-calendar-timeline .fc .resource-calendar-weekend,
 .tenant-theme .resource-calendar-grid-wrapper .fc .resource-calendar-weekend {
+  background-color: #1d2d48 !important;
+}
+
+.tenant-theme .dialoggg-calendar-timeline .fc th.resource-calendar-weekend .fc-timeline-slot-frame {
   background-color: #1d2d48 !important;
 }
 
 .tenant-theme .resource-calendar-grid-wrapper .fc .fc-daygrid-day.resource-calendar-weekend .fc-daygrid-day-frame {
   background-color: #1d2d48 !important;
+}
+
+/* FullCalendar paints timeline lane frames over their table cells, so tint both. */
+.tenant-theme .dialoggg-calendar-timeline .fc td.fc-timeline-lane.resource-calendar-weekend .fc-timeline-lane-frame {
+  background-color: #1d2d48 !important;
+}
+
+/* Keep today distinct from the weekend tint with a soft blue fill and orange rails. */
+.tenant-theme .dialoggg-calendar-timeline .fc .resource-calendar-today,
+.tenant-theme .resource-calendar-grid-wrapper .fc .resource-calendar-today {
+  background-color: #223b59 !important;
+  border-inline: 1px solid #d1850b !important;
+}
+
+.tenant-theme .resource-calendar-grid-wrapper .fc .fc-daygrid-day.resource-calendar-today .fc-daygrid-day-frame {
+  background-color: #223b59 !important;
+  box-shadow: inset 1px 0 #d1850b, inset -1px 0 #d1850b;
+}
+
+/* Keep every actionable button's pointer affordance consistent across the app. */
+button:not(:disabled),
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+input[type="button"]:disabled,
+input[type="submit"]:disabled,
+input[type="reset"]:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
 }
