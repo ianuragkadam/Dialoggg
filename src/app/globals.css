@@ -122,6 +122,32 @@ body {
   color: #f4f6fa !important;
 }
 
+/* The Help Center uses its own navy palette; keep tenant-wide slate token remaps
+   from turning its light text dark and its dark surfaces pale. */
+.tenant-theme .help-center {
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+  --color-amber-50: #fffbeb;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-800: #92400e;
+  --color-amber-900: #78350f;
+  --color-amber-950: #451a03;
+}
+
+.help-center:not([data-section="support"]) #support {
+  display: none;
+}
+
 .tenant-theme .app-logo-mark {
   background-color: #f4f6fa !important;
   color: #17243a !important;

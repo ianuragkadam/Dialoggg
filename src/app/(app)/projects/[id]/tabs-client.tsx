@@ -6,6 +6,7 @@ import ProjectFoldersPrototype from "@/components/ProjectFoldersPrototype";
 import { formatProjectDate } from "@/lib/projects-ui";
 import { formatUsPhoneNumber } from "@/lib/phone-format";
 import HowItWorks from "@/components/HowItWorks";
+import { PROJECT_PLAN_HOW_IT_WORKS } from "@/lib/how-it-works-guides";
 
 const GanttChart = dynamic(() => import("@/components/GanttChart"), { ssr: false });
 const ProjectPlanWorkflowReview = dynamic(() => import("@/components/ProjectPlanWorkflowReview"), { ssr: false });
@@ -26,14 +27,6 @@ const TABS = [
   { id: "calendar",      label: "Project Calendar" },
   { id: "resources",     label: "Project Resources" },
   { id: "folders",       label: "Common and Private" },
-];
-
-const PROJECT_PLAN_HOW_IT_WORKS = [
-  "Click + Add Task to add a task. Click the + at the end of a row to add a subtask under it.",
-  "A task with subtasks is a header. Click its small arrow to collapse or expand it. Its bar automatically covers the dates of everything under it.",
-  "Drag a bar to move it to new dates. Drag the end of a bar to make the task longer or shorter.",
-  "To link tasks, hover over a bar until a circle appears at each end. Drag a circle onto the task you want to link to, then choose how they connect. If the first task moves, every task linked after it moves too.",
-  "Use the Resources column to assign people or equipment, and the Done column to track progress. Any change here updates the Project Calendar and Master Calendar automatically.",
 ];
 
 export default function ProjectTabs({

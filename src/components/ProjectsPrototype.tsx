@@ -5,16 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { formatProjectDate, normalizeProjectStatus, projectTypeFor, type ProjectUiRecord, type ProjectUiStatus } from "@/lib/projects-ui";
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
 import HowItWorks from "@/components/HowItWorks";
+import { PROJECT_DIRECTORY_GUIDE } from "@/lib/how-it-works-guides";
 
 type StatusFilter = "all" | ProjectUiStatus;
-const PROJECT_DIRECTORY_GUIDE = [
-  "Click + Add Project to start a new job. Only Owners and Admins can add projects.",
-  "The boxes at the top count your Active and Archived projects, and the menu next to the search box switches between them. Search by name, client, or type, or use the Project Type checkboxes to narrow the list.",
-  "Click Open to go into a project. Use Edit Project inside it to change its details.",
-  "When a job is finished, open it, click Edit Project, then Complete Job. It moves to Archived and comes off your calendars. To bring one back, open it from the Archived list and restore it to Active.",
-  "This page shows every job in your company. To see only the jobs you're assigned to, use My Projects.",
-];
-
 export default function ProjectsPrototype({ projects, projectTypes, canManage, external = false }: { projects: ProjectUiRecord[]; projectTypes: string[]; canManage: boolean; external?: boolean }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("active");

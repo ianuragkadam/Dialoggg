@@ -2490,7 +2490,30 @@ const migration026: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023, migration024, migration025, migration026];
+const migration027: Migration = {
+  version: 27,
+  name: "help_onboarding_progress",
+  signature: "persist company-shared and membership-personal help checklist completion v1",
+  up(database) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS help_checklist_completion (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id INTEGER NOT NULL,
+        membership_id INTEGER,
+        step_key TEXT NOT NULL,
+        completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (company_id) REFERENCES company(id) ON DELETE CASCADE,
+        FOREIGN KEY (membership_id) REFERENCES company_membership(id) ON DELETE CASCADE
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_help_checklist_company_step
+        ON help_checklist_completion(company_id, step_key) WHERE membership_id IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_help_checklist_member_step
+        ON help_checklist_completion(membership_id, step_key) WHERE membership_id IS NOT NULL;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023, migration024, migration025, migration026, migration027];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

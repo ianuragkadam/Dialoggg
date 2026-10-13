@@ -10,6 +10,7 @@ import ColorSwatches from "@/components/ColorSwatches";
 import ProjectStatusControl from "@/components/ProjectStatusControl";
 import HowItWorks from "@/components/HowItWorks";
 import { formatUsPhoneNumber } from "@/lib/phone-format";
+import { ADD_PROJECT_GUIDE } from "@/lib/how-it-works-guides";
 
 type Form = {
   name: string; clientName: string; clientEmail: string; address: string; city: string;
@@ -22,15 +23,6 @@ type ExternalInvite = { firstName: string; lastName: string; email: string };
 type PendingInvite = { id: number; name: string; email: string };
 const LIST_PAGE_SIZE = 10;
 const empty: Form = { name: "", clientName: "", clientEmail: "", address: "", city: "", state: "", zip: "", phone: "", projectTypeId: "", startDate: "", calendarColor: PROJECT_CALENDAR_COLORS[0], note: "", planSource: "blank", templateId: "", assignments: [] };
-const ADD_PROJECT_GUIDE = [
-  "Fill in the project and client details. Fields marked * are required.",
-  "Project Type is your label for the kind of job, such as Acrylic or Modular. Pick a Calendar Color too. It's the color this project's tasks show on the Master Calendar, and you can change individual tasks later.",
-  "Project Plan starting point: start blank, or start from a template. A template gives you a ready-made task list (tasks, durations, and links) that you can edit as needed.",
-  "Internal Users: check the people on your team who work on this job.",
-  "External Users: clients and other outside people. Invite them by email. They can view only this project, and they can't make changes. Invitations show under Pending Invitations until accepted.",
-  "Click Review Project to check everything before it's saved.",
-];
-
 export default function ProjectFormPrototype({ mode, project, projectTypes, availableUsers, templates = [], initialTemplateId = "" }: {
   mode: "create" | "edit"; project?: ProjectUiRecord;
   projectTypes: Array<{ id: number; name: string }>;

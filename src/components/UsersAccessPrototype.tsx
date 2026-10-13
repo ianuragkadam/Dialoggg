@@ -9,19 +9,10 @@ import PaginationControls, { pageItems } from "@/components/PaginationControls";
 import HowItWorks from "@/components/HowItWorks";
 import TimedNotice from "@/components/TimedNotice";
 import type { DeletedCompanyUserDto } from "@/lib/user-management";
+import { USERS_GUIDE } from "@/lib/how-it-works-guides";
 
 type FilterRole = "all" | CompanyRoleUi;
 type FilterStatus = "all" | UserStatusUi;
-const USERS_GUIDE = [
-  "A user is someone who logs in to Dialoggg. Owners and Admins click Invite User to add one. They'll get an email to set up their login.",
-  "There are four roles. Owner and Admin can create and edit projects and schedules. Employee can view everything but can't change anything. External/Client can view only the projects they've been given access to.",
-  "Owners can invite any role, including more Owners. Admins can invite Admins, Employees, and clients, but not Owners.",
-  "Your team is listed at the top of this page, and clients and other outside people are in External Users / Clients below it.",
-  "Employees see every project and schedule. The projects you check under Project assignments are the ones that appear on that person's My Projects page, and they're the ones the person gets notifications for.",
-  "A user isn't automatically a resource. Check Also add as a Resource when inviting someone you'll schedule on tasks, or link them later under Resources.",
-  "Deactivate a user who should no longer log in. Their access ends immediately and they're signed out. Their past project assignments stay visible, and a linked resource isn't affected.",
-];
-
 export default function UsersAccessPrototype({ initialUsers, initialDeletedUsers }: { initialUsers: CompanyUserUi[]; initialDeletedUsers: DeletedCompanyUserDto[] }) {
   const [users, setUsers] = useState(initialUsers);
   const [deletedUsers, setDeletedUsers] = useState(initialDeletedUsers);

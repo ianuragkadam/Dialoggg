@@ -66,7 +66,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 26/);
+    assert.match(second.stdout, /version 27/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -100,6 +100,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 24, name: "allow_owner_retirement_with_company" },
           { version: 25, name: "membership_removal_and_invitation_profile" },
           { version: 26, name: "platform_wide_email_uniqueness" },
+          { version: 27, name: "help_onboarding_progress" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
