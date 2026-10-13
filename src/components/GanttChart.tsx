@@ -755,12 +755,6 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
               <label className="text-sm">Task Progress
                 <input aria-label="Task Progress" type="number" min={0} max={100} value={Math.round(taskModal.progress * 100)} onChange={event => updateTaskModal({ progress: Math.max(0, Math.min(100, Number(event.target.value))) / 100 })} className="mt-1 w-full rounded border px-3 py-2" />
               </label>
-              <label className="text-sm">Resource Category
-                <select aria-label="Resource Category" value={taskModal.categoryId ?? ""} onChange={event => updateTaskModal({ categoryId: event.target.value ? Number(event.target.value) : null })} className="mt-1 w-full rounded border px-3 py-2">
-                  <option value="">Choose Category</option>
-                  {categories.map(category => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-              </label>
             </div>}
 
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskModal.externalVisible} onChange={event => updateTaskModal({ externalVisible: event.target.checked })} />Visible in assigned External/Client Project view</label>
@@ -777,12 +771,12 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                   No resources yet. Add employees, subs, or suppliers on the <b>Resources</b> page first.
                 </p>
               ) : (
-                <div className="max-h-40 overflow-auto border rounded p-2 space-y-2">
+                <div className="grid max-h-56 grid-cols-1 gap-x-5 gap-y-2 overflow-auto rounded border p-2 sm:grid-cols-2">
                   {grouped.map(g => g.members.length > 0 && (
-                    <div key={g.category.id}>
+                    <div key={g.category.id} className="min-w-0">
                       <div className="text-xs font-semibold text-gray-500 uppercase">{g.category.name}</div>
                       {g.members.map(m => (
-                        <label key={m.id} className="flex items-center gap-2 text-sm py-0.5">
+                        <label key={m.id} className="flex min-w-0 items-center gap-2 py-0.5 text-sm">
                           <input
                             type="checkbox"
                             checked={taskModal.resourceIds.includes(m.id)}
@@ -794,13 +788,13 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                               } : current);
                             }}
                           />
-                          {m.name}
+                          <span className="truncate" title={m.name}>{m.name}</span>
                         </label>
                       ))}
                     </div>
                   ))}
                   {uncategorized.map(m => (
-                    <label key={m.id} className="flex items-center gap-2 text-sm py-0.5">
+                    <label key={m.id} className="flex min-w-0 items-center gap-2 py-0.5 text-sm">
                       <input
                         type="checkbox"
                         checked={taskModal.resourceIds.includes(m.id)}
@@ -812,7 +806,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
                           } : current);
                         }}
                       />
-                      {m.name}
+                      <span className="truncate" title={m.name}>{m.name}</span>
                     </label>
                   ))}
                 </div>
@@ -959,7 +953,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-auto"
+        className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-3 border-b bg-blue-800 text-white rounded-t-lg">

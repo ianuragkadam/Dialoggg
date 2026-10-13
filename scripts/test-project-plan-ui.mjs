@@ -72,13 +72,14 @@ try {
     assert.equal(await dialog.getByLabel("Start Date").inputValue(), "2026-09-18");
     assert.equal(await dialog.getByLabel("Duration (days)").inputValue(), "2");
     await dialog.getByLabel("Allow work on Saturday").check();
-    await dialog.getByLabel("Resource Category").selectOption({ label: "Employee" });
+    await dialog.getByLabel("QA Crew", { exact: true }).check();
     await dialog.getByRole("button", { name: "Save" }).click();
     await page.getByRole("status").filter({ hasText: "Persistent QA Task was saved" }).waitFor();
     await page.reload();
     await page.getByTestId("persistent-gantt").getByText("Persistent QA Task", { exact: true }).first().waitFor();
     const taskRow = page.getByTestId("persistent-gantt").locator(".gantt_row").filter({ hasText: "Persistent QA Task" });
     assert.match((await taskRow.innerText()).replace(/\s+/g, " "), /Persistent QA Task.*40/);
+    await taskRow.getByText("QA Crew", { exact: true }).waitFor();
     assert.equal(await gantt.locator('.gantt_grid_head_cell').filter({ hasText: 'Resources' }).count(), 1);
     assert.equal(await gantt.locator('.gantt_grid_head_cell').filter({ hasText: 'Done' }).count(), 1);
     assert.equal(await gantt.locator('.gantt_container').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(255, 255, 255)');
