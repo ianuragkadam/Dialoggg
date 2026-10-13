@@ -6,6 +6,7 @@ import { authenticatedFetch } from "@/lib/client-fetch";
 import { RESOURCE_CATEGORIES, type ResourceCategoryUi, type ResourceStatusUi, type ResourceUi } from "@/lib/resources-ui";
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
 import HowItWorks from "@/components/HowItWorks";
+import TimedNotice from "@/components/TimedNotice";
 
 type ConflictSummary = { count: number; error: string };
 
@@ -36,7 +37,6 @@ export default function ResourcesPrototype({ initialResources, canManage }: { in
   const visible = pageItems(filtered, page);
 
   useEffect(() => { if (!target) return; const before = document.body.style.overflow; document.body.style.overflow = "hidden"; const close = (event: KeyboardEvent) => { if (event.key === "Escape" && !busy) setTarget(null); }; document.addEventListener("keydown", close); return () => { document.body.style.overflow = before; document.removeEventListener("keydown", close); }; }, [busy, target]);
-  useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 4500); return () => window.clearTimeout(timer); }, [toast]);
   useEffect(() => { setPage(1); }, [category, query, status]);
   useEffect(() => {
     let cancelled = false;
@@ -85,22 +85,6 @@ export default function ResourcesPrototype({ initialResources, canManage }: { in
             <h2 id="resource-directory-title" className="font-bold text-slate-950">Company Resource directory</h2>
             <p className="mt-1 text-sm text-slate-500">Categories are the approved fixed list; there is no category builder.</p>
           </div>
-          <details className="group w-full sm:w-96 sm:shrink-0">
-            <summary className="ml-auto flex min-h-10 w-full max-w-56 cursor-pointer list-none items-center justify-between gap-3 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 marker:hidden focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <span>Resource Guide</span>
-              <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="1.8"><path strokeLinecap="round" strokeLinejoin="round" d="m5 7.5 5 5 5-5"/></svg>
-            </summary>
-            <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-              <h3 className="font-bold text-slate-900">Resource rules</h3>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>Resources represent people, crews, suppliers, equipment, or other capacity assigned to Tasks and Events.</li>
-                <li>A Resource record does not grant login access. A linked User account is managed separately.</li>
-                <li>Every Resource has exactly one fixed Category; Categories cannot be added, renamed, or deleted.</li>
-                <li>Inactive Resources cannot be assigned to new work, while their historical assignments remain available.</li>
-                <li>Schedule conflicts flag overlapping work assigned to the same Resource; resolve them by reviewing the schedule.</li>
-              </ul>
-            </div>
-          </details>
         </div>
         <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_190px_170px]">
           <label className="sr-only" htmlFor="resource-search">Search Resources</label>
@@ -115,7 +99,7 @@ export default function ResourcesPrototype({ initialResources, canManage }: { in
       <PaginationControls page={page} totalItems={filtered.length} onPageChange={setPage} label="Resources" />
     </section>
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="categories-title"><h2 id="categories-title" className="font-bold text-slate-950">Fixed Resource Categories</h2><div className="mt-3 flex flex-wrap gap-2">{RESOURCE_CATEGORIES.map(item => <span key={item} className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700">{item}</span>)}</div><p className="mt-3 text-sm text-slate-500">Every Resource requires exactly one Category. Categories cannot be added, renamed, or deleted.</p></section>
-    {toast && <div role="status" className="fixed bottom-5 right-5 z-[70] max-w-md rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl">✓ {toast}</div>}
+    {toast && <div className="fixed bottom-5 right-5 z-[70] w-[min(28rem,calc(100vw-2.5rem))]"><TimedNotice message={toast} onDismiss={() => setToast("")} /></div>}
     {target && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div role="alertdialog" aria-modal="true" aria-label={target.status === "active" ? "Deactivate Resource?" : "Restore Resource?"} className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"><h2 className="text-xl font-bold text-slate-950">{target.status === "active" ? "Deactivate Resource?" : "Restore Resource?"}</h2><p className="mt-2 text-sm leading-6 text-slate-600">{target.status === "active" ? `${target.name} will be unavailable for new Task or Event assignments.` : `${target.name} will become available for new assignments again.`}</p><ul className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950"><li>• Historical Task and Event assignments remain visible.</li><li>• Existing Resource Calendar history is preserved.</li><li>• A linked User is not deactivated or restored automatically.</li></ul>{error && <p role="alert" className="mt-3 text-sm font-bold text-red-700">{error}</p>}<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" disabled={busy} onClick={() => setTarget(null)} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold">Cancel</button><button type="button" disabled={busy} onClick={changeStatus} className="min-h-11 rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white">{busy ? "Saving…" : target.status === "active" ? "Deactivate Resource" : "Restore Resource"}</button></div></div></div>}
   </div>;
 }

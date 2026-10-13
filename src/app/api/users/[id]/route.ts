@@ -142,7 +142,8 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     return apiError(403, "ACTION_FORBIDDEN", "You cannot manage this membership.", traceId);
   }
   try {
-    if (!removeMembership(actor, target.id)) return apiError(403, "ACTION_FORBIDDEN", "You cannot remove this membership.", traceId);
+    const removedAt = removeMembership(actor, target.id);
+    if (!removedAt) return apiError(403, "ACTION_FORBIDDEN", "You cannot remove this membership.", traceId);
     revokeIdentitySessions(target.identity_id, "membership_removed");
     recordAudit({
       requestId: traceId,
@@ -154,7 +155,7 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
       targetId: target.id,
       result: "success",
     });
-    return apiSuccess({ removed: true }, traceId);
+    return apiSuccess({ removed: true, removedAt }, traceId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message === "SELF_LIFECYCLE_FORBIDDEN") return apiError(409, "SELF_LIFECYCLE_FORBIDDEN", "You cannot remove your current membership.", traceId);

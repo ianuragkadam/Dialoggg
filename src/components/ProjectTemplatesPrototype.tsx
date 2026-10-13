@@ -7,6 +7,7 @@ import { authenticatedFetch } from "@/lib/client-fetch";
 import type { ProjectTemplateUiItem } from "@/lib/project-templates-ui";
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
 import HowItWorks from "@/components/HowItWorks";
+import TimedNotice from "@/components/TimedNotice";
 
 type ApiError = { error?: { message?: string; fields?: Record<string, string> } };
 const PROJECT_TEMPLATES_GUIDE = [
@@ -54,12 +55,6 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
   useEffect(() => {
     if (renameTarget && !discardOpen) window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [renameTarget, discardOpen]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 4500);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   useEffect(() => { setPage(1); }, [normalizedQuery]);
 
@@ -233,7 +228,7 @@ export default function ProjectTemplatesPrototype({ initialItems }: { initialIte
         <PaginationControls page={page} totalItems={filteredItems.length} onPageChange={setPage} label="Templates" />
       </section>
 
-      {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-md rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl"><span aria-hidden="true" className="mr-2 text-emerald-400">✓</span>{toast}</div>}
+      {toast && <div className="fixed bottom-5 right-5 z-[70] w-[min(28rem,calc(100vw-2.5rem))]"><TimedNotice message={toast} onDismiss={() => setToast("")} /></div>}
 
       {renameTarget && !discardOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4" onMouseDown={event => { if (event.target === event.currentTarget) requestRenameClose(); }}>

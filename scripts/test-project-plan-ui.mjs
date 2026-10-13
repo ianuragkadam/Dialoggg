@@ -95,6 +95,46 @@ try {
     assert.equal(persisted.data.data.filter(item => item.is_root).length, 1);
   });
 
+  await check("changing a Task duration preserves its assigned Resource", async () => {
+    const gantt = page.getByTestId("persistent-gantt");
+    const panel = page.getByTestId("live-root-task-panel");
+    await page.evaluate(() => {
+      const chart = window.gantt;
+      const originalShowDate = chart.showDate;
+      window.__ganttShowDateCalls = [];
+      chart.showDate = function (date) {
+        window.__ganttShowDateCalls.push(chart.date.date_to_str("%Y-%m-%d")(date));
+        return originalShowDate.call(chart, date);
+      };
+    });
+    await panel.getByRole("button", { name: "Edit in Gantt" }).first().click();
+    const dialog = page.getByRole("dialog", { name: "Edit Task" });
+    assert.equal(await dialog.getByLabel("Task Name").inputValue(), "Concrete base");
+    assert.equal(await dialog.getByLabel("QA Crew").isChecked(), true);
+    await dialog.getByLabel("Start Date").fill("2027-08-12");
+    await dialog.getByLabel("Duration (days)").fill("3");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("status").filter({ hasText: "Concrete base was saved" }).waitFor();
+    assert.equal(await page.evaluate(() => window.__ganttShowDateCalls.at(-1)), "2027-08-12");
+    const taskRow = gantt.locator(".gantt_row").filter({ hasText: "Concrete base" });
+    await taskRow.getByText("QA Crew", { exact: true }).waitFor();
+    const assignments = await json(`${baseUrl}/api/projects/${projectId}/tasks/${initialTaskIds[0]}/resources`, { headers: auth });
+    assert.equal(assignments.response.status, 200);
+    assert.deepEqual(assignments.data.resource_ids, [resourceResult.data.id]);
+
+    const currentPlan = await json(`${baseUrl}/api/projects/${projectId}/tasks`, { headers: auth });
+    const task = currentPlan.data.data.find(item => item.id === initialTaskIds[0]);
+    const partialUpdate = await json(`${baseUrl}/api/projects/${projectId}/tasks/${initialTaskIds[0]}`, {
+      method: "PUT", headers: auth,
+      body: JSON.stringify({ planVersion: currentPlan.data.planVersion, version: task.version, duration: 2 }),
+    });
+    assert.equal(partialUpdate.response.status, 200, JSON.stringify(partialUpdate.data));
+    const afterPartialUpdate = await json(`${baseUrl}/api/projects/${projectId}/tasks/${initialTaskIds[0]}/resources`, { headers: auth });
+    assert.deepEqual(afterPartialUpdate.data.resource_ids, [resourceResult.data.id]);
+    await page.reload();
+    await page.getByTestId("persistent-gantt").getByText("Concrete base", { exact: true }).first().waitFor();
+  });
+
   await check("live task panel refreshes after a Gantt edit", async () => {
     const panel = page.getByTestId("live-root-task-panel");
     await panel.getByTestId(/^live-plan-task-/).first().waitFor();

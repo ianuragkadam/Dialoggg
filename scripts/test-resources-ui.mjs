@@ -155,8 +155,13 @@ try {
     await page.getByRole("heading", { name: "Resources", exact: true }).waitFor();
     const body = await page.locator("body").innerText();
     for (const item of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) assert.match(body, new RegExp(item));
-    assert.match(body, /Changes are saved to this company and audited/);
+    assert.match(body, /Categories are the approved fixed list/);
     assert.match(body, /Jamie Morgan/);
+    assert.equal(await page.getByText("Resource Guide", { exact: true }).count(), 0);
+    const howItWorks = page.getByRole("button", { name: "How It Works" });
+    assert.equal(await howItWorks.count(), 1);
+    await howItWorks.click();
+    await page.getByText(/Resources do not log in\./).waitFor();
   });
   await check("Resource filters have a recoverable no-results state", async () => {
     await page.getByLabel("Search Resources").fill("nothing here");
@@ -199,7 +204,8 @@ try {
     await page.locator("#resource-name").fill("Northline Crew");
     await page.locator("#resource-category").selectOption({ label: "Subcontractor" });
     await page.locator("#resource-email").fill("crew@northline.example.test");
-    await page.locator("#resource-phone").fill("717-555-0199");
+    await page.locator("#resource-phone").fill("7175550199");
+    assert.equal(await page.locator("#resource-phone").inputValue(), "717-555-0199");
     await page.locator("#linked-user").selectOption(String(candidate.membershipId));
     await page.getByRole("button", { name: "Review Resource" }).click();
     const review = page.getByRole("dialog", { name: "Confirm Resource" });
@@ -207,7 +213,10 @@ try {
     assert.match(await review.innerText(), /Priya Shah/);
     await review.getByRole("button", { name: "Create Resource" }).click();
     await page.getByRole("heading", { name: "Resource created" }).waitFor();
-    await page.getByRole("link", { name: "View Resource" }).click();
+    await page.getByRole("link", { name: "Return to Resources" }).click();
+    const firstResource = page.locator("article").first();
+    await firstResource.getByRole("heading", { name: "Northline Crew", exact: true }).waitFor();
+    await firstResource.getByRole("link", { name: "View" }).click();
     await page.getByRole("heading", { name: "Northline Crew" }).waitFor();
     await page.reload();
     assert.match(await page.locator("body").innerText(), /Priya Shah/);
@@ -215,6 +224,8 @@ try {
   await check("Resource edits persist and duplicate names fail closed", async () => {
     await page.getByRole("button", { name: "Edit Resource" }).click();
     await page.locator("#edit-resource-name").fill("Jamie Morgan");
+    await page.locator("#edit-resource-phone").fill("6105550100");
+    assert.equal(await page.locator("#edit-resource-phone").inputValue(), "610-555-0100");
     await page.getByRole("dialog", { name: "Edit Resource" }).getByRole("button", { name: "Save Resource" }).click();
     await page.getByText(/already exists/i).waitFor();
     await page.locator("#edit-resource-name").fill("Northline Field Crew");

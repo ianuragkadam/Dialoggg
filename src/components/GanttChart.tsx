@@ -393,10 +393,19 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
       async function openEditModal(id: any, t: any) {
         if (t.is_root) { setMessage("The Project root is protected and derives its schedule from descendant Tasks."); return; }
         let resourceIds: number[] = [];
-        try {
-          const j = await fetch(`/api/projects/${projectId}/tasks/${id}/resources`).then(r => r.json());
-          resourceIds = j.resource_ids || [];
-        } catch {}
+        if (t.type !== "project") {
+          try {
+            const response = await fetch(`/api/projects/${projectId}/tasks/${id}/resources`, { cache: "no-store" });
+            const j = await response.json();
+            if (!response.ok || !Array.isArray(j.resource_ids)) throw new Error("Resource assignments unavailable.");
+            resourceIds = j.resource_ids.map(Number).filter((resourceId: number) => Number.isInteger(resourceId) && resourceId > 0);
+          } catch {
+            // Never open the editor with an empty fallback: saving a duration
+            // would otherwise interpret a failed lookup as an intentional clear.
+            setMessage("This Task’s Resource assignments could not be loaded. Refresh the Project Plan and try again; no changes were made.");
+            return;
+          }
+        }
         setTaskModal({
           mode: "edit", id,
           text: t.text, start_date: isoFromDate(gantt, t.start_date),
@@ -547,6 +556,15 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
     };
   }, [projectId, reload]);
 
+  function focusTaskStart(taskId: number) {
+    const gantt = ganttRef.current;
+    if (!gantt || !gantt.isTaskExists(taskId)) return;
+    const task = gantt.getTask(taskId);
+    if (task?.start_date instanceof Date && !Number.isNaN(task.start_date.getTime())) {
+      gantt.showDate(task.start_date);
+    }
+  }
+
   // ---- Save handler for the Task popup ----
   async function saveTask() {
     if (!taskModal) return;
@@ -592,6 +610,7 @@ export default function GanttChart({ projectId, canEdit = true }: { projectId: n
     setTaskModal(null);
     setMessage(`${taskModal.text.trim()} was saved and the Project Plan was recalculated.`);
     await reload();
+    if (taskModal.mode === "edit" && taskId != null) focusTaskStart(Number(taskId));
   }
 
   async function deleteTask() {

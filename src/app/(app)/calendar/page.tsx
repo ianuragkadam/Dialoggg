@@ -10,6 +10,7 @@ import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 import { authenticatedFetch } from "@/lib/client-fetch";
 import EventOccurrenceDialog from "@/components/EventOccurrenceDialog";
 import TaskOccurrenceDialog from "@/components/TaskOccurrenceDialog";
+import TimedNotice from "@/components/TimedNotice";
 
 type Project = { id: number; name: string; project_type_id: number; project_type: string };
 
@@ -23,7 +24,7 @@ export default function MasterCalendarPage() {
   const [canManage, setCanManage] = useState(false);
   const [companyTimeZone,setCompanyTimeZone]=useState("UTC");
   const [includeArchived,setIncludeArchived]=useState(false);
-  const [notice,setNotice]=useState("");
+  const [notice,setNotice]=useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [selectedEvent,setSelectedEvent]=useState<any>(null);
   const [selectedTask,setSelectedTask]=useState<any>(null);
   const [openAddEvent,setOpenAddEvent]=useState<(() => void) | null>(null);
@@ -58,7 +59,7 @@ export default function MasterCalendarPage() {
     fetch(query ? `/api/calendar?${query}` : "/api/calendar").then(r => r.json()).then(j => setEvents(j.events || []));
   }, [projectId, selectedProjectTypeIds, projects.length, projectsLoaded,includeArchived]);
   useEffect(() => {loadEvents();}, [loadEvents]);
-  async function moveEvent(info:any){const props=info.event.extendedProps;if(props.kind!=="event"){info.revert();return;}const start=info.event.startStr,end=info.event.endStr||start;if(!window.confirm(`Move ${info.event.title} to ${start}? Cancel returns it to the original position.`)){info.revert();return;}info.revert();const replacement=info.event.allDay?{startDate:start.slice(0,10),endDate:new Date(Date.parse(end)-86400000).toISOString().slice(0,10)}:{startAt:info.event.start?.toISOString(),endAt:info.event.end?.toISOString()};async function save(confirmConflicts=false){const response=await authenticatedFetch(`/api/events/${props.seriesId}/exceptions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({version:props.version,occurrenceKey:props.occurrenceKey,action:"replace",replacement,confirmConflicts})});const data=await response.json();if(response.status===409&&data?.error?.code==="RESOURCE_CONFLICT"&&!confirmConflicts){if(window.confirm("This move overlaps another Resource assignment. Keep the assignment anyway?"))await save(true);return;}setNotice(response.ok?"Event moved after confirmation. All applicable calendars were refreshed.":data?.error?.message||"The Event could not be moved.");if(response.ok)loadEvents();}await save();}
+  async function moveEvent(info:any){const props=info.event.extendedProps;if(props.kind!=="event"){info.revert();return;}const start=info.event.startStr,end=info.event.endStr||start;if(!window.confirm(`Move ${info.event.title} to ${start}? Cancel returns it to the original position.`)){info.revert();return;}info.revert();const replacement=info.event.allDay?{startDate:start.slice(0,10),endDate:new Date(Date.parse(end)-86400000).toISOString().slice(0,10)}:{startAt:info.event.start?.toISOString(),endAt:info.event.end?.toISOString()};async function save(confirmConflicts=false){const response=await authenticatedFetch(`/api/events/${props.seriesId}/exceptions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({version:props.version,occurrenceKey:props.occurrenceKey,action:"replace",replacement,confirmConflicts})});const data=await response.json();if(response.status===409&&data?.error?.code==="RESOURCE_CONFLICT"&&!confirmConflicts){if(window.confirm("This move overlaps another Resource assignment. Keep the assignment anyway?"))await save(true);return;}setNotice(response.ok?{text:"Event moved after confirmation. All applicable calendars were refreshed.",tone:"success"}:{text:data?.error?.message||"The Event could not be moved.",tone:"error"});if(response.ok)loadEvents();}await save();}
 
   return (
     <div className="space-y-4">
@@ -81,7 +82,7 @@ export default function MasterCalendarPage() {
         onEventsChanged={loadEvents}
         onAddEventReady={registerAddEvent}
       >
-      {notice&&<div role="status" className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">{notice}</div>}
+      {notice&&<TimedNotice message={notice.text} tone={notice.tone} onDismiss={() => setNotice(null)} />}
       <div className="dialoggg-calendar bg-white border rounded shadow-sm p-2 sm:p-4">
         <FullCalendar
           plugins={[dayGridPlugin,interactionPlugin,luxonPlugin]}

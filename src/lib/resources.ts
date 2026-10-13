@@ -173,7 +173,7 @@ function toDto(row: ResourceRow): ResourceUi {
 }
 
 export function listResources(companyId: number): ResourceUi[] {
-  const rows = db.prepare(`SELECT id FROM resource WHERE company_id = ? ORDER BY lower(name), id`).all(companyId) as Array<{ id: number }>;
+  const rows = db.prepare(`SELECT id FROM resource WHERE company_id = ? ORDER BY id DESC`).all(companyId) as Array<{ id: number }>;
   return rows.map(row => getResource(row.id, companyId)).filter((value): value is ResourceUi => !!value);
 }
 

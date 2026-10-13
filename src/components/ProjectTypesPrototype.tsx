@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
 import HowItWorks from "@/components/HowItWorks";
+import TimedNotice from "@/components/TimedNotice";
 
 type AffectedProject = { id: number; name: string };
 type ProjectTypeItem = {
@@ -77,7 +78,6 @@ export default function ProjectTypesPrototype({ initialItems }: { initialItems: 
   const modalOpen = !!editor || !!deleteTarget || !!blockedTarget || discardOpen;
 
   useEffect(() => { if (editor && !discardOpen) window.setTimeout(() => inputRef.current?.focus(), 0); }, [editor, discardOpen]);
-  useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 4500); return () => window.clearTimeout(timer); }, [toast]);
   useEffect(() => { setPage(1); }, [normalizedQuery]);
   useEffect(() => {
     if (!modalOpen) return;
@@ -194,7 +194,7 @@ export default function ProjectTypesPrototype({ initialItems }: { initialItems: 
       </>}
       <PaginationControls page={page} totalItems={filteredItems.length} onPageChange={setPage} label="Project Types" />
     </section>
-    {toast && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-[70] max-w-sm rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-xl"><span aria-hidden="true" className="mr-2 text-emerald-400">✓</span>{toast}</div>}
+    {toast && <div className="fixed bottom-5 right-5 z-[70] w-[min(28rem,calc(100vw-2.5rem))]"><TimedNotice message={toast} onDismiss={() => setToast("")} /></div>}
 
     {editor && !discardOpen && <Backdrop onClose={requestEditorClose}><div role="dialog" aria-modal="true" aria-labelledby="project-type-editor-title" className="w-full max-w-lg rounded-2xl bg-white shadow-2xl"><div className="flex items-start justify-between border-b px-5 py-4"><div><h2 id="project-type-editor-title" className="text-xl font-bold">{editor.mode === "create" ? "Add Project Type" : "Rename Project Type"}</h2><p className="mt-1 text-sm text-slate-500">{editor.mode === "create" ? "Create one reusable label for this company." : `Update “${editor.originalName}” everywhere it appears.`}</p></div><button type="button" aria-label="Close dialog" disabled={busy} onClick={requestEditorClose} className="rounded-lg p-2"><CloseIcon/></button></div><form onSubmit={saveEditor} noValidate><div className="space-y-4 px-5 py-5">{editor.mode === "rename" && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">The new name will appear in All Projects and Master Calendar filters. Existing Projects remain assigned to this type.</div>}<div><label htmlFor="project-type-name" className="block text-sm font-bold">Project Type name <span className="text-red-600">*</span></label><input ref={inputRef} id="project-type-name" value={draftName} onChange={event => { setDraftName(event.target.value); setFormError(""); }} aria-required="true" aria-invalid={!!formError} maxLength={51} placeholder="Example: Acrylic" className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"/><div className="mt-1 flex justify-between gap-3"><p className="text-xs text-slate-500">1–50 characters. Names are unique regardless of capitalization.</p><span className="text-xs text-slate-400">{draftName.length}/50</span></div>{formError && <p role="alert" className="mt-2 text-sm font-semibold text-red-700">{formError}</p>}</div></div><div className="flex flex-col-reverse gap-2 rounded-b-2xl border-t bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end"><button type="button" disabled={busy} onClick={requestEditorClose} className="min-h-11 rounded-lg border px-4 py-2 text-sm font-bold">Cancel</button><button type="submit" disabled={busy} className="min-h-11 rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{busy ? "Saving…" : editor.mode === "create" ? "Add Project Type" : "Save new name"}</button></div></form></div></Backdrop>}
     {discardOpen && editor && <Backdrop><div role="alertdialog" aria-modal="true" aria-label="Discard unsaved changes?" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><h2 className="text-xl font-bold">Discard unsaved changes?</h2><p className="mt-2 text-sm text-slate-600">The Project Type name you entered has not been saved.</p><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" autoFocus onClick={() => setDiscardOpen(false)} className="min-h-11 rounded-lg border px-4 py-2 text-sm font-bold">Keep editing</button><button type="button" onClick={closeEditor} className="min-h-11 rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white">Discard changes</button></div></div></Backdrop>}

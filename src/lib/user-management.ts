@@ -38,6 +38,13 @@ export type CompanyUserDto = {
   };
 };
 
+export type DeletedCompanyUserDto = {
+  id: number;
+  name: string;
+  email: string;
+  removedAt: string;
+};
+
 type MembershipRow = {
   id: number;
   identity_id: number;
@@ -145,6 +152,21 @@ export function listCompanyUsers(actor: Actor): CompanyUserDto[] {
   return rows.map(row => getCompanyUser(actor, row.id)).filter((user): user is CompanyUserDto => !!user);
 }
 
+export function listRemovedCompanyUsers(actor: Actor): DeletedCompanyUserDto[] {
+  if (!actor.companyId) return [];
+  return db.prepare(`
+    SELECT cm.id,
+      trim(COALESCE(cm.invited_first_name, i.first_name) || ' ' || COALESCE(cm.invited_last_name, i.last_name)) AS name,
+      i.normalized_email AS email, cm.removed_at AS removed_at
+    FROM company_membership cm
+    JOIN identity i ON i.id = cm.identity_id
+    WHERE cm.company_id = ? AND cm.removed_at IS NOT NULL
+    ORDER BY cm.removed_at DESC, cm.id DESC
+  `).all(actor.companyId).map((row: any) => ({
+    id: Number(row.id), name: String(row.name || row.email), email: String(row.email), removedAt: String(row.removed_at),
+  }));
+}
+
 export function removeMembership(actor: Actor, membershipId: number) {
   const row = targetMembership(actor, membershipId);
   if (!row || row.removed_at || !canManageMembership(actor, { membershipId: row.id, role: row.role, status: row.status })) return null;
@@ -177,7 +199,7 @@ export function removeMembership(actor: Actor, membershipId: number) {
       db.prepare("UPDATE identity SET status = 'deactivated', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(row.identity_id);
     }
   })();
-  return true;
+  return (db.prepare("SELECT removed_at FROM company_membership WHERE id = ? AND company_id = ?").get(row.id, actor.companyId) as { removed_at: string } | undefined)?.removed_at ?? null;
 }
 
 export function listAssignableProjects(companyId: number): Omit<UserProjectDto, "assigned">[] {

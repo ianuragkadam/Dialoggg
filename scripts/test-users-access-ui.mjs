@@ -139,6 +139,13 @@ try {
     await page.getByRole("alertdialog", { name: "Delete User?" }).getByRole("button", { name: "Delete User" }).click();
     await page.getByText("Jamie Employee was removed from this company.").waitFor();
     assert.equal(await page.locator("article").filter({ hasText: "Jamie Employee" }).count(), 0);
+    await page.locator("summary").filter({ hasText: "Deleted Users" }).click();
+    const deletionRecord = page.locator("details").filter({ hasText: "Jamie Employee" });
+    await deletionRecord.getByText(/Deleted/).waitFor();
+    assert.match(await deletionRecord.innerText(), /Jamie Employee was removed from this company\./);
+    await page.reload();
+    await page.locator("summary").filter({ hasText: "Deleted Users" }).click();
+    assert.match(await page.locator("details").filter({ hasText: "Jamie Employee" }).innerText(), /Deleted/);
   });
 
   await check("Invitation validates identity fields and External minimum assignment", async () => {

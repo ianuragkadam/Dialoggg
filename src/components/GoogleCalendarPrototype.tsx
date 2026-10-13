@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import TimedNotice from "@/components/TimedNotice";
 
 type ConnectionState = "connected" | "attention" | "paused" | "disconnected";
 type DialogName = "connect" | "reconnect" | "disconnect" | "resume" | "payload" | null;
@@ -29,7 +30,7 @@ export default function GoogleCalendarPrototype({ email, role }: { email: string
   return <div className="mx-auto max-w-6xl space-y-5 pb-10" data-google-calendar-ready={ready ? "true" : "false"}>
     <nav aria-label="Breadcrumb" className="text-sm text-slate-500"><Link href="/account">Account Settings</Link><span className="px-2">/</span><span className="font-medium text-slate-800">Google Calendar</span></nav>
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><h1 className="text-3xl font-bold text-slate-950">Google Calendar</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">Personal one-way schedule delivery from Dialoggg into a dedicated Google calendar named <strong>Dialoggg</strong>.</p></div><span className={`rounded-full px-3 py-1.5 text-sm font-bold ${stateClass}`}>{stateLabel}</span></div>
-    {notice && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">{notice}</div>}
+    {notice && <TimedNotice message={notice} onDismiss={() => setNotice("")} />}
 
     <section className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-wide text-slate-500">Your connection</p><h2 className="mt-1 text-xl font-bold text-slate-950">{connected ? email : "No Google account connected"}</h2>{connected && <p className="mt-1 text-sm text-slate-600">Managed calendar: <strong>Dialoggg</strong> · Personal consent for this User only</p>}</div><div className="flex flex-wrap gap-2">{!connected ? <button type="button" onClick={() => setDialog("connect")} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white">Connect Google Calendar</button> : <><button type="button" onClick={() => setDialog("reconnect")} className="rounded-lg border px-3 py-2 text-sm font-bold">Reconnect</button><button type="button" onClick={() => setDialog("disconnect")} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-bold text-red-700">Disconnect</button></>}</div></div>

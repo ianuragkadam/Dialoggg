@@ -461,7 +461,11 @@ export function updatePlanTask(projectId: number, taskId: number, companyId: num
       if (current.progress >= 1 && scheduleChanged) throw new PlanDomainError("COMPLETED_TASK_IMMUTABLE", "Completed Task dates and working-day rules cannot be changed.", 409);
       db.prepare(`UPDATE task SET name=?,parent_id=?,duration=?,progress=?,color=?,allow_saturday=?,allow_sunday=?,resource_category_id=?,external_visible=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
         .run(fields.name,parentId,fields.duration,fields.progress,fields.color,fields.allowSaturday?1:0,fields.allowSunday?1:0,fields.categoryId,fields.externalVisible?1:0,taskId);
-      setTaskResources(projectId, companyId, taskId, input.resourceIds ?? input.resource_ids);
+      // Duration or other task edits may omit Resource assignments. Treat that
+      // as “leave unchanged”; an explicit empty array still clears assignments.
+      if (input.resourceIds !== undefined || input.resource_ids !== undefined) {
+        setTaskResources(projectId, companyId, taskId, input.resourceIds ?? input.resource_ids);
+      }
       const refreshed = db.prepare("SELECT * FROM task WHERE id=?").get(taskId) as PlanTaskRow;
       if (!updateLinkedDrag(projectId, refreshed, fields.startDate)) {
         db.prepare("UPDATE task SET manual_start_date=?,start_date=? WHERE id=?").run(fields.startDate, fields.startDate, taskId);

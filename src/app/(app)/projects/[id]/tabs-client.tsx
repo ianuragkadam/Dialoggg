@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import ProjectFoldersPrototype from "@/components/ProjectFoldersPrototype";
 import { formatProjectDate } from "@/lib/projects-ui";
+import { formatUsPhoneNumber } from "@/lib/phone-format";
 import HowItWorks from "@/components/HowItWorks";
 
 const GanttChart = dynamic(() => import("@/components/GanttChart"), { ssr: false });
@@ -163,7 +164,7 @@ function Details({ project, projectUsers, createdBy }: { project: Project; proje
         {row("Client Email", project.client_email)}
         {row("Address",
           [project.address, project.city, project.state, project.zip].filter(Boolean).join(", "))}
-        {row("Phone", project.phone)}
+        {row("Phone", project.phone ? formatUsPhoneNumber(project.phone) : null)}
         {row("Notes", project.note)}
       </section>
       <section className="rounded border bg-white p-6 shadow-sm" aria-labelledby="project-users-heading">

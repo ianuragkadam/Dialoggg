@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
+import TimedNotice from "@/components/TimedNotice";
 
 export type PlatformAdministrator = {
   id: number;
@@ -98,7 +99,7 @@ export default function PlatformAdministratorManagement({
       <button disabled={busy} className="mt-4 min-h-10 rounded bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">{busy ? "Sending…" : "Send invitation"}</button>
     </form> : <p className="mt-5 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">Only the Primary Platform Administrator can invite or remove Platform Administrators.</p>}
 
-    {message && <p role="status" className={`mt-4 rounded p-3 text-sm ${message.ok ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-800"}`}>{message.text}</p>}
+    {message && <div className="mt-4"><TimedNotice message={message.text} tone={message.ok ? "success" : "error"} onDismiss={() => setMessage(null)} /></div>}
     {pendingRemoval && <div role="dialog" aria-modal="true" aria-labelledby="platform-admin-removal-title" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
       <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
         <h3 id="platform-admin-removal-title" className="text-lg font-bold text-slate-950">{pendingRemoval.status === "invited" ? "Cancel invitation?" : "Remove Platform Administrator?"}</h3>

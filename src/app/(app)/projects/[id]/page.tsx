@@ -4,6 +4,7 @@ import ProjectWorkspacePrototype from "@/components/ProjectWorkspacePrototype";
 import { getCurrentActor } from "@/lib/auth";
 import { canViewProject, isProjectAssigned } from "@/lib/authorization";
 import { workingDayEnd } from "@/lib/dates";
+import { getProjectPlan } from "@/lib/gantt-cascade";
 import type { ProjectUiRecord } from "@/lib/projects-ui";
 
 export default async function ProjectViewPage({ params }: { params: Promise<{ id: string }> }) {
@@ -37,6 +38,13 @@ export default async function ProjectViewPage({ params }: { params: Promise<{ id
       return !latest || end > latest ? end : latest;
     }, null);
     project = { ...project, derived_end_date: derivedEnd };
+  } else {
+    // The persisted project.end_date can be stale for plans created before
+    // end-date recalculation was introduced. Use the same calculated plan
+    // end date shown by the Project Plan, derived from its scheduled leaves.
+    const plan = getProjectPlan(projectId, actor.companyId!);
+    const planEndDate = plan?.project.endDate ?? null;
+    project = { ...project, end_date: planEndDate, derived_end_date: planEndDate };
   }
   const projectUsers = external ? [] : db.prepare(`SELECT trim(i.first_name || ' ' || i.last_name) AS full_name, i.normalized_email AS email, cm.role
     FROM identity i JOIN company_membership cm ON cm.identity_id = i.id

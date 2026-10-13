@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import TimedNotice from "@/components/TimedNotice";
 import HowItWorks from "@/components/HowItWorks";
 
 const MICROSOFT_STORAGE_GUIDE = [
@@ -84,7 +85,7 @@ export default function MicrosoftStoragePrototype({ companyName }: { companyName
   return <div className="mx-auto max-w-6xl space-y-5 pb-10" data-microsoft-storage-ready="true">
     <header className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-3xl font-bold text-slate-950">Microsoft Storage</h1><p className="mt-1 text-sm leading-6 text-slate-600">Link each job to its shared folders in your Microsoft OneDrive or SharePoint.</p><span className="mt-2 inline-flex rounded border border-lime-700 bg-[#1c2c22] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-lime-300">Optional: Dialoggg never stores your files</span></div><span className={`mt-1 rounded-full px-3 py-1.5 text-xs font-bold ${connected ? "bg-emerald-100 text-emerald-900" : attention ? "bg-amber-100 text-amber-950" : "bg-slate-200 text-slate-800"}`}>{healthLabel}</span></header>
     <HowItWorks items={MICROSOFT_STORAGE_GUIDE} />
-    {notice && <div role="status" className={`rounded-lg border p-3 text-sm font-semibold ${notice.includes("could not") || notice.includes("unavailable") ? "border-red-200 bg-red-50 text-red-900" : "border-blue-200 bg-blue-50 text-blue-950"}`}>{notice}</div>}
+    {notice && <TimedNotice message={notice} duration={notice.startsWith("Updating") ? 0 : undefined} tone={notice.includes("could not") || notice.includes("unavailable") ? "error" : "info"} onDismiss={() => setNotice("")} />}
     {!platformReady && showSetup && <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><strong>Platform Microsoft application is not ready.</strong><p className="mt-1">A Platform Administrator must save and verify the permanent Microsoft OAuth / Graph application settings before this company can connect.</p></section>}
     {showSetup ? <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-labelledby="connect-storage-heading">
       <div className="flex flex-wrap items-start justify-between gap-1"><div><h2 id="connect-storage-heading" className="text-lg font-bold text-slate-900">Connect Microsoft Storage <span className="text-sm font-normal text-slate-500">· about 5 minutes</span></h2><p className="mt-1 text-xs text-slate-500">An Owner or Admin does this once for the whole company.</p></div></div>

@@ -98,6 +98,9 @@ test("bug-sheet accessibility, mobile, pagination, favicon, and phone safeguards
   const googlePage = await read("src/app/(app)/account/google-calendar/page.tsx");
   const changePassword = await read("src/components/ChangePasswordForm.tsx");
   const projectForm = await read("src/components/ProjectFormPrototype.tsx");
+  const userDetail = await read("src/components/UserDetailPrototype.tsx");
+  const projectDetail = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
+  const phoneFormat = await read("src/lib/phone-format.ts");
   const projects = await read("src/lib/projects.ts");
   const pagination = await read("src/components/PaginationControls.tsx");
   const directories = await Promise.all([
@@ -114,6 +117,11 @@ test("bug-sheet accessibility, mobile, pagination, favicon, and phone safeguards
   assert.match(changePassword, /PasswordField/);
   assert.match(projectForm, /replace\(\/\\D\/g/);
   assert.match(projectForm, /maxLength=\{10\}/);
+  assert.match(projectForm, /formatUsPhoneNumber\(event\.target\.value\)/);
+  assert.match(userDetail, /formatUsPhoneNumber\(event\.target\.value\)/);
+  assert.match(userDetail, /formatUsPhoneNumber\(value\)/);
+  assert.match(projectDetail, /formatUsPhoneNumber\(project\.phone\)/);
+  assert.match(phoneFormat, /xxx-xxx-xxxx/);
   assert.match(projects, /Use digits only, up to 10 digits/);
   assert.match(pagination, /Previous/);
   assert.match(pagination, /Next/);
@@ -274,6 +282,9 @@ test("Project Plan hierarchy review reads live saved tasks and hands edits to th
   for (const value of ["Project hierarchy · live data", "Project root task rules", "saved tasks", "Edit in Gantt", "No tasks have been added", "dialoggg:open-plan-task", "dialoggg:project-plan-updated"]) assert.match(review, new RegExp(value.replace(/[+?()·]/g, "\\$&")));
   assert.match(tabs, /ProjectPlanWorkflowReview/);
   assert.match(tabs, /ProjectPlanWorkflowReview projectId=\{project\.id\}/);
+  assert.match(gantt, /function focusTaskStart\(taskId: number\)/);
+  assert.match(gantt, /gantt\.showDate\(task\.start_date\)/);
+  assert.match(gantt, /await reload\(\);\s*if \(taskModal\.mode === "edit" && taskId != null\) focusTaskStart\(Number\(taskId\)\)/);
   assert.match(tabs, /<GanttChart projectId=/);
   assert.match(gantt, /dhtmlx-gantt/);
   assert.match(gantt, /dialoggg:open-plan-task/);

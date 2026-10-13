@@ -7,6 +7,8 @@ import { authenticatedFetch } from "@/lib/client-fetch";
 import { companyRoleLabel, userDisplayName, userLastActiveLabel, userStatusLabel, type CompanyRoleUi, type CompanyUserUi, type UserStatusUi } from "@/lib/users-access-ui";
 import PaginationControls, { pageItems } from "@/components/PaginationControls";
 import HowItWorks from "@/components/HowItWorks";
+import TimedNotice from "@/components/TimedNotice";
+import type { DeletedCompanyUserDto } from "@/lib/user-management";
 
 type FilterRole = "all" | CompanyRoleUi;
 type FilterStatus = "all" | UserStatusUi;
@@ -20,16 +22,17 @@ const USERS_GUIDE = [
   "Deactivate a user who should no longer log in. Their access ends immediately and they're signed out. Their past project assignments stay visible, and a linked resource isn't affected.",
 ];
 
-export default function UsersAccessPrototype({ initialUsers }: { initialUsers: CompanyUserUi[] }) {
+export default function UsersAccessPrototype({ initialUsers, initialDeletedUsers }: { initialUsers: CompanyUserUi[]; initialDeletedUsers: DeletedCompanyUserDto[] }) {
   const [users, setUsers] = useState(initialUsers);
+  const [deletedUsers, setDeletedUsers] = useState(initialDeletedUsers);
   const [target, setTarget] = useState<CompanyUserUi | null>(null);
   const [action, setAction] = useState<"deactivate" | "restore" | "delete" | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: "success" | "error" } | null>(null);
 
   async function confirmLifecycle() {
     if (!target || !action) return;
-    setBusy(true); setMessage("");
+    setBusy(true); setMessage(null);
     try {
       const deleting = action === "delete";
       const response = await authenticatedFetch(`/api/v1/memberships/${target.id}`, deleting ? {
@@ -37,30 +40,49 @@ export default function UsersAccessPrototype({ initialUsers }: { initialUsers: C
       } : {
         method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
       });
-      const payload = await response.json() as { data?: { user?: CompanyUserUi; removed?: boolean }; error?: { message?: string } };
+      const payload = await response.json() as { data?: { user?: CompanyUserUi; removed?: boolean; removedAt?: string }; error?: { message?: string } };
       if (!response.ok || (deleting ? !payload.data?.removed : !payload.data?.user)) {
-        setMessage(payload.error?.message || (deleting ? "The User could not be removed." : "The membership could not be updated."));
+        setMessage({ text: payload.error?.message || (deleting ? "The User could not be removed." : "The membership could not be updated."), tone: "error" });
         setTarget(null); setAction(null);
         return;
       }
       setUsers(current => deleting ? current.filter(user => user.id !== target.id) : current.map(user => user.id === target.id ? payload.data!.user! : user));
-      setMessage(deleting ? `${userDisplayName(target)} was removed from this company.` : `${userDisplayName(target)} was ${action === "deactivate" ? "deactivated" : "restored"}.`);
+      if (deleting) {
+        const removedAt = payload.data?.removedAt || new Date().toISOString();
+        setDeletedUsers(current => [{ id: target.id, name: userDisplayName(target), email: target.email, removedAt }, ...current.filter(user => user.id !== target.id)]);
+      }
+      setMessage({ text: deleting ? `${userDisplayName(target)} was removed from this company.` : `${userDisplayName(target)} was ${action === "deactivate" ? "deactivated" : "restored"}.`, tone: "success" });
       setTarget(null); setAction(null);
-    } catch { setMessage(action === "delete" ? "The User could not be removed. Check the connection and try again." : "The membership could not be updated. Check the connection and try again."); setTarget(null); setAction(null); }
+    } catch { setMessage({ text: action === "delete" ? "The User could not be removed. Check the connection and try again." : "The membership could not be updated. Check the connection and try again.", tone: "error" }); setTarget(null); setAction(null); }
     finally { setBusy(false); }
   }
 
   return <div className="mx-auto max-w-6xl space-y-6 pb-10">
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><h1 className="text-3xl font-bold tracking-tight text-slate-950">Internal Users</h1><Link href="/users/new" className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-700 px-4 py-2 text-sm font-bold text-white">Invite User</Link></div>
     <HowItWorks items={USERS_GUIDE} />
-    {message && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm font-semibold text-blue-950">{message}</div>}
+    {message && <TimedNotice message={message.text} tone={message.tone} onDismiss={() => setMessage(null)} />}
     <UserSection title="Internal Users" users={users.filter(user => user.role !== "external")} showRoleFilter onLifecycle={(user, nextAction) => { setTarget(user); setAction(nextAction); }} />
     <div className="space-y-3">
       <h2 className="text-2xl font-bold tracking-tight text-slate-950">External Users / Clients</h2>
       <UserSection title="External Users / Clients" users={users.filter(user => user.role === "external")} onLifecycle={(user, nextAction) => { setTarget(user); setAction(nextAction); }} />
     </div>
+    <details className="group rounded-xl border border-slate-200 bg-white shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl p-5 font-bold text-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-600">
+        <span>Deleted Users <span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{deletedUsers.length}</span></span>
+        <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 shrink-0 fill-none stroke-current transition-transform group-open:rotate-180" strokeWidth="2"><path d="m6 9 6 6 6-6" /></svg>
+      </summary>
+      <div className="border-t border-slate-200 p-5">
+        <p className="text-sm leading-6 text-slate-600">These Users were removed from this company. Their company access was removed; the deletion record and timestamp remain available here.</p>
+        {deletedUsers.length === 0 ? <p className="mt-4 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">No Users have been removed from this company.</p> : <ul className="mt-4 space-y-3">{deletedUsers.map(user => <li key={user.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">{user.name} was removed from this company.</p><p className="break-all text-sm text-slate-500">{user.email}</p></div><p className="text-sm text-slate-600">Deleted {formatRemovedAt(user.removedAt)}</p></li>)}</ul>}
+      </div>
+    </details>
     {target && action && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><div role="alertdialog" aria-modal="true" aria-label={action === "deactivate" ? "Deactivate User?" : action === "restore" ? "Restore User?" : "Delete User?"} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><h2 className="text-xl font-bold">{action === "deactivate" ? "Deactivate User?" : action === "restore" ? "Restore User?" : "Remove User from this Company?"}</h2><p className="mt-2 text-sm leading-6 text-slate-600">{action === "deactivate" ? "Access ends immediately. We revoke stale sessions, keep historical Project assignments visible, and leave linked Resource records separate." : action === "restore" ? "Access is restored using the existing Role and Project assignments." : "They will lose access immediately and be removed from this User list. Project assignments and pending invitations are removed; linked Resources and historical records are kept. You can invite them again later."}</p><div className="mt-5 flex justify-end gap-2"><button type="button" disabled={busy} onClick={() => { setTarget(null); setAction(null); }} className="min-h-11 rounded-lg border px-4 font-bold">Cancel</button><button type="button" disabled={busy} onClick={confirmLifecycle} className={`min-h-11 rounded-lg px-4 font-bold text-white ${action === "delete" ? "bg-red-700" : "bg-blue-700"}`}>{busy ? "Saving…" : action === "deactivate" ? "Deactivate User" : action === "restore" ? "Restore User" : "Delete User"}</button></div></div></div>}
   </div>;
+}
+
+function formatRemovedAt(value: string) {
+  const parsed = new Date(`${value.replace(" ", "T")}Z`);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function UserSection({ title, users, showRoleFilter = false, onLifecycle }: {

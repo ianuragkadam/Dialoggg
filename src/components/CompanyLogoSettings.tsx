@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
+import TimedNotice from "@/components/TimedNotice";
 
 const MAX_BYTES = 2 * 1024 * 1024;
 
@@ -123,7 +124,7 @@ export default function CompanyLogoSettings({ initialLogoUrl }: { initialLogoUrl
           {selectedFile && <button type="submit" disabled={busy} className="rounded bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60">
             {busy ? "Saving…" : logoUrl ? "Update logo" : "Upload logo"}
           </button>}
-          {status && <p role="status" className="text-sm text-green-700">{status}</p>}
+          {status && <TimedNotice message={status} onDismiss={() => setStatus("")} />}
           {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         </form>
       </div>
