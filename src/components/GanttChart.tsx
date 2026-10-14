@@ -970,7 +970,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
                 disabled={taskModal.mode === "edit"}
                 onChange={event => updateTaskModal({ isHeader: event.target.checked, resourceIds: [], categoryId: null })}
               />
-              Header Task (dates and progress are derived from descendant leaf Tasks)
+              Header Task
             </label>
             <div>
               <label htmlFor="gantt-task-parent" className="block text-sm font-medium mb-1">Parent Header</label>
@@ -1009,7 +1009,10 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskModal.allowSaturday} onChange={event => updateTaskModal({ allowSaturday: event.target.checked })} />Allow work on Saturday</label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskModal.allowSunday} onChange={event => updateTaskModal({ allowSunday: event.target.checked })} />Allow work on Sunday</label>
               <label className="text-sm">Task Progress
-                <input aria-label="Task Progress" type="number" min={0} max={100} value={Math.round(taskModal.progress * 100)} onChange={event => updateTaskModal({ progress: Math.max(0, Math.min(100, Number(event.target.value))) / 100 })} className="mt-1 w-full rounded border px-3 py-2" />
+                <span className="mt-1 flex items-center gap-2">
+                  <input aria-label="Task Progress" type="number" min={0} max={100} value={Math.round(taskModal.progress * 100)} onChange={event => updateTaskModal({ progress: Math.max(0, Math.min(100, Number(event.target.value))) / 100 })} className="w-24 rounded border px-3 py-2" />
+                  <span aria-hidden="true">%</span>
+                </span>
               </label>
             </div>}
 

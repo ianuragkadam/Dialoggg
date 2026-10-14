@@ -5,11 +5,12 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
 import interactionPlugin from "@fullcalendar/interaction";
 import luxonPlugin from "@fullcalendar/luxon3";
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 import EventOccurrenceDialog from "@/components/EventOccurrenceDialog";
 import TaskOccurrenceDialog from "@/components/TaskOccurrenceDialog";
 import { ProjectResourceContext } from "@/components/ProjectResourceContext";
+import CalendarEventTooltip, { CalendarTooltipProvider } from "@/components/CalendarEventTooltip";
 
 type Resource = { id: string; title: string; category: string };
 type ScheduleEvent = {
@@ -97,6 +98,8 @@ export default function GlobalResourceSchedulePage() {
   const [calendarSubView, setCalendarSubView] = useState("dayGridMonth");
   const [calendarDate, setCalendarDate] = useState<string | undefined>();
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([]);
+  const knownResourceIdsRef = useRef<string[]>([]);
   const [preferencesKey, setPreferencesKey] = useState("");
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -115,6 +118,7 @@ export default function GlobalResourceSchedulePage() {
     const projectEvents = projectId ? (schedule.events || []).filter((event: ScheduleEvent) => Number(event.extendedProps?.project_id) === projectId) : (schedule.events || []);
     const projectResourceIds = new Set(projectEvents.map((event: ScheduleEvent) => String(event.resourceId)));
     const nextResources = ((schedule.resources || []) as Resource[]).filter(resource => !projectId || projectResourceIds.has(String(resource.id)));
+    const nextResourceIds = nextResources.map(resource => String(resource.id));
     const nextCategories = ((schedule.categories || resourceData.categories || []) as ResourceCategory[]).map(item => item.name);
     setResources(nextResources);
     setCategories((schedule.categories || resourceData.categories || []) as ResourceCategory[]);
@@ -142,9 +146,26 @@ export default function GlobalResourceSchedulePage() {
           setSelectedCategories(nextCategories);
         }
       } else setSelectedCategories(nextCategories);
+      const savedResources = localStorage.getItem(`${key}:resource-ids`);
+      if (savedResources) {
+        try {
+          const parsed = JSON.parse(savedResources);
+          if (parsed && Array.isArray(parsed.selected) && Array.isArray(parsed.known)) {
+            setSelectedResourceIds(nextResourceIds.filter(id => parsed.selected.includes(id) || !parsed.known.includes(id)));
+          } else setSelectedResourceIds(nextResourceIds);
+        } catch {
+          setSelectedResourceIds(nextResourceIds);
+        }
+      } else setSelectedResourceIds(nextResourceIds);
+      knownResourceIdsRef.current = nextResourceIds;
       setPreferencesReady(true);
     } else {
       setSelectedCategories(current => current.filter(category => nextCategories.includes(category)));
+      setSelectedResourceIds(current => [
+        ...current.filter(id => nextResourceIds.includes(id)),
+        ...nextResourceIds.filter(id => !knownResourceIdsRef.current.includes(id)),
+      ]);
+      knownResourceIdsRef.current = nextResourceIds;
     }
     setLoaded(true);
     setLoadError("");
@@ -159,10 +180,12 @@ export default function GlobalResourceSchedulePage() {
   }, []);
   useEffect(() => { if (preferencesReady && preferencesKey) localStorage.setItem(`${preferencesKey}:view`, calendarView); }, [calendarView, preferencesKey, preferencesReady]);
   useEffect(() => { if (preferencesReady && preferencesKey) localStorage.setItem(`${preferencesKey}:categories`, JSON.stringify({ selected: selectedCategories, known: categories.map(category => category.name) })); }, [selectedCategories, categories, preferencesKey, preferencesReady]);
+  useEffect(() => { if (preferencesReady && preferencesKey) localStorage.setItem(`${preferencesKey}:resource-ids`, JSON.stringify({ selected: selectedResourceIds, known: resources.map(resource => String(resource.id)) })); }, [selectedResourceIds, resources, preferencesKey, preferencesReady]);
 
   const selectedCategorySet = useMemo(() => new Set(selectedCategories), [selectedCategories]);
-  const filteredResources = useMemo(() => resources.filter(resource => selectedCategorySet.has(resource.category)), [resources, selectedCategorySet]);
-  const filteredEvents = useMemo(() => events.filter(event => selectedCategorySet.has(event.extendedProps.resourceCategory)), [events, selectedCategorySet]);
+  const selectedResourceIdSet = useMemo(() => new Set(selectedResourceIds), [selectedResourceIds]);
+  const filteredResources = useMemo(() => resources.filter(resource => selectedCategorySet.has(resource.category) && selectedResourceIdSet.has(String(resource.id))), [resources, selectedCategorySet, selectedResourceIdSet]);
+  const filteredEvents = useMemo(() => events.filter(event => selectedCategorySet.has(event.extendedProps.resourceCategory) && selectedResourceIdSet.has(String(event.resourceId))), [events, selectedCategorySet, selectedResourceIdSet]);
   const orderedCategories = useMemo(() => {
     const existing = new Set(categories.map(category => category.name));
     return [...STANDARD_CATEGORY_ORDER.filter(name => existing.has(name)), ...[...existing].filter(name => !STANDARD_CATEGORY_ORDER.includes(name)).sort((a, b) => a.localeCompare(b))];
@@ -178,8 +201,12 @@ export default function GlobalResourceSchedulePage() {
     return count + filteredEvents.slice(index + 1).filter(other => other.extendedProps.conflict && other.resourceId === event.resourceId && eventStart < Date.parse(other.end) && Date.parse(other.start) < eventEnd).length;
   }, 0);
   const filteredLabel = selectedCategories.length > 0 && selectedCategories.length < categories.length
-    ? `Showing: ${orderedCategories.filter(category => selectedCategorySet.has(category)).join(", ")}`
-    : "";
+    ? `Showing: ${orderedCategories.filter(category => selectedCategorySet.has(category)).join(", ")}${selectedResourceIds.length < resources.length ? ` · ${selectedResourceIds.length}/${resources.length} resources` : ""}`
+    : selectedResourceIds.length < resources.length ? `Showing: ${selectedResourceIds.length}/${resources.length} resources` : "";
+  const resourceFilterGroups = useMemo(() => orderedCategories.map(category => ({
+    category,
+    resources: resources.filter(resource => resource.category === category).sort((a, b) => a.title.localeCompare(b.title)).map(resource => ({ id: String(resource.id), name: resource.title })),
+  })).filter(group => group.resources.length), [orderedCategories, resources]);
   const eventsForSelectedDay = selectedDay ? filteredEvents.filter(event => eventTouchesDay(event, selectedDay, companyTimeZone)).sort((a, b) => a.extendedProps.resourceName.localeCompare(b.extendedProps.resourceName) || a.title.localeCompare(b.title)) : [];
   const selectedDayGroups = useMemo(() => {
     const groups = new Map<string, ScheduleEvent[]>();
@@ -205,10 +232,10 @@ export default function GlobalResourceSchedulePage() {
       </div>
     </div>
 
-    <CalendarWorkflowReview context="resource" canManage={canManage} projectId={projectId} projectName={projectName} resourceCategories={categories.map(category => category.name)} selectedResourceCategories={selectedCategories} onResourceCategoriesChange={setSelectedCategories} onEventsChanged={() => { void loadSchedule(); }}>
+    <CalendarWorkflowReview context="resource" canManage={canManage} projectId={projectId} projectName={projectName} resourceCategories={categories.map(category => category.name)} selectedResourceCategories={selectedCategories} onResourceCategoriesChange={setSelectedCategories} resourceFilterGroups={resourceFilterGroups} selectedResourceIds={selectedResourceIds} onResourceIdsChange={setSelectedResourceIds} onSelectAllResources={() => { setSelectedCategories(categories.map(category => category.name)); setSelectedResourceIds(resources.map(resource => String(resource.id))); }} onClearAllResources={() => { setSelectedCategories([]); setSelectedResourceIds([]); }} onEventsChanged={() => { void loadSchedule(); }}>
       <div className="overflow-hidden rounded-b border border-t-0 bg-white p-2 shadow-sm sm:p-4">
-        {!loaded ? <div className="p-8 text-center text-slate-500">Loading Resource Calendar…</div> : loadError ? <div role="alert" className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError}</div> : selectedCategories.length === 0 ? <div role="status" className="p-10 text-center text-slate-600">No resource types selected.</div> : calendarView === "timeline" ? (
-          <div className="dialoggg-calendar dialoggg-calendar-timeline"><FullCalendar
+        {!loaded ? <div className="p-8 text-center text-slate-500">Loading Resource Calendar…</div> : loadError ? <div role="alert" className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError}</div> : selectedCategories.length === 0 ? <div role="status" className="p-10 text-center text-slate-600">No resource types selected.</div> : selectedResourceIds.length === 0 ? <div role="status" className="p-10 text-center text-slate-600">No resources selected.</div> : calendarView === "timeline" ? (
+          <div className="dialoggg-calendar dialoggg-calendar-timeline"><CalendarTooltipProvider><FullCalendar
             key="resource-timeline"
             plugins={[resourceTimelinePlugin, interactionPlugin, luxonPlugin]}
             initialView="resourceTimelineMonth"
@@ -228,17 +255,18 @@ export default function GlobalResourceSchedulePage() {
             slotLaneClassNames={arg => arg.date ? resourceCalendarDateClasses(arg.date, companyTimeZone) : []}
             eventOrder={[(a: any, b: any) => String(a.extendedProps.resourceName).localeCompare(String(b.extendedProps.resourceName)) || a.title.localeCompare(b.title)]}
             eventOrderStrict
-            eventDidMount={info => { info.el.title = tooltip(info.event as any, companyTimeZone); if (info.event.extendedProps.kind === "event") info.el.classList.add("resource-calendar-event"); }}
+            eventContent={info => <CalendarEventTooltip content={tooltip(info.event as any, companyTimeZone)} className="fc-event-title">{info.event.title}</CalendarEventTooltip>}
+            eventDidMount={info => { if (info.event.extendedProps.kind === "event") info.el.classList.add("resource-calendar-event"); }}
             eventClick={info => openEvent(info.event as any)}
             timeZone={companyTimeZone}
             resourceAreaHeaderContent="Resources"
             resourceAreaWidth={isMobile ? 150 : "22%"}
             height={650}
             schedulerLicenseKey="GPL-My-Project-Is-Open-Source"
-          /></div>
+          /></CalendarTooltipProvider></div>
         ) : (
           <div className="dialoggg-calendar resource-calendar-grid-wrapper">
-            <FullCalendar
+            <CalendarTooltipProvider><FullCalendar
               key="resource-calendar-grid"
               plugins={[dayGridPlugin, interactionPlugin, luxonPlugin]}
               initialView={calendarSubView}
@@ -258,9 +286,8 @@ export default function GlobalResourceSchedulePage() {
               dayMaxEvents
               eventOrder={[(a: any, b: any) => String(a.extendedProps.resourceName).localeCompare(String(b.extendedProps.resourceName)) || a.title.localeCompare(b.title)]}
               eventOrderStrict
-              eventContent={arg => <span className="resource-calendar-event-label"><strong>{arg.event.extendedProps.resourceName}</strong> · {arg.event.extendedProps.rawTitle} ({arg.event.extendedProps.projectName})</span>}
+              eventContent={arg => <CalendarEventTooltip content={tooltip(arg.event as any, companyTimeZone)} className="resource-calendar-event-label"><strong>{arg.event.extendedProps.resourceName}</strong> · {arg.event.extendedProps.rawTitle} ({arg.event.extendedProps.projectName})</CalendarEventTooltip>}
               eventClassNames={arg => arg.event.extendedProps.kind === "event" ? ["resource-calendar-event"] : ["resource-calendar-task"]}
-              eventDidMount={info => { info.el.title = tooltip(info.event as any, companyTimeZone); }}
               eventClick={info => openEvent(info.event as any)}
               datesSet={arg => { setCalendarSubView(arg.view.type); setCalendarDate(dateKeyInZone(arg.view.calendar.getDate(), companyTimeZone)); }}
               dayCellContent={arg => {
@@ -273,7 +300,7 @@ export default function GlobalResourceSchedulePage() {
               moreLinkClick={info => { setSelectedDay(dateKeyInZone(info.date, companyTimeZone)); return "none"; }}
               timeZone={companyTimeZone}
               height={650}
-            />
+            /></CalendarTooltipProvider>
           </div>
         )}
       </div>

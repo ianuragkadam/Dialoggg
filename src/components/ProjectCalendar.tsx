@@ -10,6 +10,8 @@ import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 import { authenticatedFetch } from "@/lib/client-fetch";
 import EventOccurrenceDialog from "@/components/EventOccurrenceDialog";
 import TimedNotice from "@/components/TimedNotice";
+import { calendarEventTooltip } from "@/lib/calendar-tooltip";
+import CalendarEventTooltip, { CalendarTooltipProvider } from "@/components/CalendarEventTooltip";
 
 type Evt = { id: string; title: string; start: string; end: string; color: string };
 
@@ -39,17 +41,18 @@ export default function ProjectCalendar({ projectId, canManage = true, projectNa
           <SubscribeButton feedUrlEndpoint={`/api/projects/${projectId}/feed-url`} calendarName={projectName ? `${projectName} calendar` : "Project Calendar"} />
         </div>
       </div>
-      <FullCalendar
+      <CalendarTooltipProvider><FullCalendar
         plugins={[dayGridPlugin, interactionPlugin, luxonPlugin]}
         initialView="dayGridMonth"
         headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,dayGridWeek,dayGridDay" }}
         events={events as any}
+        eventContent={info => <CalendarEventTooltip content={calendarEventTooltip(info.event, projectName)} className="fc-event-title">{info.event.title}</CalendarEventTooltip>}
         timeZone={companyTimeZone}
         editable={canManage}
         eventDrop={moveEvent}
         eventClick={info=>{if(info.event.extendedProps.kind==="event")setSelectedEvent(info.event);}}
         height={650}
-      />
+      /></CalendarTooltipProvider>
       </div>
       {selectedEvent&&<EventOccurrenceDialog event={selectedEvent} canManage={canManage} onClose={()=>setSelectedEvent(null)} onChanged={reload}/>}
       </CalendarWorkflowReview>

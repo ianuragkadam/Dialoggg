@@ -6,6 +6,8 @@ import interactionPlugin from "@fullcalendar/interaction";
 import luxonPlugin from "@fullcalendar/luxon3";
 import { useEffect, useMemo, useState } from "react";
 import { formatProjectDate } from "@/lib/projects-ui";
+import { calendarEventTooltip } from "@/lib/calendar-tooltip";
+import CalendarEventTooltip, { CalendarTooltipProvider } from "@/components/CalendarEventTooltip";
 
 export type ExternalPlanTask = { id: number; text: string; start_date: string; end_date: string | null; duration: number; progress: number; parent: number; type: "project" | "task"; is_root: boolean; color?: string };
 export type ExternalCalendarItem = { id: string | number; title: string; start: string; end: string; allDay: boolean; color?: string; extendedProps?: { kind?: string; timeZone?: string } };
@@ -32,6 +34,6 @@ export function ExternalProjectPlanView({ tasks, error }: { tasks: ExternalPlanT
   </section>;
 }
 
-export function ExternalProjectCalendarView({ items, error, timeZone }: { items: ExternalCalendarItem[] | null; error: string; timeZone: string }) {
-  return <section aria-label="Read-only Project Calendar" className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5"><h2 className="text-lg font-bold text-slate-950">Project Calendar</h2><p className="mt-1 text-sm text-slate-600">Approved Tasks and Events for this Project · View only</p>{error ? <p role="alert" className="mt-4 text-sm text-red-700">Project Calendar is unavailable: {error}</p> : items === null ? <p role="status" className="mt-4 text-sm text-slate-600">Loading Project Calendar…</p> : <div className="dialoggg-calendar mt-4"><FullCalendar plugins={[dayGridPlugin, interactionPlugin, luxonPlugin]} initialView="dayGridMonth" headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,dayGridWeek,dayGridDay" }} events={items as any} timeZone={timeZone} editable={false} selectable={false} eventStartEditable={false} eventDurationEditable={false} dayMaxEvents eventDidMount={info => { const event = info.event; info.el.title = `${event.title} · ${event.startStr}${event.endStr ? ` – ${event.endStr}` : ""}`; }} height="auto" /></div>}</section>;
+export function ExternalProjectCalendarView({ items, error, timeZone, projectName }: { items: ExternalCalendarItem[] | null; error: string; timeZone: string; projectName?: string }) {
+  return <section aria-label="Read-only Project Calendar" className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5"><h2 className="text-lg font-bold text-slate-950">Project Calendar</h2><p className="mt-1 text-sm text-slate-600">Approved Tasks and Events for this Project · View only</p>{error ? <p role="alert" className="mt-4 text-sm text-red-700">Project Calendar is unavailable: {error}</p> : items === null ? <p role="status" className="mt-4 text-sm text-slate-600">Loading Project Calendar…</p> : <div className="dialoggg-calendar mt-4"><CalendarTooltipProvider><FullCalendar plugins={[dayGridPlugin, interactionPlugin, luxonPlugin]} initialView="dayGridMonth" headerToolbar={{ left: "prev,next today", center: "title", right: "dayGridMonth,dayGridWeek,dayGridDay" }} events={items as any} eventContent={info => <CalendarEventTooltip content={calendarEventTooltip(info.event, projectName)} className="fc-event-title">{info.event.title}</CalendarEventTooltip>} timeZone={timeZone} editable={false} selectable={false} eventStartEditable={false} eventDurationEditable={false} dayMaxEvents height="auto" /></CalendarTooltipProvider></div>}</section>;
 }

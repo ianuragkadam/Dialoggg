@@ -11,6 +11,8 @@ import { authenticatedFetch } from "@/lib/client-fetch";
 import EventOccurrenceDialog from "@/components/EventOccurrenceDialog";
 import TaskOccurrenceDialog from "@/components/TaskOccurrenceDialog";
 import TimedNotice from "@/components/TimedNotice";
+import { calendarEventTooltip } from "@/lib/calendar-tooltip";
+import CalendarEventTooltip, { CalendarTooltipProvider } from "@/components/CalendarEventTooltip";
 
 type Project = { id: number; name: string; project_type_id: number; project_type: string };
 
@@ -84,18 +86,19 @@ export default function MasterCalendarPage() {
       >
       {notice&&<TimedNotice message={notice.text} tone={notice.tone} onDismiss={() => setNotice(null)} />}
       <div className="dialoggg-calendar bg-white border rounded shadow-sm p-2 sm:p-4">
-        <FullCalendar
+        <CalendarTooltipProvider><FullCalendar
           plugins={[dayGridPlugin,interactionPlugin,luxonPlugin]}
           initialView="dayGridMonth"
           customButtons={openAddEvent ? { addEventButton: { text: "+ Add Event", hint: "Add an Event", click: () => openAddEvent() } } : undefined}
           headerToolbar={{ left: "prev,next today", center: "title", right: `${openAddEvent ? "addEventButton " : ""}dayGridMonth,dayGridWeek,dayGridDay` }}
           events={events}
+          eventContent={info => <CalendarEventTooltip content={calendarEventTooltip(info.event)} className="fc-event-title">{info.event.title}</CalendarEventTooltip>}
           timeZone={companyTimeZone}
           editable={canManage}
           eventDrop={moveEvent}
           eventClick={info=>{if(info.event.extendedProps.kind==="event")setSelectedEvent(info.event);else if(info.event.extendedProps.kind==="task")setSelectedTask(info.event);}}
           height={650}
-        />
+        /></CalendarTooltipProvider>
       </div>
       </CalendarWorkflowReview>
       {selectedEvent&&<EventOccurrenceDialog event={selectedEvent} canManage={canManage} onClose={()=>setSelectedEvent(null)} onChanged={loadEvents}/>}
