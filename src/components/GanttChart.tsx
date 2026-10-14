@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
-import { addDays, alignWorkingDay, ganttEndDateFromInclusive } from "@/lib/dates";
+import { addDays, alignWorkingDay, ganttEndDateFromInclusive, suggestedDependencyLag } from "@/lib/dates";
 import { PROJECT_CALENDAR_COLORS } from "@/lib/project-colors";
 import ColorSwatches from "@/components/ColorSwatches";
 
@@ -40,6 +40,7 @@ type LinkModal = {
   targetName: string;
   linkType: "fs" | "ss" | "ff" | "sf";
   lag: number;
+  suggestedLag: Record<"fs" | "ss" | "ff" | "sf", number>;
 };
 type GanttScale = "day" | "week" | "month";
 
@@ -198,6 +199,10 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
   const ganttChartOwnerRef = useRef(Symbol("gantt-chart"));
   const syncingRef = useRef(false);
   const planVersionRef = useRef(1);
+  const stalePlanRef = useRef(false);
+  const planSyncChannelRef = useRef<BroadcastChannel | null>(null);
+  const planSyncStorageKey = `dialoggg:project-plan-updated:v1:${projectId}`;
+  const tabIdRef = useRef<string>(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const initialViewSettings = readGanttViewSettings(`dialoggg:gantt-view:v1:${userId}:${projectId}`);
   const viewSettingsRef = useRef(initialViewSettings);
   const staleCheckInFlightRef = useRef(false);
@@ -226,6 +231,40 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
   const [availablePanelHeight, setAvailablePanelHeight] = useState<number | null>(null);
   const [planTasks, setPlanTasks] = useState<any[]>([]);
   const planTasksRef = useRef<any[]>([]);
+  stalePlanRef.current = stalePlan;
+
+  const markPlanStale = useCallback(() => {
+    stalePlanRef.current = true;
+    setStalePlan(true);
+  }, []);
+
+  const announcePlanChanged = useCallback(() => {
+    const message = { type: "plan-updated", projectId, sourceTab: tabIdRef.current, changedAt: Date.now() };
+    try { planSyncChannelRef.current?.postMessage(message); } catch {}
+    try { window.localStorage.setItem(planSyncStorageKey, JSON.stringify(message)); } catch {}
+  }, [projectId, planSyncStorageKey]);
+
+  useEffect(() => {
+    const receiveUpdate = (message: any) => {
+      if (message?.type === "plan-updated" && Number(message.projectId) === projectId && message.sourceTab !== tabIdRef.current) markPlanStale();
+    };
+    let channel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      channel = new BroadcastChannel(`dialoggg:project-plan:v1:${projectId}`);
+      channel.onmessage = event => receiveUpdate(event.data);
+      planSyncChannelRef.current = channel;
+    }
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== planSyncStorageKey || !event.newValue) return;
+      try { receiveUpdate(JSON.parse(event.newValue)); } catch {}
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      channel?.close();
+      if (planSyncChannelRef.current === channel) planSyncChannelRef.current = null;
+    };
+  }, [markPlanStale, planSyncStorageKey, projectId]);
 
   useEffect(() => {
     if (fullScreen) return;
@@ -325,14 +364,14 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
         const response = await fetch(`/api/projects/${projectId}/tasks`, { cache: "no-store" });
         if (!response.ok) return;
         const latest = await response.json();
-        if (Number(latest.planVersion) > planVersionRef.current) setStalePlan(true);
+        if (Number(latest.planVersion) > planVersionRef.current) markPlanStale();
       } catch { /* Focus checks are quiet; the normal chart remains available offline. */ }
       finally { staleCheckInFlightRef.current = false; }
     };
     window.addEventListener("focus", checkForNewerPlan);
     document.addEventListener("visibilitychange", checkForNewerPlan);
     return () => { window.removeEventListener("focus", checkForNewerPlan); document.removeEventListener("visibilitychange", checkForNewerPlan); };
-  }, [projectId, stalePlan]);
+  }, [markPlanStale, projectId, stalePlan]);
 
   // ---- load resources for the task popup ----
   useEffect(() => {
@@ -389,7 +428,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
       gantt.config.auto_scheduling_strict = true;
       gantt.config.auto_scheduling_initial = true;
       gantt.config.details_on_create = false;   // we open our own popup
-      gantt.config.readonly = !canEdit;          // read-only roles cannot drag, resize, link, or edit
+      gantt.config.readonly = !canEdit || stalePlanRef.current; // stale tabs stay read-only until refreshed
       gantt.config.order_branch = canEdit;       // allow Owner/Admin to reorder sibling rows by dragging
       gantt.config.order_branch_free = false;    // keep Tasks inside their existing Header
 
@@ -554,6 +593,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
       // ===== Intercept the "+" / new-task to open OUR popup =====
       attachGanttEvent("onTaskCreated", (task: any) => {
+        if (!canEdit || stalePlanRef.current) return false;
         const todayIso = isoFromDate(gantt, new Date());
         const clickedTask = planTasksRef.current.find(item => Number(item.id) === Number(task.parent));
         const clickedIsRoot = !!clickedTask?.is_root;
@@ -576,6 +616,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
       // ===== Intercept double-click / lightbox to open OUR popup =====
       attachGanttEvent("onBeforeLightbox", (id: any) => {
+        if (!canEdit || stalePlanRef.current) return false;
         const t = gantt.getTask(id);
         openEditModal(id, t);
         return false;
@@ -616,6 +657,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
       // ===== Task drag / resize → persist + cascade =====
       attachGanttEvent("onBeforeTaskDrag", (_id: any, mode: string) => {
+        if (!canEdit || stalePlanRef.current) return false;
         dragModeRef.current = String(mode);
         return true;
       });
@@ -623,6 +665,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
       // Row dragging changes order only; task-bar dragging continues to reschedule as before.
       attachGanttEvent("onBeforeTaskMove", (id: any, parent: any) => {
         const task = gantt.getTask(id);
+        if (!canEdit || stalePlanRef.current) return false;
         if (!canEdit || task.is_root) {
           setMessage("The protected Project root cannot be reordered.");
           return false;
@@ -646,9 +689,9 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
           });
           const payload = await response.json().catch(() => ({}));
           if (activeGanttChartOwner !== chartOwner) return;
-          if (isPlanVersionConflict(payload)) { versionConflict = true; setStalePlan(true); }
+          if (isPlanVersionConflict(payload)) { versionConflict = true; markPlanStale(); }
           else if (!response.ok) setMessage(payload?.error?.message || "The Task order could not be saved.");
-          else setMessage("Task order saved.");
+          else { announcePlanChanged(); setMessage("Task order saved."); }
         } catch {
           if (activeGanttChartOwner === chartOwner) setMessage("The Task order could not be saved. Check your connection and try again.");
         } finally {
@@ -661,6 +704,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
       attachGanttEvent("onAfterTaskUpdate", async (id: any) => {
         if (syncingRef.current) return;
+        if (!canEdit || stalePlanRef.current) { await reload(); return; }
         const fresh = gantt.getTask(id);
         const resize = dragModeRef.current === String(gantt.config.drag_mode.resize);
         dragModeRef.current = null;
@@ -680,8 +724,9 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
           }),
         });
         const payload = await response.json().catch(() => ({}));
-        if (isPlanVersionConflict(payload)) { setStalePlan(true); return; }
+        if (isPlanVersionConflict(payload)) { markPlanStale(); return; }
         if (!response.ok) setMessage(payload?.error?.message || "The Task change was not saved.");
+        else announcePlanChanged();
         await reload();
       });
 
@@ -692,28 +737,43 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
       // ===== Link drawn → open the "how to link" popup =====
       attachGanttEvent("onBeforeLinkAdd", (_id: any, link: any) => {
+        if (!canEdit || stalePlanRef.current) return false;
         if (syncingRef.current) return true;
         const src = gantt.getTask(link.source);
         const tgt = gantt.getTask(link.target);
+        const source = planTasksRef.current.find((task: any) => String(task.id) === String(link.source));
+        const target = planTasksRef.current.find((task: any) => String(task.id) === String(link.target));
+        const suggestedLag = Object.fromEntries((["fs", "ss", "ff", "sf"] as const).map(linkType => [
+          linkType,
+          source && target ? suggestedDependencyLag(
+            String(source.start_date).slice(0, 10), String(source.end_date).slice(0, 10),
+            String(target.start_date).slice(0, 10), String(target.end_date).slice(0, 10),
+            linkType,
+            { allowSaturday: !!target.allow_saturday, allowSunday: !!target.allow_sunday },
+          ) : 0,
+        ])) as LinkModal["suggestedLag"];
         // dhtmlx tells us which ends were connected — translate to our type
         const typeMap: Record<string, LinkModal["linkType"]> = { "0": "fs", "1": "ss", "2": "ff", "3": "sf" };
+        const linkType = typeMap[String(link.type)] || "fs";
         setLinkModal({
           sourceId: link.source, targetId: link.target,
           sourceName: src?.text || "Task", targetName: tgt?.text || "Task",
-          linkType: typeMap[String(link.type)] || "fs", lag: 0,
+          linkType, lag: suggestedLag[linkType], suggestedLag,
         });
         return false; // block auto-add; we add via API on confirm
       });
 
       attachGanttEvent("onAfterLinkDelete", async (id: any) => {
         if (syncingRef.current) return;
+        if (!canEdit || stalePlanRef.current) { await reload(); return; }
         const response = await authenticatedFetch(`/api/projects/${projectId}/links/${id}`, {
           method: "DELETE", headers: { "content-type": "application/json" },
           body: JSON.stringify({ planVersion: planVersionRef.current }),
         });
         const payload = await response.json().catch(() => ({}));
-        if (isPlanVersionConflict(payload)) { setStalePlan(true); return; }
+        if (isPlanVersionConflict(payload)) { markPlanStale(); return; }
         if (!response.ok) setMessage(payload?.error?.message || "The dependency was not removed.");
+        else announcePlanChanged();
         await reload();
       });
 
@@ -762,6 +822,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
   // ---- Save handler for the Task popup ----
   async function saveTask() {
+    if (!canEdit || stalePlanRef.current) return;
     if (!taskModal) return;
     setMessage("");
     if (!taskModal.text.trim()) { setMessage("Enter the Task Name."); return; }
@@ -792,7 +853,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
         body: JSON.stringify(payload),
       });
       const j = await response.json().catch(() => ({}));
-      if (!response.ok) { if (isPlanVersionConflict(j)) setStalePlan(true); else setMessage(j?.error?.message || "The Task was not created."); return; }
+      if (!response.ok) { if (isPlanVersionConflict(j)) markPlanStale(); else setMessage(j?.error?.message || "The Task was not created."); return; }
       taskId = j.id;
     } else {
       response = await authenticatedFetch(`/api/projects/${projectId}/tasks/${taskId}`, {
@@ -800,8 +861,9 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
         body: JSON.stringify(payload),
       });
       const j = await response.json().catch(() => ({}));
-      if (!response.ok) { if (isPlanVersionConflict(j)) setStalePlan(true); else setMessage(j?.error?.message || "The Task was not saved."); return; }
+      if (!response.ok) { if (isPlanVersionConflict(j)) markPlanStale(); else setMessage(j?.error?.message || "The Task was not saved."); return; }
     }
+    announcePlanChanged();
     setTaskModal(null);
     setMessage(`${taskModal.text.trim()} was saved and the Project Plan was recalculated.`);
     await reload();
@@ -809,13 +871,15 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
   }
 
   async function deleteTask() {
+    if (!canEdit || stalePlanRef.current) return;
     if (!taskModal || taskModal.mode !== "edit") { setTaskModal(null); return; }
     const response = await authenticatedFetch(`/api/projects/${projectId}/tasks/${taskModal.id}`, {
       method: "DELETE", headers: { "content-type": "application/json" },
       body: JSON.stringify({ planVersion: planVersionRef.current, version: taskModal.version }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) { if (isPlanVersionConflict(payload)) setStalePlan(true); else setMessage(payload?.error?.message || "The Task was not deleted."); return; }
+    if (!response.ok) { if (isPlanVersionConflict(payload)) markPlanStale(); else setMessage(payload?.error?.message || "The Task was not deleted."); return; }
+    announcePlanChanged();
     setTaskModal(null);
     setMessage(`${taskModal.text} and its dependency links were deleted. The remaining Plan was recalculated.`);
     await reload();
@@ -823,6 +887,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
   // ---- Save handler for the Link popup ----
   async function saveLink() {
+    if (!canEdit || stalePlanRef.current) return;
     if (!linkModal) return;
     setMessage("");
     const r = await authenticatedFetch(`/api/projects/${projectId}/links`, {
@@ -835,11 +900,12 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
     });
     const payload = await r.json().catch(() => ({}));
     if (r.ok) {
+      announcePlanChanged();
       setLinkModal(null);
       setMessage("The dependency was saved and every affected Task was recalculated.");
       await reload();
     } else {
-      if (isPlanVersionConflict(payload)) setStalePlan(true);
+      if (isPlanVersionConflict(payload)) markPlanStale();
       else setMessage(payload?.error?.message || "The dependency could not be created.");
     }
   }
@@ -855,6 +921,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
   };
 
   function openAddTask() {
+    if (!canEdit || stalePlanRef.current) return;
     const gantt = ganttRef.current;
     const todayIso = gantt ? isoFromDate(gantt, new Date()) : new Date().toISOString().slice(0, 10);
     setTaskModal({ mode: "add", id: null, text: "", start_date: todayIso, duration: 1, color: projectColorRef.current, parent: 0, resourceIds: [], version: 1, isHeader: false, isRoot: false, allowSaturday: false, allowSunday: false, progress: 0, categoryId: null, externalVisible: false, isTemp: false });
@@ -936,7 +1003,13 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
           {fullScreen && <button type="button" className="plan-chart-control" onClick={() => updateFullscreen(false)}>Exit full screen <kbd>Esc</kbd></button>}
         </div>
       </div>
-      {stalePlan && <div role="alert" className="plan-stale-banner"><span>This plan was updated.</span><button type="button" onClick={() => window.location.reload()}>Refresh</button></div>}
+      {stalePlan && <div className="plan-stale-lock" role="alert" aria-live="assertive">
+        <div className="plan-stale-lock-card">
+          <strong>This plan was updated in another tab.</strong>
+          <span>Refresh this tab before making changes. The other tab will also need to refresh before editing this plan.</span>
+          <button type="button" onClick={() => window.location.reload()}>Refresh Project Plan</button>
+        </div>
+      </div>}
       {message && <div role="status" className="m-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">{message}</div>}
       <div className="plan-chart-scroll">
         <div ref={containerRef} style={{ width: "100%", minWidth: 0, height: "100%" }} />
@@ -1115,7 +1188,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
                 <input
                   type="radio" name="linktype" className="mt-1"
                   checked={linkModal.linkType === opt.value}
-                  onChange={() => setLinkModal({ ...linkModal, linkType: opt.value })}
+                  onChange={() => setLinkModal({ ...linkModal, linkType: opt.value, lag: linkModal.suggestedLag[opt.value] })}
                 />
                 <div>
                   <div className="font-semibold text-sm">{opt.title}</div>
@@ -1150,7 +1223,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
       <style jsx global>{`
         ${[...new Set(planTasks.map(task => chartColor(task.color)))].map(color => `.dialoggg-plan-chart .plan-color-${color.slice(1).toLowerCase()} { border-left:4px solid ${color} !important; }`).join("\n")}
-        .tenant-theme .dialoggg-plan-chart, .dialoggg-plan-chart { display:flex; min-height:0; flex-direction:column; background:#fff; color:#1c2233; border:1px solid #e6e4dc; border-radius:14px; overflow:hidden; font-family:'Space Grotesk',sans-serif; }
+        .tenant-theme .dialoggg-plan-chart, .dialoggg-plan-chart { position:relative; isolation:isolate; display:flex; min-height:0; flex-direction:column; background:#fff; color:#1c2233; border:1px solid #e6e4dc; border-radius:14px; overflow:hidden; font-family:'Space Grotesk',sans-serif; }
         .dialoggg-plan-chart .plan-chart-toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; min-height:58px; padding:8px 16px; border-bottom:1px solid #e6e4dc; background:#fff; }
         .dialoggg-plan-chart .plan-chart-toolbar-left, .dialoggg-plan-chart .plan-chart-controls { display:flex; align-items:center; flex-wrap:wrap; gap:7px; min-width:0; }
         .dialoggg-plan-chart .plan-chart-controls { justify-content:flex-end; }
@@ -1174,8 +1247,12 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
         .dialoggg-plan-chart .plan-chart-fit { min-height:26px; border:0; background:transparent; color:#496b12; padding:2px 5px; }
         .dialoggg-plan-chart .plan-chart-control kbd { border:1px solid #aab2bf; border-radius:3px; padding:0 4px; font-size:10px; }
         .dialoggg-plan-chart .plan-chart-window { min-width:34px; font-size:18px; }
-        .dialoggg-plan-chart .plan-stale-banner { display:flex; align-items:center; justify-content:center; gap:5px; padding:8px 12px; background:#fff4d9; color:#513400; font-size:13px; font-weight:600; }
-        .dialoggg-plan-chart .plan-stale-banner button { border:0; padding:0; background:transparent; color:#805000; font-weight:800; text-decoration:underline; cursor:pointer; }
+        .dialoggg-plan-chart .plan-stale-lock { position:absolute; z-index:100; inset:0; display:flex; align-items:center; justify-content:center; padding:24px; background:rgba(10,18,32,.76); backdrop-filter:blur(2px); }
+        .dialoggg-plan-chart .plan-stale-lock-card { display:flex; width:min(520px,100%); flex-direction:column; align-items:center; gap:12px; padding:24px; border:1px solid #52617a; border-radius:12px; background:#17253a; color:#f8fafc; text-align:center; box-shadow:0 18px 48px rgba(0,0,0,.35); }
+        .dialoggg-plan-chart .plan-stale-lock-card strong { font-size:18px; }
+        .dialoggg-plan-chart .plan-stale-lock-card span { color:#c7d2e0; font-size:14px; line-height:1.5; }
+        .dialoggg-plan-chart .plan-stale-lock-card button { margin-top:4px; border:1px solid #d1850b; border-radius:6px; padding:9px 16px; background:#d1850b; color:#111827; font-weight:700; cursor:pointer; }
+        .dialoggg-plan-chart .plan-stale-lock-card button:focus-visible { outline:3px solid #a9cf38; outline-offset:3px; }
         .dialoggg-plan-chart .plan-chart-scroll { flex:1 1 auto; width:100%; height:auto; min-height:0; overflow:hidden; }
         .dialoggg-plan-chart .gantt_container { --dhx-gantt-font-family:'Space Grotesk',sans-serif; --dhx-gantt-font-size:13px; --dhx-gantt-base-colors-select:#eeedf5; border:none; border-radius:0; background:#fff; color:#1c2233; }
         .dialoggg-plan-chart .gantt_container, .dialoggg-plan-chart .gantt_layout_root { height:100% !important; }

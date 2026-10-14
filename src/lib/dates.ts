@@ -85,6 +85,21 @@ export function workingDayOffset(anchor: string, target: string, rules: WorkingD
   return offset;
 }
 
+/** Lag that preserves an already scheduled target when a new dependency is added. */
+export function suggestedDependencyLag(
+  sourceStart: string,
+  sourceEnd: string,
+  targetStart: string,
+  targetEnd: string,
+  linkType: "fs" | "ss" | "ff" | "sf",
+  rules: WorkingDayRules,
+) {
+  const sourcePoint = linkType === "fs" || linkType === "ff" ? sourceEnd : sourceStart;
+  const anchor = alignWorkingDay(linkType === "fs" ? addDays(sourcePoint, 1) : sourcePoint, rules, 1);
+  const targetPoint = linkType === "ff" || linkType === "sf" ? targetEnd : targetStart;
+  return targetPoint <= anchor ? 0 : workingDayOffset(anchor, targetPoint, rules);
+}
+
 export function workingDayEnd(start: string, duration: number, rules: WorkingDayRules) {
   if (!Number.isInteger(duration) || duration < 1) throw new Error("Duration must be at least one working day.");
   return addWorkingDays(start, duration - 1, rules);

@@ -1,6 +1,7 @@
 "use client";
 
 import FullCalendar from "@fullcalendar/react";
+import type { EventApi } from "@fullcalendar/core";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -72,13 +73,20 @@ function tooltip(event: ScheduleEvent, timeZone: string) {
   return `${event.extendedProps.resourceName} · ${event.extendedProps.rawTitle} (${event.extendedProps.projectName})\n${schedule}`;
 }
 
-function toOccurrenceDialogEvent(event: ScheduleEvent) {
+function toOccurrenceDialogEvent(event: ScheduleEvent | EventApi) {
+  // FullCalendar exposes these as getters on EventApi, so spreading the event
+  // drops them (including extendedProps) before the details dialog sees them.
+  const startStr = "startStr" in event ? event.startStr : event.start;
+  const endStr = "endStr" in event ? event.endStr : event.end;
   return {
-    ...event,
-    start: new Date(event.start),
-    end: new Date(event.end),
-    startStr: event.start,
-    endStr: event.end,
+    id: event.id,
+    title: event.title,
+    allDay: event.allDay,
+    extendedProps: { ...event.extendedProps },
+    start: event.start instanceof Date ? event.start : new Date(event.start || startStr),
+    end: event.end instanceof Date ? event.end : event.end ? new Date(event.end) : null,
+    startStr,
+    endStr,
   };
 }
 
@@ -104,8 +112,8 @@ export default function GlobalResourceSchedulePage() {
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null);
-  const [selectedTask, setSelectedTask] = useState<ScheduleEvent | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<ReturnType<typeof toOccurrenceDialogEvent> | null>(null);
+  const [selectedTask, setSelectedTask] = useState<ReturnType<typeof toOccurrenceDialogEvent> | null>(null);
 
   const loadSchedule = useCallback(async () => {
     const [scheduleResponse, resourceResponse, projectResponse] = await Promise.all([
@@ -216,9 +224,10 @@ export default function GlobalResourceSchedulePage() {
   const formatSelectedDay = (value: string) => new Intl.DateTimeFormat("en-US", { timeZone: companyTimeZone, dateStyle: "full" }).format(new Date(`${value}T12:00:00Z`));
   const dateList = (event: ScheduleEvent) => `${new Intl.DateTimeFormat("en-US", { timeZone: companyTimeZone, month: "short", day: "numeric" }).format(new Date(/^\d{4}-\d{2}-\d{2}$/.test(event.start) ? `${event.start}T12:00:00Z` : event.start))}${eventLastDate(event, companyTimeZone) !== dateKeyInZone(event.start, companyTimeZone) ? ` – ${new Intl.DateTimeFormat("en-US", { timeZone: companyTimeZone, month: "short", day: "numeric" }).format(new Date(`${eventLastDate(event, companyTimeZone)}T12:00:00Z`))}` : ""}`;
 
-  function openEvent(event: ScheduleEvent) {
-    if (event.extendedProps.kind === "event") setSelectedEvent(event);
-    else setSelectedTask(event);
+  function openEvent(event: ScheduleEvent | EventApi) {
+    const occurrence = toOccurrenceDialogEvent(event);
+    if (occurrence.extendedProps.kind === "event") setSelectedEvent(occurrence);
+    else setSelectedTask(occurrence);
   }
 
   return <div className="space-y-4">
@@ -307,8 +316,8 @@ export default function GlobalResourceSchedulePage() {
     </CalendarWorkflowReview>
 
     {selectedDay && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-3" onMouseDown={() => setSelectedDay(null)}><section role="dialog" aria-modal="true" aria-label={`Resources on ${formatSelectedDay(selectedDay)}`} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}><header className="sticky top-0 flex items-center justify-between border-b bg-blue-900 px-5 py-4 text-white"><h2 className="font-bold">{formatSelectedDay(selectedDay)}</h2><button type="button" aria-label="Close day assignments" onClick={() => setSelectedDay(null)} className="rounded px-2 text-2xl">×</button></header><div className="space-y-4 p-4">{selectedDayGroups.length ? selectedDayGroups.map(([resourceName, items]) => <section key={resourceName} aria-label={resourceName}><h3 className="mb-2 border-b pb-1 font-bold text-slate-800">{resourceName}</h3><ul className="space-y-2">{items.map(item => <li key={item.id}><button type="button" onClick={() => { setSelectedDay(null); openEvent(item); }} className="w-full rounded border p-3 text-left hover:bg-slate-50" style={{ borderLeftColor: item.color, borderLeftWidth: 5 }}><strong>{item.extendedProps.rawTitle}</strong><span className="block text-sm text-slate-600">{item.extendedProps.projectName} · {dateList(item)}{!item.allDay ? ` · ${new Intl.DateTimeFormat("en-US", { timeZone: companyTimeZone, hour: "numeric", minute: "2-digit" }).format(new Date(item.start))}` : ""}</span></button></li>)}</ul></section>) : <p className="py-8 text-center text-slate-600">No resource assignments on this day.</p>}</div></section></div>}
-    {selectedEvent && <EventOccurrenceDialog event={toOccurrenceDialogEvent(selectedEvent)} canManage={canManage} onClose={() => setSelectedEvent(null)} onChanged={() => { void loadSchedule(); }} />}
-    {selectedTask && <TaskOccurrenceDialog event={toOccurrenceDialogEvent(selectedTask)} projects={projects} timeZone={companyTimeZone} canManage={canManage} onClose={() => setSelectedTask(null)} />}
+    {selectedEvent && <EventOccurrenceDialog event={selectedEvent} canManage={canManage} onClose={() => setSelectedEvent(null)} onChanged={() => { void loadSchedule(); }} />}
+    {selectedTask && <TaskOccurrenceDialog event={selectedTask} projects={projects} timeZone={companyTimeZone} canManage={canManage} onClose={() => setSelectedTask(null)} />}
     <style jsx global>{`
       .resource-calendar-event { border-radius: 0 !important; }
       .resource-calendar-task { border-radius: 0.35rem !important; }
