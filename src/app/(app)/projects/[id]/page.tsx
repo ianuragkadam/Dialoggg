@@ -57,5 +57,5 @@ export default async function ProjectViewPage({ params }: { params: Promise<{ id
     LEFT JOIN user u ON u.id = p.created_by AND u.company_id = p.company_id
     WHERE p.id = ? AND p.company_id = ?`).get(project.id, actor.companyId) as { name: string | null } | undefined;
   const assigned = isProjectAssigned(project.id, actor.membershipId);
-  return <ProjectWorkspacePrototype project={project} projectUsers={projectUsers} createdBy={creator?.name || null} canManage={actor.companyRole === "owner" || actor.companyRole === "admin"} isOwner={actor.companyRole === "owner"} external={external} assigned={assigned} />;
+  return <ProjectWorkspacePrototype project={project} projectUsers={projectUsers} createdBy={creator?.name || null} identityId={actor.identityId} canManage={actor.companyRole === "owner" || actor.companyRole === "admin"} isOwner={actor.companyRole === "owner"} external={external} assigned={assigned} />;
 }

@@ -29,6 +29,46 @@ body {
   background: #f3f5f8;
 }
 
+/* Consistent, unobtrusive scrollbars across app pages, calendars, and charts. */
+* {
+  scrollbar-color: #737781 transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  background: #737781;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #4b4f58;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: #30343b;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Dark navy and orange tenant theme from the D2 visual reference.
    Scoped to the signed-in company shell so Platform Administration stays unchanged. */
 .tenant-theme {

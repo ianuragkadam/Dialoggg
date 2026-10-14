@@ -65,6 +65,7 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
   const [previewRole, setPreviewRole] = useState(user.user_type);
   const [rolePreviewEnabled, setRolePreviewEnabled] = useState(false);
   const [switchingRole, setSwitchingRole] = useState(false);
+  const [planFullscreen, setPlanFullscreen] = useState(false);
   const [companyLogoAvailable, setCompanyLogoAvailable] = useState(Boolean(companyLogoUrl));
   const platformAdmin = user.user_type === "super_admin";
 
@@ -89,6 +90,14 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
   }, [user.id, user.user_type]);
 
   useEffect(() => { setOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    const sync = () => setPlanFullscreen(pathname.startsWith("/projects/") && new URLSearchParams(window.location.search).get("view") === "full");
+    sync();
+    window.addEventListener("popstate", sync);
+    window.addEventListener("dialoggg:plan-fullscreen-change", sync);
+    return () => { window.removeEventListener("popstate", sync); window.removeEventListener("dialoggg:plan-fullscreen-change", sync); };
+  }, [pathname]);
 
   async function switchContext(value: string) {
     if (!value || value === activeContext) return;
@@ -171,8 +180,8 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
   }
 
   return (
-    <div className={`min-h-screen flex flex-col ${platformAdmin ? "" : "tenant-theme"}`}>
-      <header className="relative z-50 flex-none bg-blue-800 text-white shadow-md">
+    <div className={`min-h-screen flex flex-col ${platformAdmin ? "" : "tenant-theme"} ${planFullscreen ? "gantt-fullscreen-app" : ""}`}>
+      {!planFullscreen && <header className="relative z-50 flex-none bg-blue-800 text-white shadow-md">
         <div className="flex items-center justify-between gap-3 px-3 py-2 lg:px-4 lg:py-3">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setOpen(current => !current)} aria-controls="primary-navigation" aria-expanded={open} aria-label={open ? "Close navigation" : "Open navigation"} className="rounded p-1 text-2xl focus:outline-none focus:ring-2 focus:ring-white lg:hidden">☰</button>
@@ -181,12 +190,12 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
           </div>
           {renderAccountControls("header")}
         </div>
-      </header>
+      </header>}
 
-      {rolePreviewEnabled && <div className="relative z-40 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-950 shadow">Viewing as {roleLabel(previewRole)}. Changes are disabled during role preview. Select your own role ({roleLabel(actualRole)}) to exit.</div>}
-      <div className="flex flex-1">
-        {open && <button type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden" />}
-        <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col flex-none transform overflow-y-auto border-r bg-white pt-14 shadow-xl transition-transform sm:pt-16 lg:static lg:z-auto lg:w-56 lg:max-w-none lg:translate-x-0 lg:pt-0 lg:shadow-none ${open ? "translate-x-0" : "-translate-x-full"}`}>
+      {!planFullscreen && rolePreviewEnabled && <div className="relative z-40 bg-amber-100 px-4 py-2 text-center text-sm font-medium text-amber-950 shadow">Viewing as {roleLabel(previewRole)}. Changes are disabled during role preview. Select your own role ({roleLabel(actualRole)}) to exit.</div>}
+      <div className={`flex flex-1 ${planFullscreen ? "min-h-0" : ""}`}>
+        {!planFullscreen && open && <button type="button" aria-label="Close navigation" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/40 lg:hidden" />}
+        {!planFullscreen && <aside className={`fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col flex-none transform overflow-y-auto border-r bg-white pt-14 shadow-xl transition-transform sm:pt-16 lg:static lg:z-auto lg:w-56 lg:max-w-none lg:translate-x-0 lg:pt-0 lg:shadow-none ${open ? "translate-x-0" : "-translate-x-full"}`}>
           <nav id="primary-navigation" className="flex-1 space-y-1 p-2" aria-label="Primary navigation">
             {MENU.filter(m => {
               if (m.platformOnly) return platformAdmin;
@@ -215,9 +224,9 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Account</h2>
             {renderAccountControls("sidebar")}
           </section>
-        </aside>
+        </aside>}
 
-        <main className="min-w-0 flex-1 overflow-auto bg-gray-50 p-3 sm:p-4">
+        <main className={`min-w-0 flex-1 bg-gray-50 ${planFullscreen ? "h-screen min-h-0 overflow-hidden p-0" : "overflow-auto p-3 sm:p-4"}`}>
           {children}
         </main>
       </div>

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import dynamic from "next/dynamic";
 import ProjectFoldersPrototype from "@/components/ProjectFoldersPrototype";
 import { formatProjectDate } from "@/lib/projects-ui";
 import { formatUsPhoneNumber } from "@/lib/phone-format";
-import HowItWorks from "@/components/HowItWorks";
+import { HowItWorksHeader, HowItWorksPanel } from "@/components/HowItWorks";
 import { PROJECT_PLAN_HOW_IT_WORKS } from "@/lib/how-it-works-guides";
 
 const GanttChart = dynamic(() => import("@/components/GanttChart"), { ssr: false });
@@ -30,8 +30,8 @@ const TABS = [
 ];
 
 export default function ProjectTabs({
-  project, projectUsers, createdBy, canEdit = true, canManage = canEdit, assigned = false,
-}: { project: Project; projectUsers: ProjectUser[]; createdBy: string | null; canEdit?: boolean; canManage?: boolean; assigned?: boolean; }) {
+  project, projectUsers, createdBy, identityId, canEdit = true, canManage = canEdit, assigned = false, fullScreen = false,
+}: { project: Project; projectUsers: ProjectUser[]; createdBy: string | null; identityId: number; canEdit?: boolean; canManage?: boolean; assigned?: boolean; fullScreen?: boolean; }) {
   // Read initial tab from URL hash (e.g. #calendar) so deep-links and refresh preserve state
   const [tab, setTab] = useState("plan");
   useEffect(() => {
@@ -50,8 +50,8 @@ export default function ProjectTabs({
   }
 
   return (
-    <div className="space-y-3">
-      <nav className="flex flex-wrap gap-1 bg-white border-b">
+    <div className={fullScreen ? "h-full min-h-0" : "space-y-3"}>
+      <nav className={`flex flex-wrap gap-1 bg-white border-b ${fullScreen ? "hidden" : ""}`}>
         {TABS.map(t => (
           <button
             key={t.id} onClick={() => selectTab(t.id)}
@@ -69,17 +69,11 @@ export default function ProjectTabs({
       <div>
         {tab === "details" && <Details project={project} projectUsers={projectUsers} createdBy={createdBy} />}
         {tab === "plan"      && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-end justify-between gap-2 px-1">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Live planning surface</p>
-                <h2 className="font-semibold text-slate-900">{project.name} Project Plan / Gantt Chart</h2>
-              </div>
-            </div>
-            <ProjectPlanHowItWorks />
-            <GanttChart projectId={project.id} canEdit={canEdit} />
-            <ProjectPlanWorkflowReview projectId={project.id} projectName={project.name} canEdit={canEdit} />
-            <ProjectPlanGuide />
+          <div className={fullScreen ? "h-full min-h-0" : "space-y-3"}>
+            {!fullScreen && <ProjectPlanHowItWorks identityId={identityId} />}
+            <GanttChart projectId={project.id} projectName={project.name} userId={identityId} canEdit={canEdit} fullScreen={fullScreen} />
+            {!fullScreen && <ProjectPlanWorkflowReview projectId={project.id} projectName={project.name} canEdit={canEdit} />}
+            {!fullScreen && <ProjectPlanGuide />}
           </div>
         )}
         {tab === "calendar"  && <ProjectCalendar projectId={project.id} canManage={canEdit} projectName={project.name} />}
@@ -90,8 +84,21 @@ export default function ProjectTabs({
   );
 }
 
-function ProjectPlanHowItWorks() {
-  return <HowItWorks items={PROJECT_PLAN_HOW_IT_WORKS} />;
+function ProjectPlanHowItWorks({ identityId }: { identityId: number }) {
+  const contentId = useId();
+  const storageKey = `dialoggg:gantt-how-it-works:v1:${identityId}`;
+  const [open, setOpen] = useState(true);
+  useEffect(() => {
+    try { setOpen(window.localStorage.getItem(storageKey) !== "false"); } catch { setOpen(true); }
+  }, [storageKey]);
+  function toggle() {
+    setOpen(value => {
+      const next = !value;
+      try { window.localStorage.setItem(storageKey, String(next)); } catch {}
+      return next;
+    });
+  }
+  return <section className="overflow-hidden rounded-xl border border-blue-200 bg-white shadow-sm" aria-label="How It Works"><HowItWorksHeader open={open} onToggle={toggle} controlsId={contentId} />{open && <HowItWorksPanel id={contentId} items={PROJECT_PLAN_HOW_IT_WORKS} />}</section>;
 }
 
 function ProjectPlanGuide() {
