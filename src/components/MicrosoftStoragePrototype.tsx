@@ -99,7 +99,7 @@ export default function MicrosoftStoragePrototype({ companyName }: { companyName
         <SetupStep number="2">Choose OneDrive for Business (or SharePoint if your company uses a shared library).</SetupStep>
         <SetupStep number="3">Sign in with your work Microsoft account and approve. If Microsoft asks for administrator approval, ask whoever manages your Microsoft 365 account.</SetupStep>
         <SetupStep number="4">After Microsoft sign-in, choose the company folder where new project folders should be created. You can change it later.</SetupStep>
-        <SetupStep number="5">New projects will automatically get Common and Private folders below that location. For existing jobs, open the project&apos;s Common and Private tab to create or link folders.</SetupStep>
+        <SetupStep number="5">When adding a Project, choose whether to create its Common and Private folders below that location. You can also create or link folders later from the Project&apos;s Common and Private tab.</SetupStep>
       </ol>
       <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 text-[11px] leading-4 text-slate-600"><strong className="text-slate-800">You&apos;ll need:</strong> a work or school Microsoft 365 account with OneDrive for Business or SharePoint. Personal OneDrive isn&apos;t supported.</p>
       <div className="mt-3 flex flex-wrap items-center gap-3"><button type="button" disabled={!platformReady} onClick={() => { setDialog("connect"); setAccepted(false); }} className="min-h-10 rounded-md bg-orange-600 px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Connect Microsoft Storage</button><span className="text-[10px] text-slate-500">Only Owners and Admins can connect.</span></div>

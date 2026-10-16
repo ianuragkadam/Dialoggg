@@ -186,7 +186,16 @@ try {
     await dialog.getByRole("button", { name: "Change root" }).click();
     await page.getByRole("status").filter({ hasText: "Existing Project folders were not moved" }).waitFor();
 
-    const created = await json(`${baseUrl}/api/v1/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Automatic Folder QA", clientName: "Morgan Family", clientEmail: "morgan@example.test", address: "", city: "", state: "", zip: "", phone: "", extension: "", projectTypeId: admin.defaultProjectTypeId, startDate: "2026-10-16", calendarColor: "#3B417D", note: "", assignmentIds: [], templateId: null }) });
+    const projectPayload = name => ({ name, clientName: "Morgan Family", clientEmail: "morgan@example.test", address: "", city: "", state: "", zip: "", phone: "", extension: "", projectTypeId: admin.defaultProjectTypeId, startDate: "2026-10-16", calendarColor: "#3B417D", note: "", assignmentIds: [], templateId: null });
+    const optedOut = await json(`${baseUrl}/api/v1/projects`, { method: "POST", headers: auth, body: JSON.stringify({ ...projectPayload("Manual Folder QA"), createMicrosoftFolders: false }) });
+    assert.equal(optedOut.response.status, 201, JSON.stringify(optedOut.data));
+    assert.equal(optedOut.data.data.folderProvisioning.status, "skipped");
+    assert.equal(optedOut.data.data.folderProvisioning.reason, "not_requested");
+    const optedOutDb = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try { assert.equal(optedOutDb.prepare("SELECT COUNT(*) AS count FROM project_folder_mapping WHERE project_id = ?").get(optedOut.data.data.project.id).count, 0); }
+    finally { optedOutDb.close(); }
+
+    const created = await json(`${baseUrl}/api/v1/projects`, { method: "POST", headers: auth, body: JSON.stringify({ ...projectPayload("Automatic Folder QA"), createMicrosoftFolders: true }) });
     assert.equal(created.response.status, 201, JSON.stringify(created.data));
     assert.equal(created.data.data.folderProvisioning.status, "created", JSON.stringify(created.data.data.folderProvisioning));
     assert.deepEqual(created.data.data.folderProvisioning.created, ["common", "private"]);

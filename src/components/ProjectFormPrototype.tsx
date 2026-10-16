@@ -16,13 +16,14 @@ type Form = {
   name: string; clientName: string; clientEmail: string; address: string; city: string;
   state: string; zip: string; phone: string; extension: string; projectTypeId: string; startDate: string;
   calendarColor: string; note: string; planSource: "blank" | "template"; templateId: string; assignments: string[];
+  createMicrosoftFolders: boolean;
 };
 type Dialog = "rebase" | "review" | "discard" | null;
 type ApiPayload = { data?: { project?: ProjectUiRecord; folderProvisioning?: { status: "created" | "partial" | "failed" | "skipped" } }; error?: { message?: string; fields?: Record<string, string> } };
 type ExternalInvite = { firstName: string; lastName: string; email: string };
 type PendingInvite = { id: number; name: string; email: string };
 const LIST_PAGE_SIZE = 10;
-const empty: Form = { name: "", clientName: "", clientEmail: "", address: "", city: "", state: "", zip: "", phone: "", extension: "", projectTypeId: "", startDate: "", calendarColor: PROJECT_CALENDAR_COLORS[0], note: "", planSource: "blank", templateId: "", assignments: [] };
+const empty: Form = { name: "", clientName: "", clientEmail: "", address: "", city: "", state: "", zip: "", phone: "", extension: "", projectTypeId: "", startDate: "", calendarColor: PROJECT_CALENDAR_COLORS[0], note: "", planSource: "blank", templateId: "", assignments: [], createMicrosoftFolders: false };
 export default function ProjectFormPrototype({ mode, project, projectTypes, availableUsers, templates = [], initialTemplateId = "" }: {
   mode: "create" | "edit"; project?: ProjectUiRecord;
   projectTypes: Array<{ id: number; name: string }>;
@@ -33,7 +34,7 @@ export default function ProjectFormPrototype({ mode, project, projectTypes, avai
     name: project.name, clientName: project.client_name || "", clientEmail: project.client_email || "",
     address: project.address || "", city: project.city || "", state: project.state || "", zip: project.zip || "",
     phone: formatUsPhoneNumber(project.phone || ""), extension: project.extension || "", projectTypeId: String(project.project_type_id), startDate: project.start_date,
-    calendarColor: project.calendar_color || PROJECT_CALENDAR_COLORS[0], note: project.note || "", planSource: "blank", templateId: "",
+    calendarColor: project.calendar_color || PROJECT_CALENDAR_COLORS[0], note: project.note || "", planSource: "blank", templateId: "", createMicrosoftFolders: false,
     assignments: availableUsers.filter(user => user.assigned).map(user => String(user.id)),
   } : initialTemplateId ? { ...empty, planSource: "template", templateId: initialTemplateId } : empty, [availableUsers, initialTemplateId, project]);
   const [form, setForm] = useState(initial);
@@ -119,13 +120,15 @@ export default function ProjectFormPrototype({ mode, project, projectTypes, avai
     setBusy(true); setMessage("");
     const response = await authenticatedFetch(mode === "create" ? "/api/v1/projects" : `/api/v1/projects/${project!.id}`, {
       method: mode === "create" ? "POST" : "PUT", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: form.name, clientName: form.clientName, clientEmail: form.clientEmail, address: form.address, city: form.city, state: form.state, zip: form.zip, phone: form.phone.replace(/\D/g, ""), extension: form.extension, projectTypeId: Number(form.projectTypeId), startDate: form.startDate, calendarColor: form.calendarColor, note: form.note, assignmentIds: form.assignments.map(Number), ...(mode === "create" ? { templateId: form.planSource === "template" ? Number(form.templateId) : null, idempotencyKey } : { version: project!.version, rebaseMode: rebase || "date-only" }) }),
+      body: JSON.stringify({ name: form.name, clientName: form.clientName, clientEmail: form.clientEmail, address: form.address, city: form.city, state: form.state, zip: form.zip, phone: form.phone.replace(/\D/g, ""), extension: form.extension, projectTypeId: Number(form.projectTypeId), startDate: form.startDate, calendarColor: form.calendarColor, note: form.note, assignmentIds: form.assignments.map(Number), ...(mode === "create" ? { templateId: form.planSource === "template" ? Number(form.templateId) : null, idempotencyKey, createMicrosoftFolders: form.createMicrosoftFolders } : { version: project!.version, rebaseMode: rebase || "date-only" }) }),
     });
     const payload = await response.json().catch(() => ({})) as ApiPayload;
     if (!response.ok || !payload.data?.project) { setBusy(false); setErrors(payload.error?.fields || {}); setMessage(payload.error?.message || "The Project could not be saved."); setDialog(null); return; }
     if (mode === "create") {
       const status = payload.data.folderProvisioning?.status;
-      setFolderOutcome(status === "created"
+      setFolderOutcome(!form.createMicrosoftFolders
+        ? "Microsoft Storage folders were not created. You can set them up later from the Project’s Common and Private tab."
+        : status === "created"
         ? "Microsoft Storage: Common and Private folders were created automatically."
         : status === "skipped"
           ? "Microsoft Storage was not connected, so folders were not created. Connect it and set up folders from the Common and Private tab."
@@ -182,6 +185,7 @@ export default function ProjectFormPrototype({ mode, project, projectTypes, avai
         </div>
         <div className="mt-5"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-bold text-slate-900">Pending Invitations</h3><button type="button" onClick={() => void refreshExternalUsers()} className="text-sm font-semibold text-blue-700 underline">Refresh</button></div>{allPending.length ? <div className="mt-2"><ul className="space-y-2">{allPending.slice(0, pendingLimit).map(user => <li key={user.key} className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">{user.name} · {user.email} <span className="text-amber-700">({user.status})</span></li>)}</ul><LoadMoreButton shown={pendingLimit} total={allPending.length} onClick={() => setPendingLimit(value => value + LIST_PAGE_SIZE)} /></div> : <p className="mt-2 text-sm text-slate-600">No pending invitations for this project.</p>}</div>
       </Section>
+      {mode === "create" && <Section title="Microsoft Storage"><label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-4"><input id="create-microsoft-folders" type="checkbox" checked={form.createMicrosoftFolders} onChange={event => set("createMicrosoftFolders", event.target.checked)} className="mt-1 h-4 w-4" /><span><strong className="block text-sm text-slate-900">Create Common and Private Storage Folders for this job</strong><span className="mt-1 block text-sm leading-5 text-slate-600">When checked, Dialoggg creates the Common and Private folders in the company’s connected OneDrive. Leave unchecked to set them up later from the Project page.</span></span></label></Section>}
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" disabled={busy} onClick={() => dirty ? setDialog("discard") : location.assign(cancelHref)} className="min-h-11 rounded-lg border border-slate-300 px-5 py-2 text-sm font-bold">Cancel</button><button type="submit" disabled={busy} className="min-h-11 rounded-lg bg-blue-700 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">Review Project</button></div>
     </form>
     {inviteOpen && <Modal title="Invite External User"><div className="space-y-3"><Field id="external-first-name" label="First Name" value={inviteForm.firstName} onChange={value => setInviteForm(current => ({ ...current, firstName: value }))} /><Field id="external-last-name" label="Last Name" value={inviteForm.lastName} onChange={value => setInviteForm(current => ({ ...current, lastName: value }))} /><Field id="external-email" label="Email" type="email" value={inviteForm.email} onChange={value => setInviteForm(current => ({ ...current, email: value }))} /></div>{mode === "create" && <p className="mt-3 text-sm text-slate-600">You can add multiple invitations. They will be sent after this project is saved.</p>}{inviteError && <p role="alert" className="mt-3 text-sm font-semibold text-red-700">{inviteError}</p>}<Actions cancel="Cancel" confirm={inviting ? "Sending…" : mode === "create" ? "Add Invitation" : "Send Invitation"} onCancel={() => !inviting && setInviteOpen(false)} onConfirm={() => void submitExternalInvite()} disabled={inviting} /></Modal>}

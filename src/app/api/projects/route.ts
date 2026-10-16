@@ -46,7 +46,9 @@ export async function POST(request: NextRequest) {
       projectTypeId: body.project_type_id, assignmentIds: body.assignment_ids,
     });
     const projectId = project.id;
-    const folderProvisioning = await autoCreateProjectFolders(actor, projectId);
+    const folderProvisioning = body.create_microsoft_folders === true
+      ? await autoCreateProjectFolders(actor, projectId)
+      : { status: "skipped" as const, reason: "not_requested" as const };
     queueGoogleReconciliation(actor.companyId!, "project.create");
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "project.create", targetType: "project", targetId: projectId, result: "success" });
     if (folderProvisioning.status !== "skipped") recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "microsoft_folder.auto_provision", targetType: "project_folder_mapping", targetId: "common,private", result: folderProvisioning.status === "created" ? "success" : "failure", metadata: { status: folderProvisioning.status } });

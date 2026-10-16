@@ -348,8 +348,15 @@ test("Microsoft Storage UI covers company setup and Project Common/Private bound
   const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
   for (const value of ["OneDrive for Business", "SharePoint document library", "Dialoggg never stores your files", "Microsoft 365 account", "No one at Dialoggg can see your files", "Change company folder root?", "Existing Project folders do not move", "Disconnect Microsoft Storage?"]) assert.match(company, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
   for (const value of ["Common", "Private", "Create a new folder", "Use a folder I already have", "Stable Microsoft IDs", "Missing or moved", "Permission denied", "Company disconnected"]) assert.match(folders, new RegExp(value, "i"));
-  assert.match(company, /New projects will automatically get Common and Private folders/);
+  assert.match(company, /choose whether to create its Common and Private folders/);
   assert.match(projectApi, /autoCreateProjectFolders/);
+  assert.match(projectApi, /body\.createMicrosoftFolders===true/);
+  const projectForm = await read("src/components/ProjectFormPrototype.tsx");
+  assert.match(projectForm, /Create Common and Private Storage Folders for this job/);
+  assert.match(projectForm, /createMicrosoftFolders: false/);
+  assert.match(projectForm, /createMicrosoftFolders: form\.createMicrosoftFolders/);
+  assert.ok(projectForm.indexOf('Section title="External Users"') < projectForm.indexOf('Section title="Microsoft Storage"'));
+  assert.ok(projectForm.indexOf('Section title="Microsoft Storage"') < projectForm.indexOf('className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"'));
   assert.match(folders, /never renames, moves, or deletes Microsoft folders/);
   assert.match(page, /Owner or Admin/);
   assert.match(tabs, /ProjectFoldersPrototype/);

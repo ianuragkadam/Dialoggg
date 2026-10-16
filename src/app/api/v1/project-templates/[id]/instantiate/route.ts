@@ -48,7 +48,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       clientName: typeof body?.clientName === "string" && body.clientName.trim() ? body.clientName.trim() : null,
       idempotencyKey: idempotencyKey!,
     });
-    const folderProvisioning = await autoCreateProjectFolders(actor, result.projectId);
+    const folderProvisioning = body?.createMicrosoftFolders === true
+      ? await autoCreateProjectFolders(actor, result.projectId)
+      : { status: "skipped" as const, reason: "not_requested" as const };
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId: result.projectId, action: "project_template.instantiate", targetType: "project_template", targetId: templateId, result: "success", metadata: { replayed: result.replayed, copiedTaskCount: result.copiedTaskCount, warningCount: result.warnings.length } });
     if (folderProvisioning.status !== "skipped") recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId: result.projectId, action: "microsoft_folder.auto_provision", targetType: "project_folder_mapping", targetId: "common,private", result: folderProvisioning.status === "created" ? "success" : "failure", metadata: { status: folderProvisioning.status } });
     return apiSuccess({ ...result, folderProvisioning }, traceId, { status: result.replayed ? 200 : 201 });
