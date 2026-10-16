@@ -34,3 +34,13 @@ export type ResourceDirectoryUi = {
   categories: readonly ResourceCategoryUi[];
   availableUsers: ResourceUserOptionUi[];
 };
+
+const resourceNameCollator = new Intl.Collator("en", { sensitivity: "base", numeric: true });
+
+export function sortResourcesByTypeAndName<T extends { id: number; category: string; name: string }>(resources: readonly T[]): T[] {
+  return [...resources].sort((a, b) =>
+    resourceNameCollator.compare(a.category, b.category)
+    || resourceNameCollator.compare(a.name, b.name)
+    || a.id - b.id,
+  );
+}

@@ -12,6 +12,7 @@ import EventOccurrenceDialog from "@/components/EventOccurrenceDialog";
 import TaskOccurrenceDialog from "@/components/TaskOccurrenceDialog";
 import { ProjectResourceContext } from "@/components/ProjectResourceContext";
 import CalendarEventTooltip, { CalendarTooltipProvider } from "@/components/CalendarEventTooltip";
+import { printCalendar } from "@/lib/calendar-print";
 
 type Resource = { id: string; title: string; category: string };
 type ScheduleEvent = {
@@ -21,6 +22,7 @@ type ScheduleEvent = {
 type Project = { id: number; name: string; project_type_id?: number; project_type?: string };
 type ResourceCategory = { id: number; name: string };
 type CalendarView = "timeline" | "calendar";
+type ResourceOverlap = { first: ScheduleEvent; second: ScheduleEvent; start: number };
 
 const STANDARD_CATEGORY_ORDER = ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"];
 
@@ -114,6 +116,7 @@ export default function GlobalResourceSchedulePage() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<ReturnType<typeof toOccurrenceDialogEvent> | null>(null);
   const [selectedTask, setSelectedTask] = useState<ReturnType<typeof toOccurrenceDialogEvent> | null>(null);
+  const [showOverlaps, setShowOverlaps] = useState(false);
 
   const loadSchedule = useCallback(async () => {
     const [scheduleResponse, resourceResponse, projectResponse] = await Promise.all([
@@ -202,12 +205,23 @@ export default function GlobalResourceSchedulePage() {
     .filter(category => selectedCategorySet.has(category))
     .map(category => ({ id: `category:${category}`, title: category, children: filteredResources.filter(resource => resource.category === category).sort((a, b) => a.title.localeCompare(b.title)) }))
     .filter(group => group.children.length), [filteredResources, orderedCategories, selectedCategorySet]);
-  const conflictCount = filteredEvents.reduce((count, event, index) => {
-    if (!event.extendedProps.conflict) return count;
-    const eventStart = Date.parse(event.start);
-    const eventEnd = Date.parse(event.end);
-    return count + filteredEvents.slice(index + 1).filter(other => other.extendedProps.conflict && other.resourceId === event.resourceId && eventStart < Date.parse(other.end) && Date.parse(other.start) < eventEnd).length;
-  }, 0);
+  const overlaps = useMemo<ResourceOverlap[]>(() => {
+    const pairs: ResourceOverlap[] = [];
+    for (let index = 0; index < filteredEvents.length; index += 1) {
+      const first = filteredEvents[index];
+      if (!first.extendedProps.conflict) continue;
+      const firstStart = Date.parse(first.start);
+      const firstEnd = Date.parse(first.end);
+      for (const second of filteredEvents.slice(index + 1)) {
+        if (!second.extendedProps.conflict || second.resourceId !== first.resourceId) continue;
+        const secondStart = Date.parse(second.start);
+        if (firstStart < Date.parse(second.end) && secondStart < firstEnd) {
+          pairs.push({ first, second, start: Math.max(firstStart, secondStart) });
+        }
+      }
+    }
+    return pairs.sort((a, b) => a.start - b.start || a.first.extendedProps.resourceName.localeCompare(b.first.extendedProps.resourceName));
+  }, [filteredEvents]);
   const filteredLabel = selectedCategories.length > 0 && selectedCategories.length < categories.length
     ? `Showing: ${orderedCategories.filter(category => selectedCategorySet.has(category)).join(", ")}${selectedResourceIds.length < resources.length ? ` · ${selectedResourceIds.length}/${resources.length} resources` : ""}`
     : selectedResourceIds.length < resources.length ? `Showing: ${selectedResourceIds.length}/${resources.length} resources` : "";
@@ -237,19 +251,21 @@ export default function GlobalResourceSchedulePage() {
         <div role="tablist" aria-label={projectId ? "Project Resources view" : "Resource Calendar view"} className="inline-flex rounded-lg border border-slate-300 bg-white p-1 shadow-sm">
           {(["timeline", "calendar"] as CalendarView[]).map(view => <button key={view} type="button" role="tab" aria-selected={calendarView === view} onClick={() => setCalendarView(view)} className={`rounded-md px-4 py-2 text-sm font-semibold capitalize ${calendarView === view ? "bg-blue-900 text-white" : "text-slate-700 hover:bg-slate-100"}`}>{view}</button>)}
         </div>
-        <div className="text-sm">{conflictCount > 0 ? <span className="rounded bg-red-100 px-3 py-1 text-red-800">⚠️ {conflictCount} overlap{conflictCount === 1 ? "" : "s"} — same resource booked twice</span> : <span className="inline-flex items-center rounded border border-[#A9CF38] bg-[#55681C] px-3 py-1 font-semibold text-white shadow-sm">✓ No scheduling conflicts</span>}</div>
+        {overlaps.length > 0 && <button type="button" onClick={() => setShowOverlaps(true)} className="rounded border border-red-300 bg-red-100 px-3 py-1 text-sm font-semibold text-red-900 underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600">⚠️ {overlaps.length} overlap{overlaps.length === 1 ? "" : "s"} in loaded schedule · View details</button>}
       </div>
     </div>
 
     <CalendarWorkflowReview context="resource" canManage={canManage} projectId={projectId} projectName={projectName} resourceCategories={categories.map(category => category.name)} selectedResourceCategories={selectedCategories} onResourceCategoriesChange={setSelectedCategories} resourceFilterGroups={resourceFilterGroups} selectedResourceIds={selectedResourceIds} onResourceIdsChange={setSelectedResourceIds} onSelectAllResources={() => { setSelectedCategories(categories.map(category => category.name)); setSelectedResourceIds(resources.map(resource => String(resource.id))); }} onClearAllResources={() => { setSelectedCategories([]); setSelectedResourceIds([]); }} onEventsChanged={() => { void loadSchedule(); }}>
+      <div className="resource-calendar-print">
+      <h2 className="calendar-print-heading">{projectId ? "Project Resources" : "Resource Calendar"}</h2>
       <div className="overflow-hidden rounded-b border border-t-0 bg-white p-2 shadow-sm sm:p-4">
         {!loaded ? <div className="p-8 text-center text-slate-500">Loading Resource Calendar…</div> : loadError ? <div role="alert" className="rounded border border-red-200 bg-red-50 p-4 text-sm text-red-800">{loadError}</div> : selectedCategories.length === 0 ? <div role="status" className="p-10 text-center text-slate-600">No resource types selected.</div> : selectedResourceIds.length === 0 ? <div role="status" className="p-10 text-center text-slate-600">No resources selected.</div> : calendarView === "timeline" ? (
           <div className="dialoggg-calendar dialoggg-calendar-timeline"><CalendarTooltipProvider><FullCalendar
             key="resource-timeline"
             plugins={[resourceTimelinePlugin, interactionPlugin, luxonPlugin]}
             initialView="resourceTimelineMonth"
-            headerToolbar={{ left: "prev,next today", center: filteredLabel ? "title resourceFilterSummary" : "title", right: "resourceTimelineMonth,resourceTimelineWeek,resourceTimelineDay" }}
-            customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined } }}
+            headerToolbar={{ left: "prev,next today", center: filteredLabel ? "title resourceFilterSummary" : "title", right: "printButton resourceTimelineMonth,resourceTimelineWeek,resourceTimelineDay" }}
+            customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined }, printButton: { text: "Print", hint: "Print the current Resource Calendar view", click: () => printCalendar(".resource-calendar-print", projectId ? "Project Resources" : "Resource Calendar", true) } }}
             resources={groupedResources as any}
             events={filteredEvents as any}
             stickyHeaderDates
@@ -280,8 +296,8 @@ export default function GlobalResourceSchedulePage() {
               plugins={[dayGridPlugin, interactionPlugin, luxonPlugin]}
               initialView={calendarSubView}
               initialDate={calendarDate}
-              headerToolbar={{ left: "prev,next today", center: filteredLabel ? "title resourceFilterSummary" : "title", right: "dayGridMonth,dayGridWeek,dayGridDay" }}
-              customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined } }}
+              headerToolbar={{ left: "prev,next today", center: filteredLabel ? "title resourceFilterSummary" : "title", right: "printButton dayGridMonth,dayGridWeek,dayGridDay" }}
+              customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined }, printButton: { text: "Print", hint: "Print the current Resource Calendar view", click: () => printCalendar(".resource-calendar-print", projectId ? "Project Resources" : "Resource Calendar") } }}
               events={filteredEvents as any}
               stickyHeaderDates
               dayHeaderContent={arg => {
@@ -313,8 +329,10 @@ export default function GlobalResourceSchedulePage() {
           </div>
         )}
       </div>
+      </div>
     </CalendarWorkflowReview>
 
+    {showOverlaps && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-3" onMouseDown={() => setShowOverlaps(false)}><section role="dialog" aria-modal="true" aria-label="Resource overlaps in loaded schedule" className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}><header className="sticky top-0 flex items-center justify-between border-b bg-blue-900 px-5 py-4 text-white"><h2 className="font-bold">{overlaps.length} Resource overlap{overlaps.length === 1 ? "" : "s"}</h2><button type="button" aria-label="Close overlap details" onClick={() => setShowOverlaps(false)} className="rounded px-2 text-2xl">×</button></header><div className="space-y-3 p-4"><p className="text-sm text-slate-600">Across loaded schedule dates for the Resources currently selected in the filter. The green status below the filter checks only the next 7 days.</p>{overlaps.map(({ first, second, start }, index) => <article key={`${first.id}-${second.id}-${index}`} className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-slate-900"><h3 className="font-bold">{first.extendedProps.resourceName} · {new Intl.DateTimeFormat("en-US", { timeZone: companyTimeZone, dateStyle: "medium" }).format(new Date(start))}</h3><p className="mt-2">{first.extendedProps.rawTitle} ({first.extendedProps.projectName}) · {dateList(first)}</p><p>{second.extendedProps.rawTitle} ({second.extendedProps.projectName}) · {dateList(second)}</p></article>)}</div></section></div>}
     {selectedDay && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-3" onMouseDown={() => setSelectedDay(null)}><section role="dialog" aria-modal="true" aria-label={`Resources on ${formatSelectedDay(selectedDay)}`} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}><header className="sticky top-0 flex items-center justify-between border-b bg-blue-900 px-5 py-4 text-white"><h2 className="font-bold">{formatSelectedDay(selectedDay)}</h2><button type="button" aria-label="Close day assignments" onClick={() => setSelectedDay(null)} className="rounded px-2 text-2xl">×</button></header><div className="space-y-4 p-4">{selectedDayGroups.length ? selectedDayGroups.map(([resourceName, items]) => <section key={resourceName} aria-label={resourceName}><h3 className="mb-2 border-b pb-1 font-bold text-slate-800">{resourceName}</h3><ul className="space-y-2">{items.map(item => <li key={item.id}><button type="button" onClick={() => { setSelectedDay(null); openEvent(item); }} className="w-full rounded border p-3 text-left hover:bg-slate-50" style={{ borderLeftColor: item.color, borderLeftWidth: 5 }}><strong>{item.extendedProps.rawTitle}</strong><span className="block text-sm text-slate-600">{item.extendedProps.projectName} · {dateList(item)}{!item.allDay ? ` · ${new Intl.DateTimeFormat("en-US", { timeZone: companyTimeZone, hour: "numeric", minute: "2-digit" }).format(new Date(item.start))}` : ""}</span></button></li>)}</ul></section>) : <p className="py-8 text-center text-slate-600">No resource assignments on this day.</p>}</div></section></div>}
     {selectedEvent && <EventOccurrenceDialog event={selectedEvent} canManage={canManage} onClose={() => setSelectedEvent(null)} onChanged={() => { void loadSchedule(); }} />}
     {selectedTask && <TaskOccurrenceDialog event={selectedTask} projects={projects} timeZone={companyTimeZone} canManage={canManage} onClose={() => setSelectedTask(null)} />}

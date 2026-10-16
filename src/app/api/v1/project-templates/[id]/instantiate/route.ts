@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { getCurrentActor } from "@/lib/auth";
 import { instantiateProjectTemplate, ProjectTemplateDomainError, validateIdempotencyKey } from "@/lib/project-templates";
+import { autoCreateProjectFolders } from "@/lib/microsoft-storage";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
 
@@ -47,8 +48,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       clientName: typeof body?.clientName === "string" && body.clientName.trim() ? body.clientName.trim() : null,
       idempotencyKey: idempotencyKey!,
     });
+    const folderProvisioning = await autoCreateProjectFolders(actor, result.projectId);
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId: result.projectId, action: "project_template.instantiate", targetType: "project_template", targetId: templateId, result: "success", metadata: { replayed: result.replayed, copiedTaskCount: result.copiedTaskCount, warningCount: result.warnings.length } });
-    return apiSuccess(result, traceId, { status: result.replayed ? 200 : 201 });
+    if (folderProvisioning.status !== "skipped") recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId: result.projectId, action: "microsoft_folder.auto_provision", targetType: "project_folder_mapping", targetId: "common,private", result: folderProvisioning.status === "created" ? "success" : "failure", metadata: { status: folderProvisioning.status } });
+    return apiSuccess({ ...result, folderProvisioning }, traceId, { status: result.replayed ? 200 : 201 });
   } catch (error) {
     if (error instanceof ProjectTemplateDomainError) {
       const status = ["TEMPLATE_NOT_FOUND"].includes(error.code) ? 404 : error.code === "VALIDATION_FAILED" || error.code === "PROJECT_TYPE_INVALID" ? 400 : 409;

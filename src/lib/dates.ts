@@ -105,6 +105,19 @@ export function workingDayEnd(start: string, duration: number, rules: WorkingDay
   return addWorkingDays(start, duration - 1, rules);
 }
 
+/** A working day contributes only after its local calendar date has ended. */
+export function autoCompletionProgress(start: string, duration: number, rules: WorkingDayRules, today = todayIso()): number {
+  if (duration < 1 || !Number.isInteger(duration)) return 0;
+  let completed = 0;
+  let day = alignWorkingDay(start, rules, 1);
+  for (let index = 0; index < duration; index += 1) {
+    if (day < today) completed += 1;
+    else break;
+    day = addWorkingDays(day, 1, rules);
+  }
+  return completed / duration;
+}
+
 export function startForWorkingDayEnd(end: string, duration: number, rules: WorkingDayRules) {
   const alignedEnd = alignWorkingDay(end, rules, 1);
   return addWorkingDays(alignedEnd, -(duration - 1), rules);

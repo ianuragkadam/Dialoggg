@@ -99,9 +99,22 @@ function parseMetadata(value: string) {
 
 function fakeItemName(id: string) {
   if (id.startsWith("fake-item-")) {
-    try { return decodeURIComponent(id.slice("fake-item-".length)); } catch {}
+    try { return decodeURIComponent(id.slice("fake-item-".length)).split("/").at(-1) || "Microsoft folder"; } catch {}
   }
   return id === "fake-root" ? "Projects" : "Microsoft folder";
+}
+
+const fakeFolderChildren = new Map<string, GraphItem[]>();
+function fakeChildren(parentId: string) {
+  let children = fakeFolderChildren.get(parentId);
+  if (!children && parentId === "fake-root") {
+    children = ["Projects", "Active Projects", "Linked Existing Folder"].map(name => ({
+      id: `fake-item-${encodeURIComponent(name)}`, name, webUrl: `https://microsoft.example.test/folders/${encodeURIComponent(name)}`,
+      folder: {}, parentReference: { driveId: "fake-drive" },
+    }));
+    fakeFolderChildren.set(parentId, children);
+  }
+  return children || [];
 }
 
 async function graphRequest(path: string, accessToken: string, init: RequestInit = {}): Promise<GraphItem> {
@@ -119,13 +132,25 @@ async function graphRequest(path: string, accessToken: string, init: RequestInit
     if (path.includes("/children") && init.method === "POST") {
       const body = typeof init.body === "string" ? JSON.parse(init.body) as { name?: string } : {};
       const name = String(body.name || "Dialoggg folder");
-      return { id: `fake-item-${encodeURIComponent(name)}`, name, webUrl: `https://microsoft.example.test/folders/${encodeURIComponent(name)}`, folder: {}, parentReference: { driveId: "fake-drive" } };
+      const parentId = decodeURIComponent(path.match(/\/items\/([^/?]+)\/children/)?.[1] || "fake-root");
+      const current = fakeChildren(parentId).find(item => item.name?.toLocaleLowerCase() === name.toLocaleLowerCase());
+      if (current) return current;
+      const id = `fake-item-${encodeURIComponent(`${fakeItemName(parentId)}/${name}`)}`;
+      const item = { id, name, webUrl: `https://microsoft.example.test/folders/${encodeURIComponent(name)}`, folder: {}, parentReference: { driveId: "fake-drive" } };
+      fakeChildren(parentId).push(item);
+      if (!fakeFolderChildren.has(id)) {
+        fakeFolderChildren.set(id, name === "Common" || name === "Private" ? [] : [{
+          id: `fake-item-${encodeURIComponent(`${name}/Linked Existing Folder`)}`, name: "Linked Existing Folder",
+          webUrl: "https://microsoft.example.test/folders/Linked%20Existing%20Folder", folder: {}, parentReference: { driveId: "fake-drive" },
+        }]);
+      }
+      return item;
     }
     if (path.includes("/children")) {
-      const names = ["Projects", "Active Projects", "Linked Existing Folder"];
-      return { id: "children", value: names.map(name => ({ id: `fake-item-${encodeURIComponent(name)}`, name, webUrl: `https://microsoft.example.test/folders/${encodeURIComponent(name)}`, folder: {}, parentReference: { driveId: path.includes("fake-sharepoint-drive") ? "fake-sharepoint-drive" : "fake-drive" } })) };
+      const parentId = decodeURIComponent(path.match(/\/items\/([^/?]+)\/children/)?.[1] || "fake-root");
+      return { id: "children", value: fakeChildren(parentId) };
     }
-    const itemId = decodeURIComponent(path.split("/items/")[1]?.split(/[?/:]/)[0] || "fake-root");
+    const itemId = decodeURIComponent(path.match(/\/items\/([^/?]+)/)?.[1] || "fake-root");
     const name = fakeItemName(itemId);
     return { id: itemId, name, webUrl: `https://microsoft.example.test/folders/${encodeURIComponent(name)}`, folder: {}, parentReference: { driveId: path.includes("fake-sharepoint-drive") ? "fake-sharepoint-drive" : "fake-drive" } };
   }
@@ -391,6 +416,10 @@ async function listChildren(connection: ConnectionRow, purpose: "root" | "folder
   return folders.map(item => ({ choice: encodeChoice(connection.company_id, connection.id, purpose, driveId, item), name: item.name || "Microsoft folder" }));
 }
 
+async function childrenAt(connection: ConnectionRow, driveId: string, parentId: string, accessToken: string) {
+  return graphRequest(`/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(parentId)}/children?$select=id,name,webUrl,folder,parentReference`, accessToken);
+}
+
 export async function listMicrosoftRootChoices(actor: Actor) {
   requireManager(actor);
   const connection = connectionFor(actor.companyId!);
@@ -477,6 +506,7 @@ export function projectFoldersSnapshot(actor: Actor, projectId: number) {
   return {
     project: { id: project.id, name: project.name, status: project.status },
     connectionState: connection?.state ?? "connection_required",
+    rootDisplayName: connection?.root_display_name ?? null,
     commonVisible: eligibility.common,
     privateVisible: eligibility.private,
     canEdit: eligibility.manager && project.status === "active" && connection?.state === "healthy",
@@ -495,23 +525,63 @@ function requireFolderManager(actor: Actor, projectId: number) {
 }
 
 export async function listProjectFolderChoices(actor: Actor, projectId: number) {
-  const { connection } = requireFolderManager(actor, projectId);
-  return listChildren(connection, "folder");
+  const { connection, project } = requireFolderManager(actor, projectId);
+  const accessToken = await accessFor(connection);
+  const { driveId, rootId } = await connectionIds(connection);
+  const rootChildren = await childrenAt(connection, driveId, rootId, accessToken);
+  const projectFolder = (rootChildren.value || []).find(item => item.folder && item.name?.toLocaleLowerCase() === project.name.toLocaleLowerCase());
+  if (!projectFolder) return [];
+  const projectChildren = await childrenAt(connection, driveId, projectFolder.id, accessToken);
+  return (projectChildren.value || []).filter(item => !!item.folder).map(item => ({
+    choice: encodeChoice(connection.company_id, connection.id, "folder", driveId, item),
+    name: item.name || "Microsoft folder",
+  }));
 }
 
 async function createFolder(connection: ConnectionRow, projectName: string, kind: "common" | "private") {
   const accessToken = await accessFor(connection);
   const { driveId, rootId } = await connectionIds(connection);
-  const name = `${projectName} — ${kind === "common" ? "Common" : "Private"}`;
-  const children = await graphRequest(`/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(rootId)}/children?$select=id,name,webUrl,folder,parentReference`, accessToken);
-  const existing = (children.value || []).find(item => item.folder && item.name === name);
-  if (existing) return { driveId, item: existing };
-  const item = await graphRequest(`/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(rootId)}/children`, accessToken, {
-    method: "POST",
-    body: JSON.stringify({ name, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }),
-  });
-  if (!item.id || !item.folder) throw new MicrosoftStorageError("MICROSOFT_FOLDER_CREATE_FAILED", "permanent", 502);
-  return { driveId, item };
+  const ensureFolder = async (parentId: string, name: string) => {
+    const children = await childrenAt(connection, driveId, parentId, accessToken);
+    const existing = (children.value || []).find(item => item.folder && item.name?.toLocaleLowerCase() === name.toLocaleLowerCase());
+    if (existing) return existing;
+    const item = await graphRequest(`/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(parentId)}/children`, accessToken, {
+      method: "POST",
+      body: JSON.stringify({ name, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }),
+    });
+    if (!item.id || !item.folder) throw new MicrosoftStorageError("MICROSOFT_FOLDER_CREATE_FAILED", "permanent", 502);
+    return item;
+  };
+  const projectFolder = await ensureFolder(rootId, projectName);
+  const name = kind === "common" ? "Common" : "Private";
+  const folder = await ensureFolder(projectFolder.id, name);
+  return { driveId, item: folder };
+}
+
+export async function autoCreateProjectFolders(actor: Actor, projectId: number) {
+  const project = projectFor(actor, projectId);
+  if (!project) return { status: "skipped" as const, reason: "project_unavailable" as const };
+  const connection = connectionFor(project.company_id);
+  if (!connection || connection.state !== "healthy") {
+    return { status: "skipped" as const, reason: "microsoft_storage_not_connected" as const };
+  }
+
+  const created: Array<"common" | "private"> = [];
+  const failed: Array<{ kind: "common" | "private"; code: string }> = [];
+  for (const kind of ["common", "private"] as const) {
+    try {
+      await configureProjectFolder(actor, projectId, { kind, method: "create" });
+      created.push(kind);
+    } catch (error) {
+      const domain = error instanceof MicrosoftStorageError ? error : mapProviderError(error);
+      failed.push({ kind, code: domain.code });
+    }
+  }
+  return {
+    status: failed.length === 0 ? "created" as const : created.length ? "partial" as const : "failed" as const,
+    created,
+    failed,
+  };
 }
 
 export async function configureProjectFolder(actor: Actor, projectId: number, input: { kind: "common" | "private"; method: "create" | "link"; choice?: string }) {

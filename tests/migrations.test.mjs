@@ -66,11 +66,12 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 27/);
+    assert.match(second.stdout, /version 28/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
       assert.equal(migrated.pragma("integrity_check", { simple: true }), "ok");
+      assert.equal(migrated.prepare("SELECT auto_completion_enabled FROM company LIMIT 1").get().auto_completion_enabled, 1);
       assert.deepEqual(
         migrated.prepare("SELECT version, name FROM schema_migration ORDER BY version").all(),
         [
@@ -101,6 +102,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 25, name: "membership_removal_and_invitation_profile" },
           { version: 26, name: "platform_wide_email_uniqueness" },
           { version: 27, name: "help_onboarding_progress" },
+          { version: 28, name: "task_auto_completion" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);

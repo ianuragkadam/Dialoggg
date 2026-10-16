@@ -13,6 +13,7 @@ export type ProjectUiRecord = {
   state: string | null;
   zip: string | null;
   phone: string | null;
+  extension: string | null;
   start_date: string;
   end_date: string | null;
   note: string | null;

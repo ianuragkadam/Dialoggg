@@ -82,9 +82,9 @@ export default function LoginForm() {
     <div className="min-h-screen flex items-center justify-center p-6" style={{ backgroundColor: "#D1850B" }}>
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-8">
         <div className="text-center mb-6">
-          <div className="mx-auto inline-flex rounded-lg bg-slate-950 px-4 py-2">
+          <Link href="/" aria-label="Dialoggg home" className="mx-auto inline-flex rounded-lg bg-slate-950 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
             <Image src={dialogggLogo} alt="Dialoggg" width={190} height={42} priority className="h-10 w-auto object-contain" />
-          </div>
+          </Link>
           <h1 className="text-2xl font-bold mt-3 text-blue-800">Log in to Dialoggg</h1>
           <p className="mt-1 text-sm text-gray-500">Open your company Projects and schedules.</p>
         </div>

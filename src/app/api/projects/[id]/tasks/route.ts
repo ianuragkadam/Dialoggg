@@ -40,6 +40,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
     end_date: task.end_date,
     duration: task.duration,
     progress: task.progress,
+    progress_mode: task.progress_mode,
     parent: task.parent_id || 0,
     color: task.color,
     type: task.is_header ? "project" : "task",
@@ -57,7 +58,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   }));
   const links = plan.links.map(link => ({ id: link.id, source: link.source_task_id, target: link.target_task_id, type: ({ fs: "0", ss: "1", ff: "2", sf: "3" } as const)[link.link_type], lag: link.lag_days }));
   const projectColor = db.prepare("SELECT calendar_color FROM project WHERE id=? AND company_id=?").get(projectId, actor.companyId) as { calendar_color: string } | undefined;
-  return NextResponse.json({ data, links, projectColor: projectColor?.calendar_color || "#3B417D", ...(!external ? { planVersion: plan.project.planVersion } : {}), projectEndDate: plan.project.endDate }, { headers: noStore });
+  return NextResponse.json({ data, links, projectColor: projectColor?.calendar_color || "#3B417D", autoCompletionEnabled: plan.project.autoCompletionEnabled, ...(!external ? { planVersion: plan.project.planVersion } : {}), projectEndDate: plan.project.endDate }, { headers: noStore });
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

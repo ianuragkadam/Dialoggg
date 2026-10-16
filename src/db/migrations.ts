@@ -2513,7 +2513,29 @@ const migration027: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023, migration024, migration025, migration026, migration027];
+const migration028: Migration = {
+  version: 28,
+  name: "task_auto_completion",
+  signature: "company auto completion default on and per-task manual override v1",
+  up(database) {
+    database.exec(`
+      ALTER TABLE company ADD COLUMN auto_completion_enabled INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE task ADD COLUMN progress_mode TEXT NOT NULL DEFAULT 'auto';
+      UPDATE task SET progress_mode='manual' WHERE is_header=0 AND progress<>0;
+    `);
+  },
+};
+
+const migration029: Migration = {
+  version: 29,
+  name: "project_phone_extension",
+  signature: "optional job-site phone extension stored with project contact details v1",
+  up(database) {
+    addColumn(database, "project", "extension", "extension TEXT");
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023, migration024, migration025, migration026, migration027, migration028, migration029];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

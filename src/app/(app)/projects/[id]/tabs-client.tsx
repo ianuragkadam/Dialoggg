@@ -17,7 +17,7 @@ type Project = {
   id: number; name: string; status: string;
   client_name: string | null; client_email: string | null;
   address: string | null; city: string | null; state: string | null; zip: string | null;
-  phone: string | null; start_date: string; end_date: string | null; note: string | null;
+  phone: string | null; extension: string | null; start_date: string; end_date: string | null; note: string | null;
 };
 type ProjectUser = { full_name: string | null; email: string; role: string };
 
@@ -71,7 +71,7 @@ export default function ProjectTabs({
         {tab === "plan"      && (
           <div className={fullScreen ? "h-full min-h-0" : "space-y-3"}>
             {!fullScreen && <ProjectPlanHowItWorks identityId={identityId} />}
-            <GanttChart projectId={project.id} projectName={project.name} userId={identityId} canEdit={canEdit} fullScreen={fullScreen} />
+            <GanttChart projectId={project.id} projectName={project.name} projectStartDate={project.start_date} userId={identityId} canEdit={canEdit} fullScreen={fullScreen} />
             {!fullScreen && <ProjectPlanWorkflowReview projectId={project.id} projectName={project.name} canEdit={canEdit} />}
             {!fullScreen && <ProjectPlanGuide />}
           </div>
@@ -164,7 +164,7 @@ function Details({ project, projectUsers, createdBy }: { project: Project; proje
         {row("Client Email", project.client_email)}
         {row("Address",
           [project.address, project.city, project.state, project.zip].filter(Boolean).join(", "))}
-        {row("Phone", project.phone ? formatUsPhoneNumber(project.phone) : null)}
+        {row("Phone", project.phone ? `${formatUsPhoneNumber(project.phone)}${project.extension ? ` ext. ${project.extension}` : ""}` : project.extension ? `Ext. ${project.extension}` : null)}
         {row("Notes", project.note)}
       </section>
       <section className="rounded border bg-white p-6 shadow-sm" aria-labelledby="project-users-heading">

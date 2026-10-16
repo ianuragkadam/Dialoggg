@@ -15,14 +15,14 @@ export default async function ProjectViewPage({ params }: { params: Promise<{ id
   const external = actor.companyRole === "external";
   const select = external
     ? `SELECT p.id, p.project_type_id, p.name, p.status, p.version, NULL AS client_name, NULL AS client_email,
-        NULL AS address, NULL AS city, NULL AS state, NULL AS zip, NULL AS phone,
+        NULL AS address, NULL AS city, NULL AS state, NULL AS zip, NULL AS phone, NULL AS extension,
         p.start_date, p.end_date, NULL AS note, pt.name AS project_type,
         COUNT(t.id) AS task_count, SUM(CASE WHEN t.progress >= 1 THEN 1 ELSE 0 END) AS completed_task_count,
         NULL AS derived_end_date
        FROM project p JOIN project_type pt ON pt.id = p.project_type_id AND pt.company_id = p.company_id
        LEFT JOIN task t ON t.project_id = p.id AND t.is_header = 0 AND t.external_visible = 1 WHERE p.id = ? AND p.company_id = ? GROUP BY p.id`
     : `SELECT p.id, p.project_type_id, p.name, p.status, p.version, p.client_name, p.client_email,
-        p.address, p.city, p.state, p.zip, p.phone, p.start_date, p.end_date, p.note,
+        p.address, p.city, p.state, p.zip, p.phone, p.extension, p.start_date, p.end_date, p.note,
         pt.name AS project_type, COUNT(t.id) AS task_count,
         SUM(CASE WHEN t.progress >= 1 THEN 1 ELSE 0 END) AS completed_task_count,
         p.end_date AS derived_end_date

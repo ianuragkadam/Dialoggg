@@ -2,6 +2,7 @@ import db from "@/db";
 import {
   addDays,
   addWorkingDays,
+  autoCompletionProgress,
   alignWorkingDay,
   daysBetween,
   isWorkingDay,
@@ -21,6 +22,7 @@ export type PlanTaskRow = {
   manual_start_date: string | null;
   duration: number;
   progress: number;
+  progress_mode: "auto" | "manual";
   color: string;
   is_header: number;
   is_root: number;
@@ -91,7 +93,7 @@ export function dependencyStart(
 
 function taskRows(projectId: number) {
   return db.prepare(`SELECT id, project_id, parent_id, name, start_date, manual_start_date,
-      duration, progress, color, is_header, is_root, start_by_mode, sort_order,
+      duration, progress, progress_mode, color, is_header, is_root, start_by_mode, sort_order,
       allow_saturday, allow_sunday, resource_category_id, external_visible, version
     FROM task WHERE project_id=? ORDER BY sort_order,id`).all(projectId) as PlanTaskRow[];
 }
@@ -103,9 +105,9 @@ function linkRows(projectId: number) {
 
 function projectRow(projectId: number, companyId?: number) {
   const where = companyId ? "p.id=? AND p.company_id=?" : "p.id=?";
-  return db.prepare(`SELECT p.id,p.company_id,p.name,p.start_date,p.end_date,p.status,p.plan_version,p.calendar_color
-    FROM project p WHERE ${where}`).get(...(companyId ? [projectId, companyId] : [projectId])) as
-    | { id: number; company_id: number; name: string; start_date: string; end_date: string | null; status: string; plan_version: number; calendar_color: string }
+  return db.prepare(`SELECT p.id,p.company_id,p.name,p.start_date,p.end_date,p.status,p.plan_version,p.calendar_color,c.auto_completion_enabled,c.time_zone
+    FROM project p JOIN company c ON c.id=p.company_id WHERE ${where}`).get(...(companyId ? [projectId, companyId] : [projectId])) as
+    | { id: number; company_id: number; name: string; start_date: string; end_date: string | null; status: string; plan_version: number; calendar_color: string; auto_completion_enabled: number; time_zone: string | null }
     | undefined;
 }
 
@@ -113,6 +115,8 @@ export function calculatePlan(
   tasks: PlanTaskRow[],
   links: PlanLinkRow[],
   projectStartDate: string,
+  autoCompletionEnabled = false,
+  asOfDate?: string,
 ): { tasks: ScheduledTask[]; projectEndDate: string | null } {
   const byId = new Map(tasks.map(task => [task.id, task]));
   const leaves = tasks.filter(task => task.is_header === 0);
@@ -161,7 +165,10 @@ export function calculatePlan(
       start = constraints.reduce((latest, value) => value > latest ? value : latest);
     }
     const end = workingDayEnd(start, task.duration, targetRules);
-    scheduled.set(task.id, { ...task, start_date: start, start_by_mode: predecessors.length ? "linked" : "time_period", end_date: end });
+    const progress = autoCompletionEnabled && task.progress_mode === "auto"
+      ? autoCompletionProgress(start, task.duration, targetRules, asOfDate)
+      : task.progress;
+    scheduled.set(task.id, { ...task, progress, start_date: start, start_by_mode: predecessors.length ? "linked" : "time_period", end_date: end });
     for (const link of outgoing.get(task.id) ?? []) {
       const next = (indegree.get(link.target_task_id) ?? 0) - 1;
       indegree.set(link.target_task_id, next);
@@ -232,11 +239,16 @@ function assertProjectWritable(projectId: number, companyId: number, expectedPla
   return project;
 }
 
+function companyToday(timeZone: string | null) {
+  try { return new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "UTC", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
+  catch { return new Date().toISOString().slice(0, 10); }
+}
+
 function persistCalculatedPlan(projectId: number, incrementPlanVersion: boolean) {
   const project = projectRow(projectId);
   if (!project) throw new PlanDomainError("PROJECT_NOT_FOUND", "Project not found.", 404);
   const currentTasks = taskRows(projectId);
-  const calculated = calculatePlan(currentTasks, linkRows(projectId), project.start_date);
+  const calculated = calculatePlan(currentTasks, linkRows(projectId), project.start_date, project.auto_completion_enabled === 1, companyToday(project.time_zone));
   const currentById = new Map(currentTasks.map(task => [task.id, task]));
   const update = db.prepare(`UPDATE task SET start_date=?,manual_start_date=?,duration=?,progress=?,start_by_mode=?,
     version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?`);
@@ -245,9 +257,9 @@ function persistCalculatedPlan(projectId: number, incrementPlanVersion: boolean)
     const changed = current.start_date !== next.start_date
       || current.manual_start_date !== next.manual_start_date
       || current.duration !== next.duration
-      || Math.abs(current.progress - next.progress) > 0.0000001
+      || (next.is_header === 1 && Math.abs(current.progress - next.progress) > 0.0000001)
       || current.start_by_mode !== next.start_by_mode;
-    if (changed) update.run(next.start_date, next.manual_start_date, next.duration, next.progress, next.start_by_mode, next.id);
+    if (changed) update.run(next.start_date, next.manual_start_date, next.duration, next.is_header === 1 ? next.progress : current.progress, next.start_by_mode, next.id);
   }
   db.prepare(`UPDATE project SET end_date=?,plan_version=plan_version+?,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(calculated.projectEndDate, incrementPlanVersion ? 1 : 0, projectId);
@@ -312,7 +324,7 @@ export function getProjectPlan(projectId: number, companyId: number, external = 
   if (!project) return null;
   const allTasks = taskRows(projectId);
   const allLinks = linkRows(projectId);
-  const calculated = calculatePlan(allTasks, allLinks, project.start_date);
+  const calculated = calculatePlan(allTasks, allLinks, project.start_date, project.auto_completion_enabled === 1, companyToday(project.time_zone));
   let visible = calculated.tasks;
   let links = allLinks;
   if (external) {
@@ -328,7 +340,7 @@ export function getProjectPlan(projectId: number, companyId: number, external = 
     links = [];
   }
   return {
-    project: { id: project.id, name: project.name, status: project.status, startDate: project.start_date, endDate: calculated.projectEndDate, planVersion: project.plan_version },
+    project: { id: project.id, name: project.name, status: project.status, startDate: project.start_date, endDate: calculated.projectEndDate, planVersion: project.plan_version, autoCompletionEnabled: project.auto_completion_enabled === 1 },
     tasks: visible,
     links,
   };
@@ -352,9 +364,10 @@ export function createPlanTask(projectId: number, companyId: number, input: Reco
         .run(projectId, parentId, name, project.start_date, project.start_date, String(input.color ?? project.calendar_color), sort.value, input.externalVisible === true ? 1 : 0);
     } else {
       const fields = leafFields({ ...input, color: input.color ?? project.calendar_color });
-      db.prepare(`INSERT INTO task(project_id,parent_id,name,start_date,manual_start_date,duration,progress,color,is_header,start_by_mode,sort_order,allow_saturday,allow_sunday,version,resource_category_id,external_visible,is_root,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,0,'time_period',?,?,?,?,?,?,0,CURRENT_TIMESTAMP)`)
-        .run(projectId,parentId,fields.name,fields.startDate,fields.startDate,fields.duration,fields.progress,fields.color,sort.value,fields.allowSaturday?1:0,fields.allowSunday?1:0,1,fields.categoryId,fields.externalVisible?1:0);
+      const progressMode = input.progressMode === "manual" || input.progress_mode === "manual" || (input.progressMode == null && input.progress_mode == null && fields.progress > 0) ? "manual" : "auto";
+      db.prepare(`INSERT INTO task(project_id,parent_id,name,start_date,manual_start_date,duration,progress,progress_mode,color,is_header,start_by_mode,sort_order,allow_saturday,allow_sunday,version,resource_category_id,external_visible,is_root,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,0,'time_period',?,?,?,?,?,?,0,CURRENT_TIMESTAMP)`)
+        .run(projectId,parentId,fields.name,fields.startDate,fields.startDate,fields.duration,fields.progress,progressMode,fields.color,sort.value,fields.allowSaturday?1:0,fields.allowSunday?1:0,1,fields.categoryId,fields.externalVisible?1:0);
     }
     const id = Number((db.prepare("SELECT last_insert_rowid() id").get() as { id: number }).id);
     if (!isHeader) setTaskResources(projectId, companyId, id, input.resourceIds ?? input.resource_ids);
@@ -458,9 +471,12 @@ export function updatePlanTask(projectId: number, taskId: number, companyId: num
     } else {
       const fields = leafFields({ ...input, name, startDate: input.startDate ?? input.start_date ?? current.start_date, duration: input.duration ?? current.duration, progress: input.progress ?? current.progress, color: input.color ?? current.color, allowSaturday: input.allowSaturday ?? !!current.allow_saturday, allowSunday: input.allowSunday ?? !!current.allow_sunday, resourceCategoryId: input.resourceCategoryId ?? current.resource_category_id, externalVisible: input.externalVisible ?? !!current.external_visible });
       const scheduleChanged = fields.startDate !== current.start_date || fields.duration !== current.duration || fields.allowSaturday !== !!current.allow_saturday || fields.allowSunday !== !!current.allow_sunday;
-      if (current.progress >= 1 && scheduleChanged) throw new PlanDomainError("COMPLETED_TASK_IMMUTABLE", "Completed Task dates and working-day rules cannot be changed.", 409);
-      db.prepare(`UPDATE task SET name=?,parent_id=?,duration=?,progress=?,color=?,allow_saturday=?,allow_sunday=?,resource_category_id=?,external_visible=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-        .run(fields.name,parentId,fields.duration,fields.progress,fields.color,fields.allowSaturday?1:0,fields.allowSunday?1:0,fields.categoryId,fields.externalVisible?1:0,taskId);
+      if (current.progress_mode === "manual" && current.progress >= 1 && scheduleChanged) throw new PlanDomainError("COMPLETED_TASK_IMMUTABLE", "Completed Task dates and working-day rules cannot be changed.", 409);
+      const requestedMode = input.progressMode ?? input.progress_mode;
+      if (requestedMode != null && requestedMode !== "auto" && requestedMode !== "manual") throw new PlanDomainError("VALIDATION_FAILED", "Choose a valid Auto Completion setting.", 400);
+      const progressMode = requestedMode ?? (input.progress != null && Math.abs(fields.progress - current.progress) > 0.0000001 ? "manual" : current.progress_mode);
+      db.prepare(`UPDATE task SET name=?,parent_id=?,duration=?,progress=?,progress_mode=?,color=?,allow_saturday=?,allow_sunday=?,resource_category_id=?,external_visible=?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+        .run(fields.name,parentId,fields.duration,progressMode === "manual" ? fields.progress : current.progress,progressMode,fields.color,fields.allowSaturday?1:0,fields.allowSunday?1:0,fields.categoryId,fields.externalVisible?1:0,taskId);
       // Duration or other task edits may omit Resource assignments. Treat that
       // as “leave unchanged”; an explicit empty array still clears assignments.
       if (input.resourceIds !== undefined || input.resource_ids !== undefined) {
@@ -483,7 +499,7 @@ export function deletePlanTask(projectId: number, taskId: number, companyId: num
     if (task.version !== expectedTaskVersion) throw new PlanDomainError("TASK_VERSION_CONFLICT", "This Task changed after you opened it. Refresh and try again.", 409);
     if (task.is_root) throw new PlanDomainError("ROOT_TASK_PROTECTED", "The Project root cannot be deleted.", 409);
     if (task.is_header && db.prepare("SELECT 1 FROM task WHERE parent_id=? LIMIT 1").get(taskId)) throw new PlanDomainError("HEADER_NOT_EMPTY", "Move or delete every child before deleting this Header.", 409);
-    if (!task.is_header && task.progress >= 1) throw new PlanDomainError("COMPLETED_TASK_IMMUTABLE", "Completed Task history cannot be deleted.", 409);
+    if (!task.is_header && task.progress_mode === "manual" && task.progress >= 1) throw new PlanDomainError("COMPLETED_TASK_IMMUTABLE", "Completed Task history cannot be deleted.", 409);
     const targets = db.prepare("SELECT DISTINCT target_task_id id FROM task_link WHERE source_task_id=?").all(taskId) as Array<{ id: number }>;
     db.prepare("DELETE FROM task WHERE id=? AND project_id=?").run(taskId, projectId);
     for (const target of targets) {

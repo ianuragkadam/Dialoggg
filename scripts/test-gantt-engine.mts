@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import db from "../src/db/index.ts";
-import { ganttEndDateFromInclusive } from "../src/lib/dates.ts";
+import { autoCompletionProgress, ganttEndDateFromInclusive } from "../src/lib/dates.ts";
 import {
   calculatePlan,
   createPlanLink,
@@ -23,6 +23,7 @@ const baseTask = (id: number, overrides: Partial<PlanTaskRow> = {}): PlanTaskRow
   manual_start_date: "2026-09-18",
   duration: 2,
   progress: 0,
+  progress_mode: "manual",
   color: "#5599dd",
   is_header: 0,
   is_root: 0,
@@ -39,6 +40,16 @@ const root = baseTask(100, { parent_id: null, name: "Root", is_header: 1, is_roo
 const source = baseTask(1);
 const target = baseTask(2);
 const link = (type: PlanLinkRow["link_type"], lag = 0): PlanLinkRow => ({ id: 1, project_id: 1, source_task_id: 1, target_task_id: 2, link_type: type, lag_days: lag });
+
+const weekdays = { allowSaturday: false, allowSunday: false };
+assert.equal(autoCompletionProgress("2026-10-12", 4, weekdays, "2026-10-12"), 0);
+assert.equal(autoCompletionProgress("2026-10-12", 4, weekdays, "2026-10-13"), .25);
+assert.equal(autoCompletionProgress("2026-10-12", 4, weekdays, "2026-10-16"), 1);
+assert.equal(autoCompletionProgress("2026-10-16", 2, weekdays, "2026-10-19"), .5);
+assert.equal(autoCompletionProgress("2026-10-16", 2, { allowSaturday: true, allowSunday: false }, "2026-10-19"), 1);
+const autoTask = baseTask(1, { start_date: "2026-10-12", manual_start_date: "2026-10-12", duration: 4, progress_mode: "auto" });
+assert.equal(calculatePlan([root, autoTask], [], "2026-10-12", true, "2026-10-14").tasks.find(task => task.id === 1)?.progress, .5);
+assert.equal(calculatePlan([root, { ...autoTask, progress_mode: "manual", progress: .75 }], [], "2026-10-12", true, "2026-10-14").tasks.find(task => task.id === 1)?.progress, .75);
 
 assert.equal(calculatePlan([root, source, target], [link("fs")], "2026-09-18").tasks.find(task => task.id === 2)?.start_date, "2026-09-22");
 // Client report regression: inclusive Tuesday finish + FS/zero lag starts Wednesday, not Thursday.
@@ -65,10 +76,10 @@ let planVersion = 1;
 let result = createPlanTask(projectId, companyId, { planVersion, isHeader: true, name: "Build", parent: 0, externalVisible: true });
 planVersion = result.plan!.project.planVersion;
 const headerId = result.taskId;
-result = createPlanTask(projectId, companyId, { planVersion, name: "Pour", parent: headerId, startDate: "2026-09-18", duration: 2, progress: 0, resourceIds: [] });
+result = createPlanTask(projectId, companyId, { planVersion, name: "Pour", parent: headerId, startDate: "2026-09-18", duration: 2, progress: 0, progressMode: "manual", resourceIds: [] });
 planVersion = result.plan!.project.planVersion;
 const firstId = result.taskId;
-result = createPlanTask(projectId, companyId, { planVersion, name: "Surface", parent: headerId, startDate: "2026-09-18", duration: 1, progress: 0, resourceIds: [] });
+result = createPlanTask(projectId, companyId, { planVersion, name: "Surface", parent: headerId, startDate: "2026-09-18", duration: 1, progress: 0, progressMode: "manual", resourceIds: [] });
 planVersion = result.plan!.project.planVersion;
 const secondId = result.taskId;
 let linked = createPlanLink(projectId, companyId, { planVersion, source: firstId, target: secondId, type: "fs", lag: 0 });

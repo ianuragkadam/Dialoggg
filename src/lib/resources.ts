@@ -2,6 +2,7 @@ import db from "@/db";
 import { workingDayEnd } from "@/lib/dates";
 import {
   RESOURCE_CATEGORIES,
+  sortResourcesByTypeAndName,
   type ResourceAssignmentUi,
   type ResourceCategoryUi,
   type ResourceDirectoryUi,
@@ -174,7 +175,7 @@ function toDto(row: ResourceRow): ResourceUi {
 
 export function listResources(companyId: number): ResourceUi[] {
   const rows = db.prepare(`SELECT id FROM resource WHERE company_id = ? ORDER BY id DESC`).all(companyId) as Array<{ id: number }>;
-  return rows.map(row => getResource(row.id, companyId)).filter((value): value is ResourceUi => !!value);
+  return sortResourcesByTypeAndName(rows.map(row => getResource(row.id, companyId)).filter((value): value is ResourceUi => !!value));
 }
 
 export function getResource(resourceId: number, companyId: number) {

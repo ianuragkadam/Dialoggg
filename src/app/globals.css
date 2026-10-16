@@ -622,6 +622,11 @@ body {
   border-inline: 1px solid #d1850b !important;
 }
 
+.master-calendar-print-heading,
+.calendar-print-heading {
+  display: none;
+}
+
 .tenant-theme .resource-calendar-grid-wrapper .fc .fc-daygrid-day.resource-calendar-today .fc-daygrid-day-frame {
   background-color: #223b59 !important;
   box-shadow: inset 1px 0 #d1850b, inset -1px 0 #d1850b;

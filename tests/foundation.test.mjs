@@ -275,6 +275,18 @@ test("Projects UI covers complete fields, lifecycle, rebase, and External bounda
   assert.doesNotMatch(`${list}\n${form}\n${detail}`, /UI preview|no production data changed|non-persistent/);
 });
 
+test("Project job-site and phone fields remain available but optional in add and edit", async () => {
+  const form = await read("src/components/ProjectFormPrototype.tsx");
+  const projects = await read("src/lib/projects.ts");
+  for (const key of ["address", "city", "state", "zip", "phone"]) {
+    assert.doesNotMatch(form, new RegExp(`\\["${key}", "Enter the`));
+    assert.doesNotMatch(projects, new RegExp(`\\["${key}","`));
+  }
+  assert.match(form, /const optional = \["project-address", "project-city", "project-state", "project-zip", "client-phone"\]/);
+  assert.match(projects, /input\[key\] \?\?= ""/);
+  assert.match(form, /mode === "create" \? "POST" : "PUT"/);
+});
+
 test("Project Plan hierarchy review reads live saved tasks and hands edits to the original Gantt", async () => {
   const review = await read("src/components/ProjectPlanWorkflowReview.tsx");
   const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
@@ -283,9 +295,17 @@ test("Project Plan hierarchy review reads live saved tasks and hands edits to th
   assert.match(tabs, /ProjectPlanWorkflowReview/);
   assert.match(tabs, /ProjectPlanWorkflowReview projectId=\{project\.id\}/);
   assert.match(gantt, /function focusTaskStart\(taskId: number\)/);
-  assert.match(gantt, /gantt\.showDate\(task\.start_date\)/);
-  assert.match(gantt, /await reload\(\);\s*if \(taskModal\.mode === "edit" && taskId != null\) focusTaskStart\(Number\(taskId\)\)/);
+  assert.match(gantt, /gantt\.posFromDate\(task\.start_date\) - timelineWidth \/ 2/);
+  assert.match(gantt, /if \(taskId != null\) pendingSavedTaskFocusRef\.current = Number\(taskId\);\s*await reload\(\)/);
+  assert.match(gantt, /gantt\.render\(\);\s*if \(pendingSavedTaskFocusRef\.current !== null\)/);
   assert.match(tabs, /<GanttChart projectId=/);
+  assert.match(tabs, /projectStartDate=\{project\.start_date\}/);
+  assert.match(gantt, /const startIso = defaultNewTaskStartDate\(projectStartDate, clickedTask\)/);
+  assert.match(gantt, /start_date: projectStartDate, duration: 1/);
+  assert.match(gantt, /plan-add-child-task/);
+  assert.match(gantt, /openNewTaskFromRow\(header, taskId\)/);
+  assert.match(gantt, /createPortal\(/);
+  assert.match(gantt, /document\.querySelector\("\.tenant-theme"\) \|\| document\.body/);
   assert.match(gantt, /dhtmlx-gantt/);
   assert.match(gantt, /dialoggg:open-plan-task/);
   assert.match(gantt, /dialoggg:project-plan-updated/);
@@ -323,10 +343,13 @@ test("Google Calendar UI covers one-way personal connection and synchronization 
 test("Microsoft Storage UI covers company setup and Project Common/Private boundaries", async () => {
   const company = await read("src/components/MicrosoftStoragePrototype.tsx");
   const folders = await read("src/components/ProjectFoldersPrototype.tsx");
+  const projectApi = await read("src/app/api/v1/projects/route.ts");
   const page = await read("src/app/(app)/settings/microsoft-storage/page.tsx");
   const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
   for (const value of ["OneDrive for Business", "SharePoint document library", "Dialoggg never stores your files", "Microsoft 365 account", "No one at Dialoggg can see your files", "Change company folder root?", "Existing Project folders do not move", "Disconnect Microsoft Storage?"]) assert.match(company, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
-  for (const value of ["Common", "Private", "Create automatically", "Link existing folder", "Stable Microsoft IDs", "Missing or moved", "Permission denied", "Company disconnected"]) assert.match(folders, new RegExp(value, "i"));
+  for (const value of ["Common", "Private", "Create a new folder", "Use a folder I already have", "Stable Microsoft IDs", "Missing or moved", "Permission denied", "Company disconnected"]) assert.match(folders, new RegExp(value, "i"));
+  assert.match(company, /New projects will automatically get Common and Private folders/);
+  assert.match(projectApi, /autoCreateProjectFolders/);
   assert.match(folders, /never renames, moves, or deletes Microsoft folders/);
   assert.match(page, /Owner or Admin/);
   assert.match(tabs, /ProjectFoldersPrototype/);

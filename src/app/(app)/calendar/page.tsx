@@ -13,6 +13,7 @@ import TaskOccurrenceDialog from "@/components/TaskOccurrenceDialog";
 import TimedNotice from "@/components/TimedNotice";
 import { calendarEventTooltip } from "@/lib/calendar-tooltip";
 import CalendarEventTooltip, { CalendarTooltipProvider } from "@/components/CalendarEventTooltip";
+import { printCalendar } from "@/lib/calendar-print";
 
 type Project = { id: number; name: string; project_type_id: number; project_type: string };
 
@@ -64,8 +65,8 @@ export default function MasterCalendarPage() {
   async function moveEvent(info:any){const props=info.event.extendedProps;if(props.kind!=="event"){info.revert();return;}const start=info.event.startStr,end=info.event.endStr||start;if(!window.confirm(`Move ${info.event.title} to ${start}? Cancel returns it to the original position.`)){info.revert();return;}info.revert();const replacement=info.event.allDay?{startDate:start.slice(0,10),endDate:new Date(Date.parse(end)-86400000).toISOString().slice(0,10)}:{startAt:info.event.start?.toISOString(),endAt:info.event.end?.toISOString()};async function save(confirmConflicts=false){const response=await authenticatedFetch(`/api/events/${props.seriesId}/exceptions`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({version:props.version,occurrenceKey:props.occurrenceKey,action:"replace",replacement,confirmConflicts})});const data=await response.json();if(response.status===409&&data?.error?.code==="RESOURCE_CONFLICT"&&!confirmConflicts){if(window.confirm("This move overlaps another Resource assignment. Keep the assignment anyway?"))await save(true);return;}setNotice(response.ok?{text:"Event moved after confirmation. All applicable calendars were refreshed.",tone:"success"}:{text:data?.error?.message||"The Event could not be moved.",tone:"error"});if(response.ok)loadEvents();}await save();}
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="master-calendar-page space-y-4">
+      <div className="master-calendar-page-header flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold">Master Calendar</h1>
         <div className="flex items-center gap-3">
           <SubscribeButton feedUrlEndpoint="/api/calendar/feed-url" />
@@ -85,12 +86,17 @@ export default function MasterCalendarPage() {
         onAddEventReady={registerAddEvent}
       >
       {notice&&<TimedNotice message={notice.text} tone={notice.tone} onDismiss={() => setNotice(null)} />}
+      <div className="master-calendar-print">
+      <h2 className="master-calendar-print-heading">Master Calendar</h2>
       <div className="dialoggg-calendar bg-white border rounded shadow-sm p-2 sm:p-4">
         <CalendarTooltipProvider><FullCalendar
           plugins={[dayGridPlugin,interactionPlugin,luxonPlugin]}
           initialView="dayGridMonth"
-          customButtons={openAddEvent ? { addEventButton: { text: "+ Add Event", hint: "Add an Event", click: () => openAddEvent() } } : undefined}
-          headerToolbar={{ left: "prev,next today", center: "title", right: `${openAddEvent ? "addEventButton " : ""}dayGridMonth,dayGridWeek,dayGridDay` }}
+          customButtons={{
+            ...(openAddEvent ? { addEventButton: { text: "+ Add Event", hint: "Add an Event", click: () => openAddEvent() } } : {}),
+            printButton: { text: "Print", hint: "Print the current calendar view", click: () => printCalendar(".master-calendar-print", "Master Calendar") },
+          }}
+          headerToolbar={{ left: "prev,next today", center: "title", right: `${openAddEvent ? "addEventButton " : ""}printButton dayGridMonth,dayGridWeek,dayGridDay` }}
           events={events}
           eventContent={info => <CalendarEventTooltip content={calendarEventTooltip(info.event)} className="fc-event-title">{info.event.title}</CalendarEventTooltip>}
           timeZone={companyTimeZone}
@@ -99,6 +105,7 @@ export default function MasterCalendarPage() {
           eventClick={info=>{if(info.event.extendedProps.kind==="event")setSelectedEvent(info.event);else if(info.event.extendedProps.kind==="task")setSelectedTask(info.event);}}
           height={650}
         /></CalendarTooltipProvider>
+      </div>
       </div>
       </CalendarWorkflowReview>
       {selectedEvent&&<EventOccurrenceDialog event={selectedEvent} canManage={canManage} onClose={()=>setSelectedEvent(null)} onChanged={loadEvents}/>}

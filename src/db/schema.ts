@@ -46,6 +46,7 @@ export const TABLES: string[] = [
     state TEXT,
     zip TEXT,
     phone TEXT,
+    extension TEXT,
     start_date TEXT NOT NULL,
     end_date TEXT,
     note TEXT,

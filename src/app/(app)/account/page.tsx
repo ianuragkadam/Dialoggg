@@ -9,6 +9,7 @@ import CompanyLogoSettings from "@/components/CompanyLogoSettings";
 import EditAccountProfile from "@/components/EditAccountProfile";
 import path from "node:path";
 import ContactPlatformOwner from "@/components/ContactPlatformOwner";
+import CompanyAutoCompletionSettings from "@/components/CompanyAutoCompletionSettings";
 
 export default async function AccountPage() {
   const user = await getCurrentUser();
@@ -76,6 +77,7 @@ export default async function AccountPage() {
       {company && user.company_role === "owner" && actor?.actualCompanyRole === "owner" && !actor.rolePreview && <CompanyLogoSettings
         initialLogoUrl={company.logo_path ? `/api/v1/company/logo?v=${encodeURIComponent(path.basename(company.logo_path))}` : null}
       />}
+      {company && (user.company_role === "owner" || user.company_role === "admin") && actor?.actualCompanyRole === user.company_role && !actor.rolePreview && <CompanyAutoCompletionSettings initialEnabled={company.auto_completion_enabled !== 0} />}
       {user.context_type === "platform" && <PlatformAdministratorManagement
         initialAdministrators={platformAdministrators}
         canManage={primary?.is_primary_platform_admin === 1}

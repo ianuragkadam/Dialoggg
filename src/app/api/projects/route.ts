@@ -5,6 +5,7 @@ import { getCurrentActor } from "@/lib/auth";
 import { projectScopeSql, serializeProjectForActor, type InternalProjectDto } from "@/lib/authorization";
 import { requireCompanyRole } from "@/lib/guard";
 import { createProjectRecord, ProjectValidationError } from "@/lib/projects";
+import { autoCreateProjectFolders } from "@/lib/microsoft-storage";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
 import { queueGoogleReconciliation } from "@/lib/google-calendar-queue";
@@ -45,9 +46,11 @@ export async function POST(request: NextRequest) {
       projectTypeId: body.project_type_id, assignmentIds: body.assignment_ids,
     });
     const projectId = project.id;
+    const folderProvisioning = await autoCreateProjectFolders(actor, projectId);
     queueGoogleReconciliation(actor.companyId!, "project.create");
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "project.create", targetType: "project", targetId: projectId, result: "success" });
-    return NextResponse.json({ id: projectId });
+    if (folderProvisioning.status !== "skipped") recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId, action: "microsoft_folder.auto_provision", targetType: "project_folder_mapping", targetId: "common,private", result: folderProvisioning.status === "created" ? "success" : "failure", metadata: { status: folderProvisioning.status } });
+    return NextResponse.json({ id: projectId, folderProvisioning });
   } catch (error) {
     if (error instanceof ProjectValidationError) return NextResponse.json({ error: "Check the required Project fields.", fields: error.fields }, { status: 400 });
     recordAudit({ requestId: traceId, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, action: "project.create", result: "failure" });

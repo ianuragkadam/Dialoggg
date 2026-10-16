@@ -25,16 +25,29 @@ export async function POST(request: NextRequest) {
   if (!rate.allowed) return apiError(429, "RATE_LIMITED", "Too many access requests. Please try again later.", traceId);
   recordRateLimitFailure(rateOptions, rate.keyHash);
 
-  const body = await request.json().catch(() => ({})) as { name?: unknown; email?: unknown; message?: unknown };
+  const body = await request.json().catch(() => ({})) as { source?: unknown; name?: unknown; email?: unknown; message?: unknown; company?: unknown; phone?: unknown; trade?: unknown; crews?: unknown };
+  const fromLanding = body.source === "landing";
   const name = String(body.name ?? "").trim();
   const email = normalizeEmail(body.email);
   const message = String(body.message ?? "").trim();
+  const company = String(body.company ?? "").trim();
+  const phone = String(body.phone ?? "").trim();
+  const trade = String(body.trade ?? "").trim();
+  const crews = String(body.crews ?? "").trim();
   const fields: Record<string, string> = {};
   if (!name) fields.name = "Enter your name.";
   else if (name.length > 100) fields.name = "Use 100 characters or fewer.";
   if (!email || email.length > 254 || !EMAIL_PATTERN.test(email)) fields.email = "Enter a valid email address.";
-  if (!message) fields.message = "Tell us why you need access.";
-  else if (message.length > 1000) fields.message = "Use 1,000 characters or fewer.";
+  if (fromLanding) {
+    if (!company) fields.company = "Enter your company name.";
+    else if (company.length > 100) fields.company = "Use 100 characters or fewer.";
+    if (phone.length > 40) fields.phone = "Use 40 characters or fewer.";
+    if (trade.length > 200) fields.trade = "Use 200 characters or fewer.";
+    if (!["", "1", "2-3", "4-6", "7 or more"].includes(crews)) fields.crews = "Choose a valid option.";
+  } else {
+    if (!message) fields.message = "Tell us why you need access.";
+    else if (message.length > 1000) fields.message = "Use 1,000 characters or fewer.";
+  }
   if (Object.keys(fields).length) return apiError(400, "VALIDATION_FAILED", "Please correct the highlighted fields.", traceId, fields);
 
   try {
@@ -50,7 +63,9 @@ export async function POST(request: NextRequest) {
         variables: {
           greeting: "A new Dialoggg access request was submitted.",
           subject: "Dialoggg access request",
-          message: `Name: ${name}\nEmail: ${email}\n\nRequest details:\n${message}`,
+          message: fromLanding
+            ? `Name: ${name}\nEmail: ${email}\nCompany: ${company}\nPhone: ${phone || "Not provided"}\nWhat they build: ${trade || "Not provided"}\nCrews: ${crews || "Not provided"}`
+            : `Name: ${name}\nEmail: ${email}\n\nRequest details:\n${message}`,
         },
       },
     });

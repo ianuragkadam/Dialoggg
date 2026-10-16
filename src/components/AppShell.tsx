@@ -185,7 +185,9 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
         <div className="flex items-center justify-between gap-3 px-3 py-2 lg:px-4 lg:py-3">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setOpen(current => !current)} aria-controls="primary-navigation" aria-expanded={open} aria-label={open ? "Close navigation" : "Open navigation"} className="rounded p-1 text-2xl focus:outline-none focus:ring-2 focus:ring-white lg:hidden">☰</button>
-            <Image src={dialogggLogo} alt="Dialoggg" width={180} height={40} priority className="h-8 w-auto max-w-[min(180px,calc(100vw-4.5rem))] shrink-0 object-contain sm:h-9 sm:max-w-[180px]" />
+            <Link href="/" aria-label="Dialoggg home" className="shrink-0 rounded focus:outline-none focus:ring-2 focus:ring-white">
+              <Image src={dialogggLogo} alt="Dialoggg" width={180} height={40} priority className="h-8 w-auto max-w-[min(180px,calc(100vw-4.5rem))] object-contain sm:h-9 sm:max-w-[180px]" />
+            </Link>
             {companyName && <span title={companyName} className="min-w-0 truncate border-l border-blue-600 pl-3 text-base font-semibold leading-tight text-white sm:text-lg md:text-xl">{companyName}</span>}
           </div>
           {renderAccountControls("header")}

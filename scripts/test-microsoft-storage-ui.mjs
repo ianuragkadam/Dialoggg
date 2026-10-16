@@ -93,16 +93,17 @@ try {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
 
-  const platformLogin = await login(baseUrl, platformEmail, platformPassword);
+  const platformLogin = await login(baseUrl, platformEmail, platformPassword).catch(error => { throw new Error(`${error instanceof Error ? error.message : String(error)}\n${appOutput}`); });
   const platformCookie = sessionCookie(platformLogin);
   const platformCsrf = csrfCookie(platformLogin);
-  const registration = await login(baseUrl, adminEmail, password);
+  const registration = await login(baseUrl, adminEmail, password).catch(error => { throw new Error(`${error instanceof Error ? error.message : String(error)}\n${appOutput}`); });
   const adminCookie = sessionCookie(registration);
   const adminCsrf = csrfCookie(registration);
   const auth = authenticatedHeaders(registration, baseUrl);
   const projectName = "Pine Street Court";
   const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: projectName, project_type_id: admin.defaultProjectTypeId, client_name: "Morgan Family", client_email: "morgan@example.test", address: "10 Pine Street", city: "Reading", state: "PA", zip: "19601", phone: "7175550120", start_date: "2026-09-15" }) });
   assert.equal(projectResult.response.status, 200);
+  assert.equal(projectResult.data.folderProvisioning.status, "skipped", "project creation succeeds when Microsoft Storage is not connected");
   const projectId = projectResult.data.id;
   const database = new Database(path.join(dataDirectory, "dialoggg.db"));
   database.prepare("INSERT INTO project_membership (project_id, company_membership_id) VALUES (?, ?)").run(projectId, employeeRecord.membershipId);
@@ -133,7 +134,7 @@ try {
     await section.getByLabel("Client secret value").fill("microsoft-ui-secret-value-1!");
     await section.getByLabel("Current Platform Administrator password").fill(platformPassword);
     await section.getByRole("button", { name: "Save encrypted credential" }).click();
-    await section.getByText(/Saved encrypted settings/).waitFor();
+    await section.getByRole("button", { name: "Verify with Microsoft" }).waitFor();
     assert.doesNotMatch(await section.innerText(), /microsoft-ui-secret-value-1!/);
   });
 
@@ -152,7 +153,7 @@ try {
 
   await check("Admin connects real company-scoped OneDrive for Business through the platform app", async () => {
     await page.goto(`${baseUrl}/settings/microsoft-storage`);
-    await page.getByRole("heading", { name: "Microsoft Storage" }).waitFor();
+    await page.getByRole("heading", { name: "Microsoft Storage", exact: true }).waitFor();
     const landing = await page.locator("body").innerText();
     for (const expected of ["Link each job to its shared folders", "Optional: Dialoggg never stores your files", "Connect Microsoft Storage · about 5 minutes", "Common folder", "Private folder"]) assert.match(landing, new RegExp(expected, "i"));
     assert.equal(await page.locator('section[aria-label="How It Works"] li').count(), 0, "How It Works starts collapsed");
@@ -170,38 +171,43 @@ try {
     await dialog.getByRole("button", { name: "Continue to Microsoft" }).click();
     await page.waitForURL(/settings\/microsoft-storage\?oauth=microsoft&status=verified/);
     await page.getByText("Connected · healthy", { exact: true }).waitFor();
+    await page.getByRole("alertdialog", { name: "Change company folder root?" }).waitFor();
     const body = await page.locator("body").innerText();
     assert.match(body, /OneDrive for Business/);
-    assert.match(body, /Dialoggg never stores your files/);
+    assert.match(body, /Dialoggg never stores your files/i);
     assert.doesNotMatch(body, /fake-drive|refresh-token|client secret/i);
   });
 
   await check("Admin changes the future company root without moving existing Project folders", async () => {
-    await page.getByRole("button", { name: "Change root" }).click();
     const dialog = page.getByRole("alertdialog", { name: "Change company folder root?" });
     await page.waitForFunction(() => document.querySelectorAll("#root-choice option").length > 1);
     await dialog.locator("#root-choice").selectOption({ label: "Active Projects" });
     await dialog.getByLabel(/affects only future automatic folder creation/).check();
     await dialog.getByRole("button", { name: "Change root" }).click();
     await page.getByRole("status").filter({ hasText: "Existing Project folders were not moved" }).waitFor();
+
+    const created = await json(`${baseUrl}/api/v1/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Automatic Folder QA", clientName: "Morgan Family", clientEmail: "morgan@example.test", address: "", city: "", state: "", zip: "", phone: "", extension: "", projectTypeId: admin.defaultProjectTypeId, startDate: "2026-10-16", calendarColor: "#3B417D", note: "", assignmentIds: [], templateId: null }) });
+    assert.equal(created.response.status, 201, JSON.stringify(created.data));
+    assert.equal(created.data.data.folderProvisioning.status, "created", JSON.stringify(created.data.data.folderProvisioning));
+    assert.deepEqual(created.data.data.folderProvisioning.created, ["common", "private"]);
+    const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
+    try {
+      const folders = verify.prepare("SELECT kind, display_name FROM project_folder_mapping WHERE project_id = ? ORDER BY kind").all(created.data.data.project.id);
+      assert.deepEqual(folders, [{ kind: "common", display_name: "Common" }, { kind: "private", display_name: "Private" }]);
+    } finally { verify.close(); }
   });
 
-  await check("Admin creates Common and links Private with retry-safe stable mappings", async () => {
+  await check("Admin can manually create Common and Private folders for an older Project", async () => {
     await page.goto(`${baseUrl}/projects/${projectId}`);
     await page.getByRole("button", { name: "Common and Private" }).click();
     await page.locator('[data-project-folders-ready="true"]').waitFor();
     await page.getByRole("button", { name: "Set up Common" }).click();
-    let dialog = page.getByRole("dialog", { name: "Set up Common folder" });
-    await dialog.getByLabel(/does not grant Microsoft folder access/).check();
-    await dialog.getByRole("button", { name: "Confirm folder" }).click();
+    let dialog = page.getByRole("dialog", { name: "Set up the Common folder" });
+    await dialog.getByRole("button", { name: "Create folder" }).click();
     await page.getByRole("button", { name: "Open Common" }).waitFor();
     await page.getByRole("button", { name: "Set up Private" }).click();
-    dialog = page.getByRole("dialog", { name: "Set up Private folder" });
-    await dialog.getByLabel(/Link existing folder/).check();
-    await page.waitForFunction(() => document.querySelectorAll('[role="dialog"] select option').length > 1);
-    await dialog.locator("select").selectOption({ label: "Linked Existing Folder" });
-    await dialog.getByLabel(/does not grant Microsoft folder access/).check();
-    await dialog.getByRole("button", { name: "Confirm folder" }).click();
+    dialog = page.getByRole("dialog", { name: "Set up the Private folder" });
+    await dialog.getByRole("button", { name: "Create folder" }).click();
     await page.getByRole("button", { name: "Open Private" }).waitFor();
     const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
     try {

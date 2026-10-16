@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { authenticatedFetch } from "@/lib/client-fetch";
-import { addDays, alignWorkingDay, ganttEndDateFromInclusive, suggestedDependencyLag } from "@/lib/dates";
+import { ganttEndDateFromInclusive, suggestedDependencyLag } from "@/lib/dates";
+import { defaultNewTaskStartDate } from "@/lib/gantt-task-defaults";
 import { PROJECT_CALENDAR_COLORS } from "@/lib/project-colors";
 import ColorSwatches from "@/components/ColorSwatches";
 
@@ -28,6 +30,7 @@ type TaskModal = {
   allowSaturday: boolean;
   allowSunday: boolean;
   progress: number;
+  progressMode: "auto" | "manual";
   categoryId: number | null;
   externalVisible: boolean;
   isTemp: boolean;        // true while a freshly-created task hasn't been saved
@@ -89,15 +92,17 @@ function ensureTimelineFillsViewport(gantt: any, tasks: any[], scale: GanttScale
   const earliestTask = new Date(`${dates[0]}T12:00:00`);
   const latestTask = new Date(`${dates[dates.length - 1]}T12:00:00`);
   const firstRelevantDate = earliestTask < today ? earliestTask : today;
-  const start = addScaleUnits(scaleStart(firstRelevantDate, scale), -1, scale);
   const baseWidth = scale === "day" ? 40 : scale === "week" ? 72 : 96;
   const columnWidth = Math.max(12, Math.round(baseWidth * zoom / 100));
   const gridWidth = container?.querySelector<HTMLElement>(".gantt_grid")?.getBoundingClientRect().width || 0;
   const timelineWidth = Math.max(180, (container?.clientWidth || 1200) - gridWidth - 24);
   const unitsToFill = Math.ceil(timelineWidth / columnWidth);
   const labelPadding = Math.ceil(200 / columnWidth);
+  // Keep enough space on either side to center the first or last saved Task.
+  const centerPadding = Math.ceil(timelineWidth / (2 * columnWidth)) + 1;
+  const start = addScaleUnits(scaleStart(firstRelevantDate, scale), -centerPadding, scale);
   const taskEnd = new Date(`${dates[dates.length - 1]}T12:00:00`);
-  const paddedTaskEnd = addScaleUnits(taskEnd, labelPadding + 2, scale);
+  const paddedTaskEnd = addScaleUnits(taskEnd, centerPadding + labelPadding, scale);
   const viewportEnd = addScaleUnits(start, unitsToFill, scale);
 
   gantt.config.start_date = start;
@@ -192,7 +197,7 @@ function isPlanVersionConflict(payload: any) {
   return payload?.error?.code === "PLAN_VERSION_CONFLICT";
 }
 
-export default function GanttChart({ projectId, projectName, userId, canEdit = true, fullScreen = false }: { projectId: number; projectName: string; userId: number; canEdit?: boolean; fullScreen?: boolean }) {
+export default function GanttChart({ projectId, projectName, projectStartDate, userId, canEdit = true, fullScreen = false }: { projectId: number; projectName: string; projectStartDate: string; userId: number; canEdit?: boolean; fullScreen?: boolean }) {
   const chartShellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const ganttRef = useRef<any>(null);
@@ -230,7 +235,10 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
   const [gridDividerLeft, setGridDividerLeft] = useState<number | null>(null);
   const [availablePanelHeight, setAvailablePanelHeight] = useState<number | null>(null);
   const [planTasks, setPlanTasks] = useState<any[]>([]);
+  const [autoCompletionEnabled, setAutoCompletionEnabled] = useState(true);
   const planTasksRef = useRef<any[]>([]);
+  const pendingSavedTaskFocusRef = useRef<number | null>(null);
+  const pendingViewportRestoreRef = useRef<{ date: Date; y: number } | null>(null);
   stalePlanRef.current = stalePlan;
 
   const markPlanStale = useCallback(() => {
@@ -312,6 +320,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
     if (activeGanttChartOwner !== ganttChartOwnerRef.current) return;
     if (!response.ok) throw new Error(data?.error?.message || "The Project Plan could not be loaded.");
     planVersionRef.current = Number(data.planVersion) || 1;
+    setAutoCompletionEnabled(data.autoCompletionEnabled !== false);
     projectColorRef.current = chartColor(data.projectColor);
     planTasksRef.current = data.data || [];
     setPlanTasks(planTasksRef.current);
@@ -352,6 +361,16 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
     try {
       gantt.resetLayout();
       gantt.render();
+      if (pendingSavedTaskFocusRef.current !== null) {
+        const taskId = pendingSavedTaskFocusRef.current;
+        pendingSavedTaskFocusRef.current = null;
+        focusTaskStart(taskId);
+      }
+      if (pendingViewportRestoreRef.current) {
+        const { date, y } = pendingViewportRestoreRef.current;
+        pendingViewportRestoreRef.current = null;
+        gantt.scrollTo(Math.max(0, gantt.posFromDate(date)), y);
+      }
       requestAnimationFrame(measureGridDivider);
     } catch {}
   }, [scale, zoom, compact, gridCollapsed, gridWidth, fullScreen, preferenceStorageKey, planTasks, measureGridDivider]);
@@ -437,7 +456,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
       gantt.config.columns = [
         { name: "text", label: "Task Name", tree: true, width: columnWidths.text,
-          template: (task: any) => `${task.type === "project" ? `<i class="plan-group-dot" style="background:${chartColor(task.plan_color)}"></i>` : ""}${canEdit && !task.is_root ? `<span class="gantt-reorder-grip" aria-hidden="true" title="Drag row to reorder">⠿</span>` : ""}${escapeHtml(task.text)}` },
+          template: (task: any) => `${task.type === "project" ? `<i class="plan-group-dot" style="background:${chartColor(task.plan_color)}"></i>` : ""}${canEdit && !task.is_root ? `<span class="gantt-reorder-grip" aria-hidden="true" title="Drag row to reorder">⠿</span>` : ""}${canEdit && task.type === "project" && !task.is_root ? `<button type="button" class="plan-add-child-task" data-task-id="${Number(task.id)}" aria-label="Add task under ${escapeHtml(task.text)}" title="Add task under this header">+</button>` : ""}${escapeHtml(task.text)}` },
         { name: "resources", label: "Resources", width: columnWidths.resources,
           template: (task: any) => `<span title="${escapeHtml((task.resource_names || []).join(", "))}">${escapeHtml((task.resource_names || []).join(", ")) || "—"}</span>` },
         { name: "progress", label: "Done", align: "right", width: columnWidths.progress,
@@ -493,7 +512,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
       gantt.config.min_column_width = 12;
       gantt.config.scales = ganttScales(viewSettingsRef.current.scale, viewSettingsRef.current.zoom);
       gantt.templates.task_class = (_s: Date, _e: Date, task: any) =>
-        task.type === "project" ? "gantt-header-bar" : `gantt-task-bar plan-color-${chartColor(task.plan_color).slice(1).toLowerCase()}`;
+        task.type === "project" ? "gantt-header-bar" : `gantt-task-bar plan-color-${chartColor(task.plan_color).slice(1).toLowerCase()} ${task.progress_mode === "auto" ? "auto-completion-bar" : ""}`;
       gantt.templates.task_text = () => "";
       gantt.templates.rightside_text = (_s: Date, _e: Date, task: any) => escapeHtml(task.text);
       gantt.templates.grid_row_class = (_s: Date, _e: Date, task: any) => task.type === "project" ? "plan-header-row" : "";
@@ -585,32 +604,44 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
       containerRef.current?.addEventListener("pointerdown", onResizeStart);
       removeResizeListener = () => containerRef.current?.removeEventListener("pointerdown", onResizeStart);
       const previousRemoveResizeListener = removeResizeListener;
+      function openNewTaskFromRow(clickedTask: any, requestedParentId: number) {
+        if (!canEdit || stalePlanRef.current) return;
+        const clickedIsRoot = !!clickedTask?.is_root;
+        const clickedIsLeaf = !!clickedTask && clickedTask.type !== "project";
+        const parentId = clickedIsRoot ? 0 : clickedIsLeaf ? Number(clickedTask.parent || 0) : requestedParentId;
+        const startIso = defaultNewTaskStartDate(projectStartDate, clickedTask);
+        setTaskModal({
+          mode: "add", id: null, text: "", start_date: startIso,
+          duration: 1, color: projectColorRef.current, parent: parentId,
+          resourceIds: [], version: 1, isHeader: false, isRoot: false,
+          allowSaturday: false, allowSunday: false, progress: 0, progressMode: "auto",
+          categoryId: null, externalVisible: false, isTemp: false,
+        });
+      }
+
+      const chartContainer = containerRef.current;
+      const onAddChildClick = (event: MouseEvent) => {
+        const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".plan-add-child-task");
+        if (!button || !chartContainer?.contains(button)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        const taskId = Number(button.dataset.taskId);
+        const header = planTasksRef.current.find(item => Number(item.id) === taskId && item.type === "project" && !item.is_root);
+        if (header) openNewTaskFromRow(header, taskId);
+      };
+      chartContainer?.addEventListener("click", onAddChildClick, true);
       removeResizeListener = () => {
         previousRemoveResizeListener?.();
+        chartContainer?.removeEventListener("click", onAddChildClick, true);
         window.removeEventListener("pointerup", onDividerPointerUp);
         containerResizeObserver.disconnect();
       };
 
       // ===== Intercept the "+" / new-task to open OUR popup =====
       attachGanttEvent("onTaskCreated", (task: any) => {
-        if (!canEdit || stalePlanRef.current) return false;
-        const todayIso = isoFromDate(gantt, new Date());
         const clickedTask = planTasksRef.current.find(item => Number(item.id) === Number(task.parent));
-        const clickedIsRoot = !!clickedTask?.is_root;
-        const clickedIsLeaf = !!clickedTask && clickedTask.type !== "project";
-        const parentId = clickedIsLeaf ? Number(clickedTask.parent || 0) : Number(task.parent || 0);
-        const startIso = clickedIsRoot
-          ? String(clickedTask.start_date || todayIso)
-          : clickedTask?.end_date
-            ? alignWorkingDay(addDays(String(clickedTask.end_date).slice(0, 10), 1), { allowSaturday: false, allowSunday: false }, 1)
-            : todayIso;
-        setTaskModal({
-          mode: "add", id: null, text: "", start_date: startIso,
-          duration: 1, color: projectColorRef.current, parent: parentId,
-          resourceIds: [], version: 1, isHeader: false, isRoot: false,
-          allowSaturday: false, allowSunday: false, progress: 0,
-          categoryId: null, externalVisible: false, isTemp: false,
-        });
+        openNewTaskFromRow(clickedTask, Number(task.parent || 0));
         return false; // block default add; we add on Save
       });
 
@@ -645,7 +676,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
           parent: t.parent || 0, resourceIds, isTemp: false,
           version: Number(t.version) || 1, isHeader: t.type === "project", isRoot: !!t.is_root,
           allowSaturday: !!t.allow_saturday, allowSunday: !!t.allow_sunday,
-          progress: Number(t.progress) || 0, categoryId: t.resource_category_id ?? null,
+          progress: Number(t.progress) || 0, progressMode: t.progress_mode === "manual" ? "manual" : "auto", categoryId: t.resource_category_id ?? null,
           externalVisible: !!t.external_visible,
         });
       }
@@ -707,6 +738,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
         if (!canEdit || stalePlanRef.current) { await reload(); return; }
         const fresh = gantt.getTask(id);
         const resize = dragModeRef.current === String(gantt.config.drag_mode.resize);
+        const progressDrag = dragModeRef.current === String(gantt.config.drag_mode.progress);
         dragModeRef.current = null;
         const duration = resize
           ? workingDuration(fresh.start_date, fresh.end_date, !!fresh.allow_saturday, !!fresh.allow_sunday)
@@ -715,7 +747,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
           method: "PUT", headers: { "content-type": "application/json" },
           body: JSON.stringify({
             text: fresh.text, start_date: isoFromDate(gantt, fresh.start_date),
-            duration, progress: fresh.progress,
+            duration, ...(progressDrag ? { progress: fresh.progress, progressMode: "manual" } : {}),
             color: fresh.plan_color, parent: fresh.parent, version: fresh.version,
             allow_saturday: !!fresh.allow_saturday, allow_sunday: !!fresh.allow_sunday,
             resource_category_id: fresh.resource_category_id,
@@ -809,14 +841,20 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
         if (ganttRef.current) { try { ganttRef.current.clearAll(); } catch {} }
       }
     };
-  }, [projectId, reload]);
+  }, [projectId, projectStartDate, reload]);
 
   function focusTaskStart(taskId: number) {
     const gantt = ganttRef.current;
     if (!gantt || !gantt.isTaskExists(taskId)) return;
     const task = gantt.getTask(taskId);
     if (task?.start_date instanceof Date && !Number.isNaN(task.start_date.getTime())) {
-      gantt.showDate(task.start_date);
+      const timelineWidth = containerRef.current?.querySelector<HTMLElement>(".gantt_task")?.clientWidth || 0;
+      if (timelineWidth > 0) {
+        const centeredX = Math.max(0, gantt.posFromDate(task.start_date) - timelineWidth / 2);
+        gantt.scrollTo(centeredX, gantt.getScrollState().y);
+      } else {
+        gantt.showDate(task.start_date);
+      }
     }
   }
 
@@ -834,6 +872,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
       color: taskModal.color,
       parent: taskModal.parent,
       progress: taskModal.progress,
+      progressMode: taskModal.progressMode,
       type: taskModal.isHeader ? "project" : "task",
       isHeader: taskModal.isHeader,
       allowSaturday: taskModal.allowSaturday,
@@ -866,8 +905,8 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
     announcePlanChanged();
     setTaskModal(null);
     setMessage(`${taskModal.text.trim()} was saved and the Project Plan was recalculated.`);
+    if (taskId != null) pendingSavedTaskFocusRef.current = Number(taskId);
     await reload();
-    if (taskModal.mode === "edit" && taskId != null) focusTaskStart(Number(taskId));
   }
 
   async function deleteTask() {
@@ -890,6 +929,9 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
     if (!canEdit || stalePlanRef.current) return;
     if (!linkModal) return;
     setMessage("");
+    const gantt = ganttRef.current;
+    const scrollState = gantt?.getScrollState?.();
+    const visibleStartDate = scrollState && gantt?.dateFromPos?.(scrollState.x);
     const r = await authenticatedFetch(`/api/projects/${projectId}/links`, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -901,6 +943,9 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
     const payload = await r.json().catch(() => ({}));
     if (r.ok) {
       announcePlanChanged();
+      if (visibleStartDate instanceof Date && !Number.isNaN(visibleStartDate.getTime())) {
+        pendingViewportRestoreRef.current = { date: visibleStartDate, y: Number(scrollState?.y) || 0 };
+      }
       setLinkModal(null);
       setMessage("The dependency was saved and every affected Task was recalculated.");
       await reload();
@@ -920,11 +965,26 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
     setTaskModal(current => current ? { ...current, ...patch } : current);
   };
 
+  function changeTaskParent(parentId: number) {
+    setTaskModal(current => {
+      if (!current) return current;
+      const previousParent = planTasks.find(task => Number(task.id) === Number(current.parent));
+      const nextParent = planTasks.find(task => Number(task.id) === parentId);
+      const previousDefault = defaultNewTaskStartDate(projectStartDate, previousParent);
+      return {
+        ...current,
+        parent: parentId,
+        // Preserve a date the user already chose manually.
+        start_date: current.mode === "add" && current.start_date === previousDefault
+          ? defaultNewTaskStartDate(projectStartDate, nextParent)
+          : current.start_date,
+      };
+    });
+  }
+
   function openAddTask() {
     if (!canEdit || stalePlanRef.current) return;
-    const gantt = ganttRef.current;
-    const todayIso = gantt ? isoFromDate(gantt, new Date()) : new Date().toISOString().slice(0, 10);
-    setTaskModal({ mode: "add", id: null, text: "", start_date: todayIso, duration: 1, color: projectColorRef.current, parent: 0, resourceIds: [], version: 1, isHeader: false, isRoot: false, allowSaturday: false, allowSunday: false, progress: 0, categoryId: null, externalVisible: false, isTemp: false });
+    setTaskModal({ mode: "add", id: null, text: "", start_date: projectStartDate, duration: 1, color: projectColorRef.current, parent: 0, resourceIds: [], version: 1, isHeader: false, isRoot: false, allowSaturday: false, allowSunday: false, progress: 0, progressMode: "auto", categoryId: null, externalVisible: false, isTemp: false });
   }
 
   function updateFullscreen(next: boolean) {
@@ -1050,7 +1110,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
               <select
                 id="gantt-task-parent"
                 value={taskModal.parent || 0}
-                onChange={event => updateTaskModal({ parent: Number(event.target.value) })}
+                onChange={event => changeTaskParent(Number(event.target.value))}
                 className="w-full px-3 py-2 border rounded text-sm"
               >
                 <option value={0}>Project root</option>
@@ -1083,10 +1143,15 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskModal.allowSunday} onChange={event => updateTaskModal({ allowSunday: event.target.checked })} />Allow work on Sunday</label>
               <label className="text-sm">Task Progress
                 <span className="mt-1 flex items-center gap-2">
-                  <input aria-label="Task Progress" type="number" min={0} max={100} value={Math.round(taskModal.progress * 100)} onChange={event => updateTaskModal({ progress: Math.max(0, Math.min(100, Number(event.target.value))) / 100 })} className="w-24 rounded border px-3 py-2" />
+                  <input aria-label="Task Progress" type="number" min={0} max={100} value={Math.round(taskModal.progress * 100)} onChange={event => updateTaskModal({ progress: Math.max(0, Math.min(100, Number(event.target.value))) / 100, progressMode: "manual" })} className="w-24 rounded border px-3 py-2" />
                   <span aria-hidden="true">%</span>
                 </span>
               </label>
+              <div className="self-end pb-1 text-sm">
+                <label className="flex items-center gap-2 font-medium"><input type="checkbox" checked={taskModal.progressMode === "auto"} disabled={!autoCompletionEnabled} onChange={event => updateTaskModal({ progressMode: event.target.checked ? "auto" : "manual" })} />Auto Completion</label>
+                <p className="mt-1 text-xs text-gray-500">{!autoCompletionEnabled ? "Disabled in company settings." : taskModal.progressMode === "auto" ? "Updates after each working day ends." : "Manual progress is preserved."}</p>
+                {taskModal.progressMode === "manual" && autoCompletionEnabled && <button type="button" className="mt-1 text-xs font-semibold underline" onClick={() => updateTaskModal({ progressMode: "auto" })}>Reset to Auto</button>}
+              </div>
             </div>}
 
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={taskModal.externalVisible} onChange={event => updateTaskModal({ externalVisible: event.target.checked })} />Visible in assigned External/Client Project view</label>
@@ -1262,6 +1327,8 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
         .dialoggg-plan-chart .gantt_grid_head_cell.dialoggg-column-resize { position:relative; padding-right:20px; }
         .dialoggg-plan-chart .gantt_grid_head_cell.dialoggg-column-resize::after { content:"↔"; position:absolute; z-index:5; top:50%; right:2px; display:flex; width:17px; height:22px; transform:translateY(-50%); align-items:center; justify-content:center; border:1px solid #c7cada; border-radius:4px; background:#e9eaf2; color:#3B417D; font:700 12px/1 Arial,sans-serif; cursor:col-resize; }
         .dialoggg-plan-chart .gantt-reorder-grip { display:inline-block; margin-right:6px; color:#7b8298; font-size:16px; line-height:1; vertical-align:middle; cursor:grab; }
+        .dialoggg-plan-chart .plan-add-child-task { display:inline-flex; width:19px; height:19px; margin-right:6px; align-items:center; justify-content:center; vertical-align:middle; border:1px solid #d1850b; border-radius:4px; background:#fff4d9; color:#895600; font:700 15px/1 Arial,sans-serif; cursor:pointer; }
+        .dialoggg-plan-chart .plan-add-child-task:hover { background:#d1850b; color:#111827; }
         .dialoggg-plan-chart .gantt_row:hover .gantt-reorder-grip { color:#3B417D; }
         .dialoggg-plan-chart .gantt_row.gantt_drag_marker .gantt-reorder-grip { cursor:grabbing; }
         .dialoggg-plan-chart .gantt_grid_head_cell.dialoggg-column-resize:hover::after { border-color:#3B417D; background:#3B417D; color:#fff; }
@@ -1282,6 +1349,7 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
         .dialoggg-plan-chart .gantt_task_cell.plan-today, .dialoggg-plan-chart .gantt_scale_cell.plan-today { background:rgba(14,18,59,.05) !important; border-left:1px solid #c8c9d2; border-right:1px solid #c8c9d2; color:#0E123B; font-weight:700; }
         .dialoggg-plan-chart .gantt-task-bar { border:none; border-radius:5px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.05); }
         .dialoggg-plan-chart .gantt-task-bar .gantt_task_progress { opacity:1; border:none; border-radius:5px 0 0 5px; }
+        .dialoggg-plan-chart .auto-completion-bar .gantt_task_progress { background-image:repeating-linear-gradient(135deg,transparent 0,transparent 5px,rgba(255,255,255,.28) 5px,rgba(255,255,255,.28) 9px); }
         .dialoggg-plan-chart .gantt_task_line.gantt-header-bar { height:8px !important; margin-top:6px; border:0; border-radius:4px; background:#0E123B !important; }
         .dialoggg-plan-chart .gantt-header-bar .gantt_task_progress { background:#0E123B !important; border:0; }
         .dialoggg-plan-chart .gantt_task_line .gantt_side_content.gantt_right { color:#1c2233; font-size:12.5px; font-style:italic; padding-left:10px; }
@@ -1312,24 +1380,25 @@ export default function GanttChart({ projectId, projectName, userId, canEdit = t
 
 // ---- Reusable modal shell ----
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto"
+        className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b bg-blue-800 text-white rounded-t-lg">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b bg-blue-800 text-white rounded-t-lg">
           <h3 className="font-semibold">{title}</h3>
           <button aria-label={`Close ${title}`} onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">×</button>
         </div>
         <div className="gantt-modal-content p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.querySelector(".tenant-theme") || document.body,
   );
 }
