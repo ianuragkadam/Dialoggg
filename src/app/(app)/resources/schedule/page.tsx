@@ -12,7 +12,7 @@ import EventOccurrenceDialog from "@/components/EventOccurrenceDialog";
 import TaskOccurrenceDialog from "@/components/TaskOccurrenceDialog";
 import { ProjectResourceContext } from "@/components/ProjectResourceContext";
 import CalendarEventTooltip, { CalendarTooltipProvider } from "@/components/CalendarEventTooltip";
-import { printCalendar } from "@/lib/calendar-print";
+import ResourceCalendarPrintDialog from "@/components/ResourceCalendarPrintDialog";
 
 type Resource = { id: string; title: string; category: string };
 type ScheduleEvent = {
@@ -117,6 +117,10 @@ export default function GlobalResourceSchedulePage() {
   const [selectedEvent, setSelectedEvent] = useState<ReturnType<typeof toOccurrenceDialogEvent> | null>(null);
   const [selectedTask, setSelectedTask] = useState<ReturnType<typeof toOccurrenceDialogEvent> | null>(null);
   const [showOverlaps, setShowOverlaps] = useState(false);
+  const [showPrintDialog, setShowPrintDialog] = useState(false);
+  const [companyName, setCompanyName] = useState("Dialoggg");
+  const [timelineRange, setTimelineRange] = useState<{ start: string; end: string; focus: string } | null>(null);
+  const [calendarRange, setCalendarRange] = useState<{ start: string; end: string; focus: string } | null>(null);
 
   const loadSchedule = useCallback(async () => {
     const [scheduleResponse, resourceResponse, projectResponse] = await Promise.all([
@@ -141,6 +145,7 @@ export default function GlobalResourceSchedulePage() {
       const user = userData.user || {};
       setCanManage(["owner", "admin"].includes(user.user_type));
       setCompanyTimeZone(user.company_time_zone || "UTC");
+      setCompanyName(user.company_name || "Dialoggg");
       const key = `dialoggg:${projectId ? `project-${projectId}-resource-calendar` : "resource-calendar"}:${user.membership_id ?? user.identity_id ?? "user"}`;
       setPreferencesKey(key);
       const savedView = localStorage.getItem(`${key}:view`);
@@ -197,6 +202,17 @@ export default function GlobalResourceSchedulePage() {
   const selectedResourceIdSet = useMemo(() => new Set(selectedResourceIds), [selectedResourceIds]);
   const filteredResources = useMemo(() => resources.filter(resource => selectedCategorySet.has(resource.category) && selectedResourceIdSet.has(String(resource.id))), [resources, selectedCategorySet, selectedResourceIdSet]);
   const filteredEvents = useMemo(() => events.filter(event => selectedCategorySet.has(event.extendedProps.resourceCategory) && selectedResourceIdSet.has(String(event.resourceId))), [events, selectedCategorySet, selectedResourceIdSet]);
+  const printCalendarRange = useMemo(() => {
+    const focus = calendarDate || dateKeyInZone(new Date(), companyTimeZone);
+    if (calendarView === "timeline" && timelineRange) return { start: timelineRange.start, end: timelineRange.end, focus: timelineRange.focus };
+    if (calendarView === "calendar" && calendarRange) return { start: calendarRange.start, end: calendarRange.end, focus: calendarRange.focus };
+    if (calendarView === "calendar" && calendarSubView === "dayGridMonth") {
+      const start = `${focus.slice(0, 7)}-01`; const monthEndDate = new Date(`${start}T12:00:00Z`); monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
+      return { start, end: dateKeyInZone(monthEndDate, "UTC"), focus };
+    }
+    const start = focus; const end = addDaysToKey(focus, calendarSubView === "dayGridDay" ? 1 : 7);
+    return { start, end, focus };
+  }, [calendarView, calendarDate, calendarSubView, companyTimeZone, timelineRange, calendarRange]);
   const orderedCategories = useMemo(() => {
     const existing = new Set(categories.map(category => category.name));
     return [...STANDARD_CATEGORY_ORDER.filter(name => existing.has(name)), ...[...existing].filter(name => !STANDARD_CATEGORY_ORDER.includes(name)).sort((a, b) => a.localeCompare(b))];
@@ -265,7 +281,7 @@ export default function GlobalResourceSchedulePage() {
             plugins={[resourceTimelinePlugin, interactionPlugin, luxonPlugin]}
             initialView="resourceTimelineMonth"
             headerToolbar={{ left: "prev,next today", center: filteredLabel ? "title resourceFilterSummary" : "title", right: "printButton resourceTimelineMonth,resourceTimelineWeek,resourceTimelineDay" }}
-            customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined }, printButton: { text: "Print", hint: "Print the current Resource Calendar view", click: () => printCalendar(".resource-calendar-print", projectId ? "Project Resources" : "Resource Calendar", true) } }}
+            customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined }, printButton: { text: "Print", hint: "Choose what to print from the Resource Calendar", click: () => setShowPrintDialog(true) } }}
             resources={groupedResources as any}
             events={filteredEvents as any}
             stickyHeaderDates
@@ -283,6 +299,9 @@ export default function GlobalResourceSchedulePage() {
             eventContent={info => <CalendarEventTooltip content={tooltip(info.event as any, companyTimeZone)} className="fc-event-title">{info.event.title}</CalendarEventTooltip>}
             eventDidMount={info => { if (info.event.extendedProps.kind === "event") info.el.classList.add("resource-calendar-event"); }}
             eventClick={info => openEvent(info.event as any)}
+            datesSet={arg => {
+              setTimelineRange({ start: dateKeyInZone(arg.start, companyTimeZone), end: dateKeyInZone(arg.end, companyTimeZone), focus: dateKeyInZone(arg.view.calendar.getDate(), companyTimeZone) });
+            }}
             timeZone={companyTimeZone}
             resourceAreaHeaderContent="Resources"
             resourceAreaWidth={isMobile ? 150 : "22%"}
@@ -297,7 +316,7 @@ export default function GlobalResourceSchedulePage() {
               initialView={calendarSubView}
               initialDate={calendarDate}
               headerToolbar={{ left: "prev,next today", center: filteredLabel ? "title resourceFilterSummary" : "title", right: "printButton dayGridMonth,dayGridWeek,dayGridDay" }}
-              customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined }, printButton: { text: "Print", hint: "Print the current Resource Calendar view", click: () => printCalendar(".resource-calendar-print", projectId ? "Project Resources" : "Resource Calendar") } }}
+              customButtons={{ resourceFilterSummary: { text: filteredLabel, click: () => undefined }, printButton: { text: "Print", hint: "Choose what to print from the Resource Calendar", click: () => setShowPrintDialog(true) } }}
               events={filteredEvents as any}
               stickyHeaderDates
               dayHeaderContent={arg => {
@@ -314,7 +333,7 @@ export default function GlobalResourceSchedulePage() {
               eventContent={arg => <CalendarEventTooltip content={tooltip(arg.event as any, companyTimeZone)} className="resource-calendar-event-label"><strong>{arg.event.extendedProps.resourceName}</strong> · {arg.event.extendedProps.rawTitle} ({arg.event.extendedProps.projectName})</CalendarEventTooltip>}
               eventClassNames={arg => arg.event.extendedProps.kind === "event" ? ["resource-calendar-event"] : ["resource-calendar-task"]}
               eventClick={info => openEvent(info.event as any)}
-              datesSet={arg => { setCalendarSubView(arg.view.type); setCalendarDate(dateKeyInZone(arg.view.calendar.getDate(), companyTimeZone)); }}
+              datesSet={arg => { setCalendarSubView(arg.view.type); setCalendarDate(dateKeyInZone(arg.view.calendar.getDate(), companyTimeZone)); setCalendarRange({ start: dateKeyInZone(arg.start, companyTimeZone), end: dateKeyInZone(arg.end, companyTimeZone), focus: dateKeyInZone(arg.view.calendar.getDate(), companyTimeZone) }); }}
               dayCellContent={arg => {
                 if (!isMobile || calendarSubView !== "dayGridMonth") return arg.dayNumberText;
                 const day = dateKeyInZone(arg.date, companyTimeZone);
@@ -331,6 +350,8 @@ export default function GlobalResourceSchedulePage() {
       </div>
       </div>
     </CalendarWorkflowReview>
+
+    <ResourceCalendarPrintDialog open={showPrintDialog} onClose={() => setShowPrintDialog(false)} view={calendarView} focusDate={printCalendarRange.focus} shownStart={printCalendarRange.start} shownEnd={printCalendarRange.end} resources={resources} events={events} categories={orderedCategories} selectedCategories={selectedCategories} selectedResourceIds={selectedResourceIds} companyName={companyName} timeZone={companyTimeZone} preferenceKey={preferencesKey} />
 
     {showOverlaps && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-3" onMouseDown={() => setShowOverlaps(false)}><section role="dialog" aria-modal="true" aria-label="Resource overlaps in loaded schedule" className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}><header className="sticky top-0 flex items-center justify-between border-b bg-blue-900 px-5 py-4 text-white"><h2 className="font-bold">{overlaps.length} Resource overlap{overlaps.length === 1 ? "" : "s"}</h2><button type="button" aria-label="Close overlap details" onClick={() => setShowOverlaps(false)} className="rounded px-2 text-2xl">×</button></header><div className="space-y-3 p-4"><p className="text-sm text-slate-600">Across loaded schedule dates for the Resources currently selected in the filter. The green status below the filter checks only the next 7 days.</p>{overlaps.map(({ first, second, start }, index) => <article key={`${first.id}-${second.id}-${index}`} className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-slate-900"><h3 className="font-bold">{first.extendedProps.resourceName} · {new Intl.DateTimeFormat("en-US", { timeZone: companyTimeZone, dateStyle: "medium" }).format(new Date(start))}</h3><p className="mt-2">{first.extendedProps.rawTitle} ({first.extendedProps.projectName}) · {dateList(first)}</p><p>{second.extendedProps.rawTitle} ({second.extendedProps.projectName}) · {dateList(second)}</p></article>)}</div></section></div>}
     {selectedDay && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-3" onMouseDown={() => setSelectedDay(null)}><section role="dialog" aria-modal="true" aria-label={`Resources on ${formatSelectedDay(selectedDay)}`} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}><header className="sticky top-0 flex items-center justify-between border-b bg-blue-900 px-5 py-4 text-white"><h2 className="font-bold">{formatSelectedDay(selectedDay)}</h2><button type="button" aria-label="Close day assignments" onClick={() => setSelectedDay(null)} className="rounded px-2 text-2xl">×</button></header><div className="space-y-4 p-4">{selectedDayGroups.length ? selectedDayGroups.map(([resourceName, items]) => <section key={resourceName} aria-label={resourceName}><h3 className="mb-2 border-b pb-1 font-bold text-slate-800">{resourceName}</h3><ul className="space-y-2">{items.map(item => <li key={item.id}><button type="button" onClick={() => { setSelectedDay(null); openEvent(item); }} className="w-full rounded border p-3 text-left hover:bg-slate-50" style={{ borderLeftColor: item.color, borderLeftWidth: 5 }}><strong>{item.extendedProps.rawTitle}</strong><span className="block text-sm text-slate-600">{item.extendedProps.projectName} · {dateList(item)}{!item.allDay ? ` · ${new Intl.DateTimeFormat("en-US", { timeZone: companyTimeZone, hour: "numeric", minute: "2-digit" }).format(new Date(item.start))}` : ""}</span></button></li>)}</ul></section>) : <p className="py-8 text-center text-slate-600">No resource assignments on this day.</p>}</div></section></div>}

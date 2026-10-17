@@ -138,8 +138,8 @@ export default async function HomePage() {
       <div className={styles.founderInner}>
         <div className={styles.founderMedia}>
           <div className={styles.videoViewport}>
-            <video className={styles.founderVideo} controls playsInline preload="none" poster="/landing/founder-video-poster.jpg" aria-label="Scott Grote, founder, explains why he built Dialoggg, filmed on a job site">
-              <source src="/landing/founder-original-onedrive.mp4" type="video/mp4" />
+            <video className={styles.founderVideo} controls playsInline preload="metadata" aria-label="Scott Grote, founder, explains why he built Dialoggg, filmed on a job site">
+              <source src="/landing/founder-original-onedrive.mp4?v=Scott_Dialoggg2" type="video/mp4" />
               Your browser does not support video playback.
             </video>
           </div>
