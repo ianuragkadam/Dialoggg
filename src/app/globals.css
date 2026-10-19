@@ -162,6 +162,22 @@ body {
   color: #f4f6fa !important;
 }
 
+/* Print dialogs have their own dark surface. Keep slate text, borders, and the
+   translucent backdrop legible instead of inheriting the tenant's inverted tokens. */
+.tenant-theme .calendar-print-dialog {
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+}
+
 /* The Help Center uses its own navy palette; keep tenant-wide slate token remaps
    from turning its light text dark and its dark surfaces pale. */
 .tenant-theme .help-center {

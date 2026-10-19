@@ -347,7 +347,9 @@ test("Microsoft Storage UI covers company setup and Project Common/Private bound
   const page = await read("src/app/(app)/settings/microsoft-storage/page.tsx");
   const tabs = await read("src/app/(app)/projects/[id]/tabs-client.tsx");
   for (const value of ["OneDrive for Business", "SharePoint document library", "Dialoggg never stores your files", "Microsoft 365 account", "No one at Dialoggg can see your files", "Change company folder root?", "Existing Project folders do not move", "Disconnect Microsoft Storage?"]) assert.match(company, new RegExp(value.replace(/[+?()]/g, "\\$&"), "i"));
-  for (const value of ["Common", "Private", "Create a new folder", "Use a folder I already have", "Stable Microsoft IDs", "Missing or moved", "Permission denied", "Company disconnected"]) assert.match(folders, new RegExp(value, "i"));
+  for (const value of ["Common", "Private", "Create a new folder", "Use a folder I already have", "How it works", "Fix folder", "Set up folder", "Open files"]) assert.match(folders, new RegExp(value, "i"));
+  for (const value of ["Shared with everyone on this job, including clients", "Owner and Admins only", "OneDrive folder", "Ready", "Change folder", "Job files", "toastVisible"]) assert.ok(folders.includes(value), value);
+  for (const removed of ["Microsoft files stay in Microsoft 365", "Protected stable Microsoft item ID", "How folder references behave", "Available</span>"]) assert.ok(!folders.includes(removed), removed);
   assert.match(company, /choose whether to create its Common and Private folders/);
   assert.match(projectApi, /autoCreateProjectFolders/);
   assert.match(projectApi, /body\.createMicrosoftFolders===true/);
@@ -357,10 +359,14 @@ test("Microsoft Storage UI covers company setup and Project Common/Private bound
   assert.match(projectForm, /createMicrosoftFolders: form\.createMicrosoftFolders/);
   assert.ok(projectForm.indexOf('Section title="External Users"') < projectForm.indexOf('Section title="Microsoft Storage"'));
   assert.ok(projectForm.indexOf('Section title="Microsoft Storage"') < projectForm.indexOf('className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"'));
-  assert.match(folders, /never renames, moves, or deletes Microsoft folders/);
+  assert.match(folders, /Completing or deleting a job never deletes its files/);
+  assert.match(folders, /const editable = canManage && canEdit/);
+  assert.match(folders, /Connect Microsoft Storage before Dialoggg can create or link this folder/);
+  assert.match(folders, /href="\/settings\/microsoft-storage"/);
   assert.match(page, /Owner or Admin/);
   assert.match(tabs, /ProjectFoldersPrototype/);
   assert.match(tabs, /Common and Private/);
+  assert.match(tabs, /t\.id === "folders" && !canManage \? "Files"/);
 });
 
 test("retired modules are absent from routes and fresh database schema", async () => {

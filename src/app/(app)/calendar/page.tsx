@@ -4,7 +4,7 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import luxonPlugin from "@fullcalendar/luxon3";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import SubscribeButton from "@/components/SubscribeButton";
 import CalendarWorkflowReview from "@/components/CalendarWorkflowReview";
 import { authenticatedFetch } from "@/lib/client-fetch";
@@ -13,9 +13,9 @@ import TaskOccurrenceDialog from "@/components/TaskOccurrenceDialog";
 import TimedNotice from "@/components/TimedNotice";
 import { calendarEventTooltip } from "@/lib/calendar-tooltip";
 import CalendarEventTooltip, { CalendarTooltipProvider } from "@/components/CalendarEventTooltip";
-import { printCalendar } from "@/lib/calendar-print";
+import MasterCalendarPrintDialog from "@/components/MasterCalendarPrintDialog";
 
-type Project = { id: number; name: string; project_type_id: number; project_type: string };
+type Project = { id: number; name: string; project_type_id: number; project_type: string; status: string };
 
 export default function MasterCalendarPage() {
   const [events, setEvents] = useState<any[]>([]);
@@ -30,6 +30,9 @@ export default function MasterCalendarPage() {
   const [notice,setNotice]=useState<{ text: string; tone: "success" | "error" } | null>(null);
   const [selectedEvent,setSelectedEvent]=useState<any>(null);
   const [selectedTask,setSelectedTask]=useState<any>(null);
+  const [showPrintDialog,setShowPrintDialog]=useState(false);
+  const [printRange,setPrintRange]=useState({ start: new Date().toISOString().slice(0,10), end: new Date(Date.now()+31*86400000).toISOString().slice(0,10), focus: new Date().toISOString().slice(0,10) });
+  const calendarRef=useRef<any>(null);
   const [openAddEvent,setOpenAddEvent]=useState<(() => void) | null>(null);
   const registerAddEvent = useCallback((open: () => void) => setOpenAddEvent(() => open), []);
 
@@ -90,16 +93,18 @@ export default function MasterCalendarPage() {
       <h2 className="master-calendar-print-heading">Master Calendar</h2>
       <div className="dialoggg-calendar bg-white border rounded shadow-sm p-2 sm:p-4">
         <CalendarTooltipProvider><FullCalendar
+          ref={calendarRef}
           plugins={[dayGridPlugin,interactionPlugin,luxonPlugin]}
           initialView="dayGridMonth"
           customButtons={{
             ...(openAddEvent ? { addEventButton: { text: "+ Add Event", hint: "Add an Event", click: () => openAddEvent() } } : {}),
-            printButton: { text: "Print", hint: "Print the current calendar view", click: () => printCalendar(".master-calendar-print", "Master Calendar") },
+            printButton: { text: "Print", hint: "Choose what to print from the Master Calendar", click: () => setShowPrintDialog(true) },
           }}
           headerToolbar={{ left: "prev,next today", center: "title", right: `${openAddEvent ? "addEventButton " : ""}printButton dayGridMonth,dayGridWeek,dayGridDay` }}
           events={events}
           eventContent={info => <CalendarEventTooltip content={calendarEventTooltip(info.event)} className="fc-event-title">{info.event.title}</CalendarEventTooltip>}
           timeZone={companyTimeZone}
+          datesSet={info=>{const dateKey=(date:Date)=>{const parts=new Intl.DateTimeFormat("en-CA",{timeZone:companyTimeZone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);const get=(type:string)=>parts.find(part=>part.type===type)?.value??"00";return `${get("year")}-${get("month")}-${get("day")}`;};setPrintRange({start:dateKey(info.view.activeStart),end:dateKey(info.view.activeEnd),focus:dateKey(info.view.currentStart)});}}
           editable={canManage}
           eventDrop={moveEvent}
           eventClick={info=>{if(info.event.extendedProps.kind==="event")setSelectedEvent(info.event);else if(info.event.extendedProps.kind==="task")setSelectedTask(info.event);}}
@@ -108,6 +113,7 @@ export default function MasterCalendarPage() {
       </div>
       </div>
       </CalendarWorkflowReview>
+      <MasterCalendarPrintDialog open={showPrintDialog} onClose={()=>setShowPrintDialog(false)} jobs={projects} currentJobId={projectId} selectedProjectTypeIds={selectedProjectTypeIds} includeArchived={includeArchived} start={printRange.start} end={printRange.end} focusDate={printRange.focus} timeZone={companyTimeZone}/>
       {selectedEvent&&<EventOccurrenceDialog event={selectedEvent} canManage={canManage} onClose={()=>setSelectedEvent(null)} onChanged={loadEvents}/>}
       {selectedTask&&<TaskOccurrenceDialog event={selectedTask} projects={projects} timeZone={companyTimeZone} canManage={canManage} onClose={()=>setSelectedTask(null)}/>}
     </div>

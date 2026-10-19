@@ -55,7 +55,7 @@ type GraphItem = {
   webUrl?: string;
   driveType?: string;
   folder?: Record<string, unknown>;
-  parentReference?: { driveId?: string };
+  parentReference?: { driveId?: string; path?: string };
   value?: GraphItem[];
 };
 
@@ -512,6 +512,40 @@ export function projectFoldersSnapshot(actor: Actor, projectId: number) {
     canEdit: eligibility.manager && project.status === "active" && connection?.state === "healthy",
     folders: safeRows,
   };
+}
+
+// Resolve visible folder locations from Microsoft rather than guessing where a linked
+// or subsequently moved folder lives. This also makes missing folders visible on load.
+export async function projectFoldersSnapshotLive(actor: Actor, projectId: number) {
+  const snapshot = projectFoldersSnapshot(actor, projectId);
+  const connection = connectionFor(actor.companyId!);
+  if (!connection || connection.state !== "healthy" || !snapshot.folders.length) return snapshot;
+  let accessToken: string;
+  try { accessToken = await accessFor(connection); }
+  catch { return projectFoldersSnapshot(actor, projectId); }
+  const folders = await Promise.all(snapshot.folders.map(async folder => {
+    const mapping = mappingFor(projectId, folder.kind, connection.id);
+    if (!mapping) return folder;
+    try {
+      const driveId = unseal(mapping.drive_id_ciphertext, folderContext(mapping.id, mapping.token_key_version, "drive"));
+      const itemId = unseal(mapping.item_id_ciphertext, folderContext(mapping.id, mapping.token_key_version, "item"));
+      if (!driveId || !itemId) return folder;
+      const item = await graphRequest(`/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}?$select=id,name,webUrl,folder,parentReference`, accessToken);
+      if (!item.folder) throw new MicrosoftStorageError("MICROSOFT_FOLDER_MISSING", "missing", 404);
+      const name = item.name || folder.displayName;
+      const parent = item.parentReference?.path?.split("root:").at(-1)?.split("/").filter(Boolean).map(decodeURIComponent) || [];
+      const location = parent.length ? [...parent, name].join(" › ") : [snapshot.rootDisplayName, snapshot.project.name, name].filter(Boolean).join(" › ");
+      db.prepare("UPDATE project_folder_mapping SET display_name = ?, state = 'healthy', last_verified_at = CURRENT_TIMESTAMP, last_error_code = NULL WHERE id = ?")
+        .run(name, mapping.id);
+      return { ...folder, displayName: name, location, state: "healthy", canOpen: true };
+    } catch (error) {
+      const domain = mapProviderError(error);
+      const state = domain.kind === "missing" ? "missing" : domain.kind === "permission" ? "permission_denied" : domain.kind === "authorization" ? "connection_required" : "error";
+      db.prepare("UPDATE project_folder_mapping SET state = ?, last_error_code = ? WHERE id = ?").run(state, domain.code.slice(0, 120), mapping.id);
+      return { ...folder, state, canOpen: false };
+    }
+  }));
+  return { ...snapshot, folders };
 }
 
 function requireFolderManager(actor: Actor, projectId: number) {

@@ -210,14 +210,14 @@ try {
     await page.goto(`${baseUrl}/projects/${projectId}`);
     await page.getByRole("button", { name: "Common and Private" }).click();
     await page.locator('[data-project-folders-ready="true"]').waitFor();
-    await page.getByRole("button", { name: "Set up Common" }).click();
+    await page.getByRole("region", { name: "Common folder" }).getByRole("button", { name: "Set up folder" }).click();
     let dialog = page.getByRole("dialog", { name: "Set up the Common folder" });
     await dialog.getByRole("button", { name: "Create folder" }).click();
-    await page.getByRole("button", { name: "Open Common" }).waitFor();
-    await page.getByRole("button", { name: "Set up Private" }).click();
+    await page.getByRole("region", { name: "Common folder" }).getByRole("button", { name: /Open folder/ }).waitFor();
+    await page.getByRole("region", { name: "Private folder" }).getByRole("button", { name: "Set up folder" }).click();
     dialog = page.getByRole("dialog", { name: "Set up the Private folder" });
     await dialog.getByRole("button", { name: "Create folder" }).click();
-    await page.getByRole("button", { name: "Open Private" }).waitFor();
+    await page.getByRole("region", { name: "Private folder" }).getByRole("button", { name: /Open folder/ }).waitFor();
     const verify = new Database(path.join(dataDirectory, "dialoggg.db"), { readonly: true });
     try {
       assert.equal(verify.prepare("SELECT COUNT(*) count FROM project_folder_mapping WHERE project_id = ?").get(projectId).count, 2);
@@ -228,34 +228,42 @@ try {
 
   await check("Open Common returns a protected Microsoft tab and refreshes the saved display name", async () => {
     const popupPromise = page.waitForEvent("popup");
-    await page.getByRole("button", { name: "Open Common" }).click();
+    await page.getByRole("region", { name: "Common folder" }).getByRole("button", { name: /Open folder/ }).click();
     const popup = await popupPromise;
+    await popup.waitForURL(/^https:\/\/microsoft\.example\.test\//);
     assert.match(popup.url(), /^https:\/\/microsoft\.example\.test\//);
     await popup.close();
   });
 
-  await check("renamed Microsoft folder keeps its stable reference and refreshes its display", async () => {
+  await check("Microsoft refreshes a stale saved folder name from its stable reference", async () => {
     const changed = new Database(path.join(dataDirectory, "dialoggg.db"));
     try { changed.prepare("UPDATE project_folder_mapping SET display_name = 'Renamed in Microsoft' WHERE project_id = ? AND kind = 'common'").run(projectId); }
     finally { changed.close(); }
     await page.reload();
     await page.getByRole("button", { name: "Common and Private" }).click();
-    await page.getByText("Renamed in Microsoft", { exact: true }).waitFor();
-    assert.equal(await page.getByRole("button", { name: "Open Common" }).count(), 1);
+    await page.getByText(/Pine Street Court › Common/).waitFor();
+    assert.equal(await page.getByText(/Renamed in Microsoft/).count(), 0);
+    assert.equal(await page.getByRole("region", { name: "Common folder" }).getByRole("button", { name: /Open folder/ }).count(), 1);
   });
 
   await check("missing and permission-denied states expose recovery without leaking Private identifiers", async () => {
-    const changed = new Database(path.join(dataDirectory, "dialoggg.db"));
-    try {
-      changed.prepare("UPDATE project_folder_mapping SET state = 'missing' WHERE project_id = ? AND kind = 'common'").run(projectId);
-      changed.prepare("UPDATE project_folder_mapping SET state = 'permission_denied' WHERE project_id = ? AND kind = 'private'").run(projectId);
-    } finally { changed.close(); }
+    const folderUrl = `**/api/projects/${projectId}/folders`;
+    await page.route(folderUrl, async route => {
+      if (route.request().method() !== "GET") return route.continue();
+      const response = await route.fetch();
+      const body = await response.json();
+      body.data.folders = body.data.folders.map(item => item.kind === "common"
+        ? { ...item, state: "missing", canOpen: false }
+        : { ...item, state: "permission_denied", canOpen: false });
+      await route.fulfill({ response, json: body });
+    });
     await page.reload();
     await page.getByRole("button", { name: "Common and Private" }).click();
-    await page.getByText("Missing or moved", { exact: true }).waitFor();
-    await page.getByText("Microsoft permission denied", { exact: true }).waitFor();
-    assert.equal(await page.getByRole("button", { name: "Set up Common" }).count(), 1);
-    assert.equal(await page.getByRole("button", { name: "Set up Private" }).count(), 1);
+    await page.getByText("Can't find folder", { exact: true }).waitFor();
+    await page.getByText("Needs attention", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("region", { name: "Common folder" }).getByRole("button", { name: "Fix folder" }).count(), 1);
+    assert.equal(await page.getByRole("region", { name: "Private folder" }).getByRole("button", { name: "Fix folder" }).count(), 1);
+    await page.unroute(folderUrl);
   });
 
   await check("assigned Employee sees Common only and never receives Private data", async () => {
@@ -263,8 +271,8 @@ try {
     await addSession(context, employeeCookies.session, employeeCookies.csrf);
     const employee = await context.newPage();
     await employee.goto(`${baseUrl}/projects/${projectId}`);
-    await employee.getByRole("button", { name: "Common and Private" }).click();
-    await employee.getByRole("heading", { name: "Common", exact: true }).waitFor();
+    await employee.getByRole("button", { name: "Files", exact: true }).click();
+    await employee.getByRole("heading", { name: /Job files/ }).waitFor();
     assert.equal(await employee.getByRole("heading", { name: "Private", exact: true }).count(), 0);
     assert.doesNotMatch(await employee.locator('[data-project-folders-ready="true"]').innerText(), /Linked Existing Folder|stable Microsoft item identifier.*Private/i);
     await employee.goto(`${baseUrl}/settings/microsoft-storage`);
@@ -277,7 +285,8 @@ try {
     await addSession(context, externalCookies.session, externalCookies.csrf);
     const external = await context.newPage();
     await external.goto(`${baseUrl}/projects/${projectId}`);
-    await external.getByRole("heading", { name: "Common", exact: true }).waitFor();
+    await external.getByRole("tab", { name: "Files" }).click();
+    await external.getByRole("heading", { name: /Job files/ }).waitFor();
     assert.equal(await external.getByRole("heading", { name: "Private", exact: true }).count(), 0);
     assert.equal(await external.getByRole("button", { name: /Set up|Change|Relink/ }).count(), 0);
     await context.close();
@@ -310,7 +319,7 @@ try {
     await page.goto(`${baseUrl}/projects/${projectId}`);
     await page.getByRole("button", { name: "Common and Private" }).click();
     await page.locator('[aria-label="Project state notice"]').last().waitFor();
-    assert.equal(await page.getByRole("button", { name: /^(Set up|Change) (Common|Private)/ }).count(), 0);
+    assert.equal(await page.getByRole("button", { name: /^(Set up|Change|Fix) folder$/ }).count(), 0);
   });
 
   await check("phone layouts avoid page-level horizontal overflow", async () => {

@@ -51,17 +51,17 @@ export default function ProjectTabs({
 
   return (
     <div className={fullScreen ? "h-full min-h-0" : "space-y-3"}>
-      <nav className={`flex flex-wrap gap-1 bg-white border-b ${fullScreen ? "hidden" : ""}`}>
+      <nav className={`flex flex-wrap gap-1 border-b ${tab === "folders" ? "border-[#394072] bg-[#10143d]" : "border-slate-200 bg-white"} ${fullScreen ? "hidden" : ""}`}>
         {TABS.map(t => (
           <button
             key={t.id} onClick={() => selectTab(t.id)}
             className={`px-4 py-2 text-sm border-b-2 transition-colors ${
               tab === t.id
-                ? "border-blue-700 text-blue-800 font-semibold bg-blue-50"
-                : "border-transparent text-gray-600 hover:text-blue-700"
+                ? tab === "folders" ? "border-amber-500 text-amber-400 font-semibold" : "border-blue-700 text-blue-800 font-semibold bg-blue-50"
+                : tab === "folders" ? "border-transparent text-[#c5cbe0] hover:text-white" : "border-transparent text-gray-600 hover:text-blue-700"
             }`}
           >
-            {t.label}
+            {t.id === "folders" && !canManage ? "Files" : t.label}
           </button>
         ))}
       </nav>

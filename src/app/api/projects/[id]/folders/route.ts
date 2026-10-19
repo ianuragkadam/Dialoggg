@@ -7,7 +7,7 @@ import {
   listProjectFolderChoices,
   MicrosoftStorageError,
   openProjectFolder,
-  projectFoldersSnapshot,
+  projectFoldersSnapshotLive,
 } from "@/lib/microsoft-storage";
 import { validateMutationRequest } from "@/lib/request-security";
 import { recordAudit, requestId } from "@/lib/security";
@@ -32,7 +32,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   if (!actor) return apiError(401, "AUTHENTICATION_REQUIRED", "Sign in to continue.", id);
   const target = projectId((await params).id);
   if (!target) return apiError(404, "PROJECT_NOT_FOUND", "Project not found.", id);
-  try { return apiSuccess(projectFoldersSnapshot(actor, target), id); }
+  try { return apiSuccess(await projectFoldersSnapshotLive(actor, target), id); }
   catch (error) {
     const domain = error instanceof MicrosoftStorageError ? error : new MicrosoftStorageError("MICROSOFT_FOLDER_STATUS_FAILED", "transient", 503);
     return apiError(domain.status, domain.code, message(domain), id);
