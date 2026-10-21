@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   const role = parseRole(body.role);
   const projectIds = parseProjectIds(body.projectIds ?? body.project_ids);
   const addAsResource = body.addAsResource === true || body.add_as_resource === true;
-  const resourceCategory = typeof body.resourceCategory === "string" ? body.resourceCategory : "Employee";
+  const resourceCategory = typeof body.resourceCategory === "string" ? body.resourceCategory : "Team";
   if (!email || !/^\S+@\S+\.\S+$/.test(email) || !firstName || !lastName || !role || !projectIds) {
     return NextResponse.json({ error: "First name, last name, valid email, role, and valid Project IDs are required." }, { status: 400 });
   }

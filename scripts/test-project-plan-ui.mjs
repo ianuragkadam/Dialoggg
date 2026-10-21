@@ -31,7 +31,7 @@ try {
   const adminCookie = sessionCookie(registration); const adminCsrf = csrfCookie(registration); const auth = authenticatedHeaders(registration, baseUrl);
   const projectResult = await json(`${baseUrl}/api/projects`, { method: "POST", headers: auth, body: JSON.stringify({ name: "Reading Residence Court", project_type_id: admin.defaultProjectTypeId, client_name: "Morgan Family", client_email: "client@example.test", address: "1499 Reading Road", city: "Mohnton", state: "PA", zip: "19540", phone: "7175550100", start_date: "2026-09-15" }) });
   assert.equal(projectResult.response.status, 200); const projectId = projectResult.data.id;
-  const resourceResult = await json(`${baseUrl}/api/resources`, { method: "POST", headers: auth, body: JSON.stringify({ name: "QA Crew", category_name: "Employee", email: "crew@example.test", phone: "7175550101" }) });
+  const resourceResult = await json(`${baseUrl}/api/resources`, { method: "POST", headers: auth, body: JSON.stringify({ name: "QA Crew", category_name: "Team", email: "crew@example.test", phone: "7175550101" }) });
   assert.equal(resourceResult.response.status, 200, JSON.stringify(resourceResult.data));
   let planVersion = (await json(`${baseUrl}/api/projects/${projectId}/tasks`, { headers: auth })).data.planVersion;
   const initialTaskIds = [];

@@ -5,6 +5,21 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
+import { MIGRATIONS } from "../src/db/migrations.ts";
+
+test("Team migration keeps existing Resource IDs and task assignments", () => {
+  const database = new Database(":memory:");
+  database.pragma("foreign_keys = ON");
+  try {
+    for (const migration of MIGRATIONS.filter(item => item.version < 30)) migration.up(database);
+    const company = Number(database.prepare("INSERT INTO company(name) VALUES ('Team Migration QA')").run().lastInsertRowid);
+    const category = Number(database.prepare("INSERT INTO resource_category(company_id, name) VALUES (?, 'Employee')").run(company).lastInsertRowid);
+    const resource = Number(database.prepare("INSERT INTO resource(company_id, category_id, name, normalized_name, status) VALUES (?, ?, 'Sam Crew', 'sam crew', 'active')").run(company, category).lastInsertRowid);
+    MIGRATIONS.find(item => item.version === 30).up(database);
+    assert.deepEqual(database.prepare("SELECT r.id, r.category_id AS categoryId, rc.name AS category FROM resource r JOIN resource_category rc ON rc.id = r.category_id WHERE r.id = ?").get(resource), { id: resource, categoryId: category, category: "Team" });
+    assert.throws(() => database.prepare("INSERT INTO resource_category(company_id, name) VALUES (?, 'Employee')").run(company), /RESOURCE_CATEGORY_FIXED/);
+  } finally { database.close(); }
+});
 
 const root = process.cwd();
 const migrate = dataDirectory => spawnSync(
@@ -66,7 +81,7 @@ test("versioned migration backfills identity/membership data and is idempotent",
     const second = migrate(dataDirectory);
     assert.equal(second.status, 0, `${second.stdout}\n${second.stderr}`);
     assert.doesNotMatch(second.stdout, /Applied migration/);
-    assert.match(second.stdout, /version 28/);
+    assert.match(second.stdout, /version 30/);
 
     const migrated = new Database(databasePath, { readonly: true });
     try {
@@ -103,6 +118,8 @@ test("versioned migration backfills identity/membership data and is idempotent",
           { version: 26, name: "platform_wide_email_uniqueness" },
           { version: 27, name: "help_onboarding_progress" },
           { version: 28, name: "task_auto_completion" },
+          { version: 29, name: "project_phone_extension" },
+          { version: 30, name: "team_resource_and_owner_prompt" },
         ],
       );
       assert.equal(migrated.prepare("SELECT COUNT(*) AS count FROM identity").get().count, 2);
@@ -143,8 +160,8 @@ test("platform-wide email guards block cross-company memberships and duplicate r
       database.pragma("foreign_keys = ON");
       const company = Number(database.prepare("INSERT INTO company (name) VALUES ('Email Guard Test')").run().lastInsertRowid);
       const secondCompany = Number(database.prepare("INSERT INTO company (name) VALUES ('Email Guard Test 2')").run().lastInsertRowid);
-      const category = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(company).lastInsertRowid);
-      const secondCategory = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(secondCompany).lastInsertRowid);
+      const category = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Team')").run(company).lastInsertRowid);
+      const secondCategory = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Team')").run(secondCompany).lastInsertRowid);
       const identity = Number(database.prepare(`
         INSERT INTO identity (normalized_email, password_hash, first_name, last_name)
         VALUES ('member@example.test', 'hash', 'Test', 'Member')
@@ -299,7 +316,7 @@ test("membership access migration enforces Owner, tenant, linked Resource, and E
       database.prepare("INSERT INTO project_membership (project_id, company_membership_id) VALUES (?, ?)").run(projectOne, externalMembership);
       database.prepare("UPDATE company_membership SET status = 'active' WHERE id = ?").run(externalMembership);
       assert.throws(() => database.prepare("DELETE FROM project_membership WHERE company_membership_id = ?").run(externalMembership), /EXTERNAL_PROJECT_REQUIRED/);
-      const category = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(companyTwo).lastInsertRowid);
+      const category = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Team')").run(companyTwo).lastInsertRowid);
       assert.throws(() => database.prepare("INSERT INTO resource (company_id, category_id, name, normalized_name, linked_membership_id) VALUES (?, ?, 'Cross linked', 'cross linked', ?)").run(companyTwo, category, externalMembership), /RESOURCE_SCOPE_INVALID/);
     } finally {
       assert.equal(database.pragma("foreign_key_check").length, 0);
@@ -322,10 +339,10 @@ test("Resource migration enforces fixed categories, tenant scope, one-to-one Use
       const companyTwo = Number(database.prepare("INSERT INTO company (name) VALUES ('Resource Two')").run().lastInsertRowid);
       const insertCategory = database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, ?)");
       for (const companyId of [companyOne, companyTwo]) {
-        for (const name of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) insertCategory.run(companyId, name);
+        for (const name of ["Team", "Subcontractor", "Supplier", "Equipment", "Other"]) insertCategory.run(companyId, name);
       }
-      const categoryOne = database.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(companyOne).id;
-      const categoryTwo = database.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(companyTwo).id;
+      const categoryOne = database.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Team'").get(companyOne).id;
+      const categoryTwo = database.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Team'").get(companyTwo).id;
       const identityOne = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('resource-one@example.test', 'hash', 'One', 'active')").run().lastInsertRowid);
       const identityTwo = Number(database.prepare("INSERT INTO identity (normalized_email, password_hash, first_name, status) VALUES ('resource-two@example.test', 'hash', 'Two', 'active')").run().lastInsertRowid);
       const membershipOne = Number(database.prepare("INSERT INTO company_membership (identity_id, company_id, role, status) VALUES (?, ?, 'owner', 'active')").run(identityOne, companyOne).lastInsertRowid);
@@ -342,7 +359,7 @@ test("Resource migration enforces fixed categories, tenant scope, one-to-one Use
       `).run(companyTwo, categoryTwo, membershipTwo).lastInsertRowid);
 
       assert.throws(() => insertCategory.run(companyOne, "Custom"), /RESOURCE_CATEGORY_FIXED/);
-      assert.throws(() => insertCategory.run(companyOne, "Employee"), /UNIQUE constraint failed/);
+      assert.throws(() => insertCategory.run(companyOne, "Team"), /UNIQUE constraint failed/);
       assert.throws(() => database.prepare("UPDATE resource_category SET name = 'Custom' WHERE id = ?").run(categoryOne), /RESOURCE_CATEGORY_FIXED/);
       assert.throws(() => database.prepare("DELETE FROM resource_category WHERE id = ?").run(categoryOne), /RESOURCE_CATEGORY_FIXED/);
       assert.throws(() => database.prepare(`
@@ -638,7 +655,7 @@ test("Project Template migration enforces tenant-scoped sources, graph reference
       `).run(templateId), /TEMPLATE_DEPENDENCY_INVALID/);
       database.prepare(`INSERT INTO template_dependency (template_id, source_ref, target_ref, link_type) VALUES (?, 'a', 'b', 'fs')`).run(templateId);
 
-      const categoryTwo = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Employee')").run(companyTwo).lastInsertRowid);
+      const categoryTwo = Number(database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, 'Team')").run(companyTwo).lastInsertRowid);
       assert.throws(() => database.prepare(`
         INSERT INTO task (project_id, parent_id, name, start_date, manual_start_date, duration, resource_category_id) VALUES (?, ?, 'Scoped Task', '2026-09-17', '2026-09-17', 1, ?)
       `).run(projectOne, projectRoot, categoryTwo), /TASK_RESOURCE_CATEGORY_SCOPE_INVALID|GANTT_TASK_SCOPE_INVALID/);

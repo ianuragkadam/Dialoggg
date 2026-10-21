@@ -104,7 +104,7 @@ export default function MasterCalendarPage() {
           events={events}
           eventContent={info => <CalendarEventTooltip content={calendarEventTooltip(info.event)} className="fc-event-title">{info.event.title}</CalendarEventTooltip>}
           timeZone={companyTimeZone}
-          datesSet={info=>{const dateKey=(date:Date)=>{const parts=new Intl.DateTimeFormat("en-CA",{timeZone:companyTimeZone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);const get=(type:string)=>parts.find(part=>part.type===type)?.value??"00";return `${get("year")}-${get("month")}-${get("day")}`;};setPrintRange({start:dateKey(info.view.activeStart),end:dateKey(info.view.activeEnd),focus:dateKey(info.view.currentStart)});}}
+          datesSet={info=>{const dateKey=(date:Date)=>{const parts=new Intl.DateTimeFormat("en-CA",{timeZone:companyTimeZone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(date);const get=(type:string)=>parts.find(part=>part.type===type)?.value??"00";return `${get("year")}-${get("month")}-${get("day")}`;};setPrintRange({start:dateKey(info.view.activeStart),end:dateKey(info.view.activeEnd),focus:dateKey(info.view.calendar.getDate())});}}
           editable={canManage}
           eventDrop={moveEvent}
           eventClick={info=>{if(info.event.extendedProps.kind==="event")setSelectedEvent(info.event);else if(info.event.extendedProps.kind==="task")setSelectedTask(info.event);}}

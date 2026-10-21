@@ -51,7 +51,7 @@ try {
   const seed = new Database(path.join(dataDirectory, "dialoggg.db"));
   seed.pragma("foreign_keys = ON");
   try {
-    const employeeCategory = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(admin.companyId).id;
+    const employeeCategory = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Team'").get(admin.companyId).id;
     const equipmentCategory = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Equipment'").get(admin.companyId).id;
     const otherCategory = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Other'").get(admin.companyId).id;
     jamieId = Number(seed.prepare(`
@@ -60,7 +60,7 @@ try {
     `).run(admin.companyId, employeeCategory, employee.membershipId).lastInsertRowid);
     seed.prepare(`INSERT INTO resource (company_id, category_id, name, normalized_name, status) VALUES (?, ?, 'Laser Screed A', 'laser screed a', 'active')`).run(admin.companyId, equipmentCategory);
     permitId = Number(seed.prepare(`INSERT INTO resource (company_id, category_id, name, normalized_name, status, deactivated_at) VALUES (?, ?, 'Permit Coordinator', 'permit coordinator', 'inactive', CURRENT_TIMESTAMP)`).run(admin.companyId, otherCategory).lastInsertRowid);
-    const otherCategoryId = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(otherAdmin.companyId).id;
+    const otherCategoryId = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Team'").get(otherAdmin.companyId).id;
     otherResourceId = Number(seed.prepare(`INSERT INTO resource (company_id, category_id, name, normalized_name, status) VALUES (?, ?, 'Other Crew', 'other crew', 'active')`).run(otherAdmin.companyId, otherCategoryId).lastInsertRowid);
     const projectId = Number(seed.prepare(`INSERT INTO project (company_id, project_type_id, name, start_date, created_by) VALUES (?, ?, 'Resource Schedule QA', '2026-09-19', ?)`).run(admin.companyId, admin.defaultProjectTypeId, admin.legacyUserId).lastInsertRowid);
     seededTaskId = Number(seed.prepare(`INSERT INTO task (project_id, name, start_date, duration) VALUES (?, 'Install acrylic surface', '2026-09-20', 3)`).run(projectId).lastInsertRowid);
@@ -87,7 +87,7 @@ try {
 
   await check("Resource API rejects missing CSRF and custom Categories", async () => {
     const cookies = authCookies(adminLogin);
-    const noCsrf = await fetch(`${baseUrl}/api/v1/resources`, { method: "POST", headers: { cookie: `dialoggg_session=${cookies.session}`, origin: baseUrl, "content-type": "application/json" }, body: JSON.stringify({ name: "No CSRF", category: "Employee" }) });
+    const noCsrf = await fetch(`${baseUrl}/api/v1/resources`, { method: "POST", headers: { cookie: `dialoggg_session=${cookies.session}`, origin: baseUrl, "content-type": "application/json" }, body: JSON.stringify({ name: "No CSRF", category: "Team" }) });
     assert.equal(noCsrf.status, 403);
     const custom = await fetch(`${baseUrl}/api/v1/resources`, { method: "POST", headers: { ...adminHeaders, "content-type": "application/json" }, body: JSON.stringify({ name: "Custom Category", category: "Custom" }) });
     assert.equal(custom.status, 400);
@@ -110,9 +110,9 @@ try {
     const schedule = await fetch(`${baseUrl}/api/resources/schedule`, { headers: adminHeaders });
     assert.equal(schedule.status, 200);
     const schedulePayload = await schedule.json();
-    assert.deepEqual(new Set(schedulePayload.categories.map(category => category.name)), new Set(["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]));
-    assert.equal(schedulePayload.resources.find(item => item.id === String(jamieId))?.category, "Employee");
-    assert.ok(schedulePayload.events.some(item => item.id === `t${seededTaskId}-r${jamieId}` && item.extendedProps.kind === "Task" && item.allDay === true && item.extendedProps.resourceCategory === "Employee"));
+    assert.deepEqual(new Set(schedulePayload.categories.map(category => category.name)), new Set(["Team", "Subcontractor", "Supplier", "Equipment", "Other"]));
+    assert.equal(schedulePayload.resources.find(item => item.id === String(jamieId))?.category, "Team");
+    assert.ok(schedulePayload.events.some(item => item.id === `t${seededTaskId}-r${jamieId}` && item.extendedProps.kind === "Task" && item.allDay === true && item.extendedProps.resourceCategory === "Team"));
     assert.ok(schedulePayload.events.some(item => item.extendedProps.seriesId === seededEventId && item.resourceId === String(jamieId) && item.extendedProps.kind === "Event" && item.extendedProps.version));
     const inactive = await fetch(`${baseUrl}/api/v1/resources/${permitId}/assignments`, { method: "PUT", headers: { ...adminHeaders, "content-type": "application/json" }, body: JSON.stringify({ taskIds: [seededTaskId], eventSeriesIds: [] }) });
     assert.equal(inactive.status, 409);
@@ -136,13 +136,13 @@ try {
     await page.getByLabel("Equipment", { exact: true }).uncheck();
     const filterSummary = page.locator(".fc-resourceFilterSummary-button");
     await filterSummary.waitFor();
-    assert.match(await filterSummary.innerText(), /Showing: Employee, Subcontractor, Supplier, Other/);
+    assert.match(await filterSummary.innerText(), /Showing: Team, Subcontractor, Supplier, Other/);
     await page.getByRole("button", { name: "week", exact: true }).click();
-    assert.match(await filterSummary.innerText(), /Showing: Employee, Subcontractor, Supplier, Other/);
+    assert.match(await filterSummary.innerText(), /Showing: Team, Subcontractor, Supplier, Other/);
     await page.getByRole("button", { name: "day", exact: true }).click();
     await page.getByRole("button", { name: "month", exact: true }).click();
     await page.getByRole("tab", { name: "Timeline" }).click();
-    assert.match(await page.locator(".fc-resourceFilterSummary-button").innerText(), /Showing: Employee, Subcontractor, Supplier, Other/);
+    assert.match(await page.locator(".fc-resourceFilterSummary-button").innerText(), /Showing: Team, Subcontractor, Supplier, Other/);
     await page.getByRole("button", { name: "Select all" }).click();
     await page.getByRole("button", { name: "Clear all" }).click();
     await page.getByText("No resource types selected.", { exact: true }).waitFor();
@@ -154,7 +154,7 @@ try {
     assert.equal(await page.title(), "Resources | Dialoggg");
     await page.getByRole("heading", { name: "Resources", exact: true }).waitFor();
     const body = await page.locator("body").innerText();
-    for (const item of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) assert.match(body, new RegExp(item));
+    for (const item of ["Team", "Subcontractor", "Supplier", "Equipment", "Other"]) assert.match(body, new RegExp(item));
     assert.match(body, /Categories are the approved fixed list/);
     assert.match(body, /Jamie Morgan/);
     assert.equal(await page.getByText("Resource Guide", { exact: true }).count(), 0);

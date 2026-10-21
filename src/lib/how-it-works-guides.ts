@@ -19,7 +19,7 @@ export const RESOURCE_DIRECTORY_GUIDE = [
   "A Resource is anything you schedule on a job: an employee, subcontractor, supplier, or piece of equipment. A User is someone who logs in to Dialoggg. Resources do not log in.",
   "One person can be both. An employee who logs in as a User can also be assigned to Tasks as a Resource. Add them as a Resource when you invite them under Users, or later by opening the Resource and clicking Link User.",
   "Linking connects the two records. It does not give anyone login access or change what they can do. Each User can be linked to one Resource.",
-  "Click + Add Resource and choose a category: Employee, Subcontractor, Supplier, Equipment, or Other. Categories let you filter the Resource Calendar.",
+  "Click + Add Resource and choose a category: Team, Subcontractor, Supplier, Equipment, or Other. Categories let you filter the Resource Calendar.",
   "Assign Resources to Tasks in the Resources column of the Project Plan. Their work then appears on the Resource Calendar.",
   "Deactivate a Resource that is no longer available. They cannot be assigned to new Tasks or Events, but past assignments and calendar history stay. Deactivating a Resource does not affect a linked User's login.",
   "Schedule conflicts counts Resources booked for two things at the same time.",

@@ -30,7 +30,7 @@ function makePage(days: string[], events: CalendarEvent[], zone: string, title: 
 function printHtml(pages: string[], orientation: "landscape" | "portrait") { return `<!doctype html><html><head><meta charset="utf-8"><title>Master Calendar</title><style>@page{size:Letter ${orientation};margin:.3in}*{box-sizing:border-box;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}body{margin:0;color:#172033;font:9px Arial,sans-serif}.paper{position:relative;min-height:7.8in;padding:.14in .14in .32in;break-after:page;page-break-after:always;overflow:hidden}.paper:last-child{break-after:auto;page-break-after:auto}header{display:flex;justify-content:space-between;border-bottom:1px solid #9ca3af;padding-bottom:5px;margin-bottom:7px}header b{font-size:14px}header small{display:block;color:#526071;margin-top:3px}.right{text-align:right}table{width:100%;table-layout:fixed;border-collapse:collapse}th,td{border:1px solid #cbd5e1}th{height:20px;background:#11163e;color:#fff}td{height:1.12in;vertical-align:top;padding:2px}.day{text-align:right;margin-bottom:3px}.event{position:relative;isolation:isolate;display:block;min-height:12px;margin:1px 0;padding:2px 3px;overflow:hidden;border:0!important;outline:0!important;box-shadow:none!important;border-radius:2px;color:white!important;font-size:7px;line-height:1.15}.paint{position:absolute;inset:0;z-index:-1;width:100%;height:100%;min-height:12px;border:0;outline:0;box-shadow:none}.paint rect{stroke:none!important;stroke-width:0!important}.event span{position:relative;z-index:1}footer{position:absolute;left:.14in;right:.14in;bottom:.1in;display:flex;justify-content:space-between;color:#64748b;font-size:7px}@media screen{body{padding:12px;background:#fff}.paper{width:100%;aspect-ratio:${orientation === "landscape" ? "11/8.5" : "8.5/11"};min-height:0;box-shadow:0 2px 12px #0002;margin:0 auto 12px;overflow:auto}td{height:80px}}</style></head><body>${pages.join("")}</body></html>`; }
 
 export default function MasterCalendarPrintDialog({ open, onClose, jobs, currentJobId, selectedProjectTypeIds, includeArchived, start, end, focusDate, timeZone }: Props) {
-  const [mode, setMode] = useState<Mode>("screen");
+  const [mode, setMode] = useState<Mode>("week");
   const [from, setFrom] = useState(start);
   const [to, setTo] = useState(shift(end, -1));
   const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
@@ -44,7 +44,7 @@ export default function MasterCalendarPrintDialog({ open, onClose, jobs, current
   const [page, setPage] = useState(0);
   const [printing, setPrinting] = useState(false);
   useEffect(() => { if (open) {
-    setMode("screen"); setFrom(start); setTo(shift(end, -1)); setPage(0);
+    setMode("week"); setFrom(start); setTo(shift(end, -1)); setPage(0);
     const shownJobs = jobs.filter(job => (includeArchived || job.status === "active") && selectedProjectTypeIds.includes(job.project_type_id));
     setSelectedJobIds(currentJobId === "all" ? shownJobs.map(job => job.id) : shownJobs.filter(job => String(job.id) === currentJobId).map(job => job.id));
     setIncludeCompanyEvents(currentJobId === "all");

@@ -1,4 +1,4 @@
-export const RESOURCE_CATEGORIES = ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"] as const;
+export const RESOURCE_CATEGORIES = ["Team", "Subcontractor", "Supplier", "Equipment", "Other"] as const;
 export type ResourceCategoryUi = typeof RESOURCE_CATEGORIES[number];
 export type ResourceStatusUi = "active" | "inactive";
 

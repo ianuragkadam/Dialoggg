@@ -57,7 +57,7 @@ db.transaction(() => {
     VALUES (?, ?, ?, 'owner', 'active', CURRENT_TIMESTAMP)
   `).run(Number(identity.lastInsertRowid), companyId, Number(legacy.lastInsertRowid));
   const category = db.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, ?)");
-  for (const name of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) category.run(companyId, name);
+  for (const name of ["Team", "Subcontractor", "Supplier", "Equipment", "Other"]) category.run(companyId, name);
 })();
 
 console.log("");

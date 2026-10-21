@@ -5,7 +5,7 @@ import { issueInvitation } from "@/lib/account-tokens";
 import { hashPassword, type Actor } from "@/lib/auth";
 import { normalizeEmail, recordAudit } from "@/lib/security";
 
-export const FIXED_RESOURCE_CATEGORIES = ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"] as const;
+export const FIXED_RESOURCE_CATEGORIES = ["Team", "Subcontractor", "Supplier", "Equipment", "Other"] as const;
 
 export type CompanyOperationalMetadata = {
   id: number;
@@ -382,6 +382,7 @@ export async function createCompanyWithFirstOwner(input: {
       membershipId,
       createdByIdentityId: input.actor.identityId,
       baseUrl: input.baseUrl,
+      firstOwnerWelcome: true,
     });
     recordAudit({
       requestId: input.requestId,

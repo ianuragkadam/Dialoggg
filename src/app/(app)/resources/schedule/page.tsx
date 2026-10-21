@@ -24,7 +24,7 @@ type ResourceCategory = { id: number; name: string };
 type CalendarView = "timeline" | "calendar";
 type ResourceOverlap = { first: ScheduleEvent; second: ScheduleEvent; start: number };
 
-const STANDARD_CATEGORY_ORDER = ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"];
+const STANDARD_CATEGORY_ORDER = ["Team", "Subcontractor", "Supplier", "Equipment", "Other"];
 
 function dateKeyInZone(value: string | Date, timeZone: string) {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -154,9 +154,9 @@ export default function GlobalResourceSchedulePage() {
       if (savedCategories) {
         try {
           const parsed = JSON.parse(savedCategories);
-          if (Array.isArray(parsed)) setSelectedCategories(nextCategories.filter(category => parsed.includes(category)));
+          if (Array.isArray(parsed)) setSelectedCategories(nextCategories.filter(category => parsed.includes(category) || (category === "Team" && parsed.includes("Employee"))));
           else if (parsed && Array.isArray(parsed.selected) && Array.isArray(parsed.known)) {
-            setSelectedCategories(nextCategories.filter(category => parsed.selected.includes(category) || !parsed.known.includes(category)));
+            setSelectedCategories(nextCategories.filter(category => parsed.selected.includes(category) || (category === "Team" && parsed.selected.includes("Employee")) || (!parsed.known.includes(category) && !(category === "Team" && parsed.known.includes("Employee")))));
           } else setSelectedCategories(nextCategories);
         } catch {
           setSelectedCategories(nextCategories);

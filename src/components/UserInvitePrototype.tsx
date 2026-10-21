@@ -8,7 +8,7 @@ import { companyRoleLabel, type CompanyRoleUi, type ProjectAccessUi } from "@/li
 import { RESOURCE_CATEGORIES, type ResourceCategoryUi } from "@/lib/resources-ui";
 
 type FormState = { firstName: string; lastName: string; email: string; role: CompanyRoleUi; projectIds: number[]; addAsResource: boolean; resourceCategory: ResourceCategoryUi };
-const EMPTY: FormState = { firstName: "", lastName: "", email: "", role: "employee", projectIds: [], addAsResource: false, resourceCategory: "Employee" };
+const EMPTY: FormState = { firstName: "", lastName: "", email: "", role: "employee", projectIds: [], addAsResource: false, resourceCategory: "Team" };
 
 export default function UserInvitePrototype({ projects, canInviteElevated }: { projects: Omit<ProjectAccessUi, "assigned">[]; canInviteElevated: boolean }) {
   const [form, setForm] = useState(EMPTY);

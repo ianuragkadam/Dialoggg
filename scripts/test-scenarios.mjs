@@ -151,7 +151,7 @@ function bootstrapAccount(dataDirectory, { companyName, companyId: existingCompa
           ) VALUES (?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)
         `).run(identityId, companyId, legacyUserId, role);
         membershipId = Number(membership.lastInsertRowid);
-        for (const category of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) {
+        for (const category of ["Team", "Subcontractor", "Supplier", "Equipment", "Other"]) {
           database.prepare("INSERT OR IGNORE INTO resource_category (company_id, name) VALUES (?, ?)").run(companyId, category);
         }
         for (const projectType of ["Residential Court", "Commercial Court", "Court Resurfacing"]) {
@@ -1788,14 +1788,14 @@ try {
   await check("admin creates a categorized resource", async () => {
     const response = await adminA.request("/api/resources", {
       method: "POST",
-      body: { name: "Scenario Electrician", category_name: "Employee", email: "trade-a@example.test" },
+      body: { name: "Scenario Electrician", category_name: "Team", email: "trade-a@example.test" },
     });
     assert.equal(response.status, 200, JSON.stringify(response.data));
     resourceAId = response.data.id;
     const list = await adminA.request("/api/resources");
     assert.equal(list.status, 200);
     const resource = list.data.resources.find(item => item.id === resourceAId);
-    assert.equal(resource.category, "Employee");
+    assert.equal(resource.category, "Team");
     categoryAId = resource.category_id;
     assert.ok(categoryAId);
   });

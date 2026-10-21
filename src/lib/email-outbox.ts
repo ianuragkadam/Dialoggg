@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 import db from "@/db";
+import { PRIMER_SUBJECT } from "@/lib/before-you-start";
 
-type EmailTemplate = "invitation" | "password_reset" | "operational";
+type EmailTemplate = "invitation" | "owner_welcome" | "password_reset" | "operational";
 type EmailKind = "invitation_email" | "password_reset_email" | "operational_notification_email";
 
 export type TransactionalEmail = {
@@ -128,6 +129,7 @@ export function queueTransactionalEmail(input: {
 }
 
 function deliveryCopy(message: TransactionalEmail) {
+  if (message.template === "owner_welcome") return { action: "Accept invitation", subject: PRIMER_SUBJECT };
   if (message.template === "invitation") return { action: "Accept invitation", subject: "Your Dialoggg invitation" };
   if (message.template === "password_reset") return { action: "Reset password", subject: "Reset your Dialoggg password" };
   return { action: message.variables.actionLabel || "Open Dialoggg", subject: message.variables.subject || "Dialoggg notification" };

@@ -92,7 +92,7 @@ try {
   const database = new Database(path.join(dataDirectory, "dialoggg.db"));
   database.pragma("foreign_keys = ON");
   try {
-    const categoryId = database.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(admin.companyId).id;
+    const categoryId = database.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Team'").get(admin.companyId).id;
     const resourceId = Number(database.prepare(`
       INSERT INTO resource (company_id, category_id, name, normalized_name, email, linked_membership_id, status)
       VALUES (?, ?, 'Google QA Crew', 'google qa crew', ?, ?, 'active')

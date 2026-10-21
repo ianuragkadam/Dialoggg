@@ -31,7 +31,7 @@ export function bootstrapAccount(dataDirectory, {
           "INSERT INTO company (name, time_zone, status) VALUES (?, 'America/New_York', 'active')",
         ).run(companyName).lastInsertRowid);
         const category = database.prepare("INSERT INTO resource_category (company_id, name) VALUES (?, ?)");
-        for (const name of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) category.run(companyId, name);
+        for (const name of ["Team", "Subcontractor", "Supplier", "Equipment", "Other"]) category.run(companyId, name);
         const projectType = database.prepare("INSERT INTO project_type (company_id, name, normalized_name) VALUES (?, ?, ?)");
         for (const name of ["Residential Court", "Commercial Court", "Court Resurfacing"]) {
           projectType.run(companyId, name, name.toLowerCase());

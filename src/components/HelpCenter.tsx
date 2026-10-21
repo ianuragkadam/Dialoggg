@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { authenticatedFetch } from "@/lib/client-fetch";
 import { ADD_PROJECT_GUIDE, PROJECT_DIRECTORY_GUIDE, PROJECT_PLAN_HOW_IT_WORKS, RESOURCE_DIRECTORY_GUIDE, USERS_GUIDE } from "@/lib/how-it-works-guides";
+import { PRIMER_INTRO, PRIMER_IDEAS, PRIMER_CONNECTION, PRIMER_CLOSING } from "@/lib/before-you-start";
 
 type Role = "owner" | "admin" | "employee" | "external" | "platform_administrator";
 type Step = { key: string; title: string; detail: string; href: string; auto?: boolean; minutes?: number; bullets?: string[] };
@@ -91,7 +92,7 @@ const GLOSSARY = [
   ["Linking tasks", "Start to Finish", "The next task can’t finish until this one starts. Rarely needed."],
   ["People and resources", "User", "Someone who logs in to Dialoggg."],
   ["People and resources", "Resource", "Anything you schedule on a job: an employee, subcontractor, supplier, or piece of equipment. Resources don’t log in."],
-  ["People and resources", "Resource categories", "The groups resources are sorted into: Employee, Subcontractor, Supplier, Equipment, and Other. Use them to show or hide groups on the Resource Calendar."],
+  ["People and resources", "Resource categories", "The groups resources are sorted into: Team, Subcontractor, Supplier, Equipment, and Other. Use them to show or hide groups on the Resource Calendar."],
   ["People and resources", "Linked user", "A user who is also a resource, so the person who logs in is the same one scheduled on tasks. Linking doesn’t change what they can do or see."],
   ["Calendars and scheduling", "Event", "A meeting, site visit, or anything else that isn’t part of a job’s plan. Add events on the Master Calendar."],
   ["Calendars and scheduling", "Resource overlap", "When one resource is booked for two things at the same time, like a crew on two jobs the same day."],
@@ -101,11 +102,14 @@ const GLOSSARY = [
 
 const SECTIONS = [["start", "Get Started", "oec"], ["answers", "How do I…?", "oec"], ["guides", "Page guides", "oec"], ["roles", "Roles and permissions", "o"], ["words", "Words we use", "oe"], ["support", "Contact support", "oec"]];
 
-export default function HelpCenter({ role }: { role: Role }) {
+export default function HelpCenter({ role, userId }: { role: Role; userId: number | null }) {
   const admin = role === "owner" || role === "admin";
   const employee = role === "employee";
-  const currentSteps = admin ? ADMIN_REQUIRED : employee ? EMPLOYEE_STEPS : role === "platform_administrator" ? [] : CLIENT_STEPS;
+  const [ownerScheduleAnswer, setOwnerScheduleAnswer] = useState<string | null>(null);
+  const ownerResourceStep: Step = { key: "owner-resource", title: "Add yourself to the schedule", detail: "Create and link your Team resource if you will be assigned to Tasks.", href: "/resources", minutes: 2, bullets: ["Choose + Add Resource and select Team.", "Link the Resource to your Owner login.", "Your login role remains Owner."] };
+  const currentSteps = admin ? role === "owner" && ownerScheduleAnswer === "not_now" ? [ownerResourceStep, ...ADMIN_REQUIRED] : ADMIN_REQUIRED : employee ? EMPLOYEE_STEPS : role === "platform_administrator" ? [] : CLIENT_STEPS;
   const [section, setSection] = useState("start");
+  const [primerExpanded, setPrimerExpanded] = useState(true);
   const [search, setSearch] = useState("");
   const [done, setDone] = useState<string[]>([]);
   const [automatic, setAutomatic] = useState<Record<string, boolean>>({});
@@ -116,13 +120,33 @@ export default function HelpCenter({ role }: { role: Role }) {
   const [support, setSupport] = useState({ name: "", email: "", company: "", page: "", message: "" });
   const [sent, setSent] = useState(false);
   useEffect(() => {
+    if (role !== "owner" || userId === null) return;
+    try {
+      const saved = window.localStorage.getItem(`dialoggg:help-primer-expanded:v1:${userId}`);
+      if (saved !== null) setPrimerExpanded(saved === "true");
+    } catch {
+      // Keep the default expanded state when browser storage is unavailable.
+    }
+  }, [role, userId]);
+  const togglePrimer = () => {
+    const next = !primerExpanded;
+    setPrimerExpanded(next);
+    if (userId === null) return;
+    try {
+      window.localStorage.setItem(`dialoggg:help-primer-expanded:v1:${userId}`, String(next));
+    } catch {
+      // The panel remains usable even when browser storage is unavailable.
+    }
+  };
+  useEffect(() => {
     let active = true;
     void fetch("/api/v1/help/checklist", { cache: "no-store" }).then(response => response.json()).then(payload => {
       if (!active) return;
       setDone(payload?.data?.completions ?? []);
+      setOwnerScheduleAnswer(payload?.data?.ownerScheduleAnswer ?? null);
       const detected = payload?.data?.automatic ?? {};
       setAutomatic(detected);
-      const checklistSteps = admin ? [...currentSteps, ...ADMIN_EXTRA] : currentSteps;
+      const checklistSteps = admin ? [...(role === "owner" && payload?.data?.ownerScheduleAnswer === "not_now" ? [ownerResourceStep, ...ADMIN_REQUIRED] : ADMIN_REQUIRED), ...ADMIN_EXTRA] : currentSteps;
       const firstTodo = checklistSteps.find(step => !(payload?.data?.completions ?? []).includes(step.key) && !detected[step.key]);
       setOpenStep(firstTodo?.key ?? "");
       for (const stepKey of Object.keys(detected)) {
@@ -136,7 +160,7 @@ export default function HelpCenter({ role }: { role: Role }) {
     const allowed = role === "external" ? ["Project Calendar"] : role === "employee" ? ["Project Plan", "Project Calendar", "Resource Calendar", "Master Calendar", "My Projects"] : null;
     return PAGE_GUIDES.filter(item => (!allowed || allowed.includes(item.title)) && `${item.title} ${item.body}`.toLowerCase().includes(search.trim().toLowerCase()));
   }, [role, search]);
-  const progressSteps = admin ? ADMIN_REQUIRED : currentSteps;
+  const progressSteps = currentSteps;
   const isDone = (key: string) => done.includes(key) || Boolean(automatic[key]);
   const completedCount = progressSteps.filter(step => isDone(step.key)).length;
   const minutesLeft = progressSteps.filter(step => !isDone(step.key)).reduce((total, step) => total + (step.minutes ?? 0), 0);
@@ -173,8 +197,9 @@ export default function HelpCenter({ role }: { role: Role }) {
         {notice && <div role="status" className="rounded-lg border border-lime-500/40 bg-lime-300/10 px-4 py-3 text-sm text-lime-100">{notice}</div>}
 
         {section === "start" && <section id="start" className="rounded-xl border border-slate-700 bg-[#14243a] p-5 sm:p-7">
+          {role === "owner" && <div className="mb-6 rounded-xl border border-lime-300/40 bg-slate-950/35 p-5" aria-label="Before You Start"><button type="button" onClick={togglePrimer} aria-expanded={primerExpanded} aria-controls="before-you-start-content" className="flex min-h-9 w-full items-center justify-between gap-3 text-left"><span className="text-xl font-bold text-lime-200">Before You Start</span><svg aria-hidden="true" className={`h-5 w-5 shrink-0 text-lime-200 transition-transform ${primerExpanded ? "rotate-180" : ""}`} viewBox="0 0 20 20" fill="none"><path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>{primerExpanded && <div id="before-you-start-content"><p className="mt-2 text-sm leading-6 text-slate-200">{PRIMER_INTRO}</p><ol className="ml-5 mt-4 list-decimal space-y-3">{PRIMER_IDEAS.map(idea => <li key={idea.title} className="pl-1 text-sm leading-6 text-slate-200"><strong className="text-white">{idea.title}</strong> {idea.body}{"bullets" in idea && <ul className="ml-5 mt-1 list-disc">{idea.bullets.map(bullet => <li key={bullet}>{bullet}</li>)}</ul>}</li>)}</ol><p className="mt-4 text-sm leading-6 text-slate-200"><strong className="text-white">How it all connects:</strong> {PRIMER_CONNECTION}</p><p className="mt-2 text-sm text-slate-200">{PRIMER_CLOSING}</p><a href="#get-started-checklist" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-lime-400 px-4 font-bold text-slate-950">Get started</a><p className="mt-4 text-xs text-slate-400">Scott Grote · Founder, Dialoggg</p></div>}</div>}
           <SectionHeading eyebrow={role === "platform_administrator" ? "Platform guide" : admin ? "Start here" : employee ? "Start here" : "Welcome"} title={admin ? completedCount === progressSteps.length ? "Your first job is on the calendar" : "20 minutes to your first job" : employee ? "5 minutes to find your way around" : role === "platform_administrator" ? "Help for platform administration" : "3 minutes to see your job"} description={admin ? completedCount === progressSteps.length ? "This checklist now lives under Setup guide in the menu. Pick up the Level up steps whenever you’re ready." : "Six steps, in order. Each one takes you to the right page, and Dialoggg remembers where you left off." : employee ? "Four quick stops so you know where your work is and how to read the schedule." : role === "platform_administrator" ? "Browse the page guides and contact support for company-level workflows." : "You can see your project’s schedule any time. You can’t change anything, so click around freely."} />
-          {progressSteps.length > 0 && <div className="mt-5 rounded-lg border border-slate-700 bg-slate-950/35 p-4"><div className="flex justify-between gap-3 text-sm"><strong>{completedCount} of {progressSteps.length} done</strong><span className="font-mono text-xs text-slate-400">{loading ? "Checking…" : minutesLeft ? `About ${minutesLeft} min left` : "All done"}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-700"><div className="h-full rounded-full bg-lime-400 transition-all" style={{ width: `${completedCount / progressSteps.length * 100}%` }} /></div></div>}
+          {progressSteps.length > 0 && <div id="get-started-checklist" className="mt-5 rounded-lg border border-slate-700 bg-slate-950/35 p-4"><div className="flex justify-between gap-3 text-sm"><strong>{completedCount} of {progressSteps.length} done</strong><span className="font-mono text-xs text-slate-400">{loading ? "Checking…" : minutesLeft ? `About ${minutesLeft} min left` : "All done"}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-700"><div className="h-full rounded-full bg-lime-400 transition-all" style={{ width: `${completedCount / progressSteps.length * 100}%` }} /></div></div>}
           {currentSteps.length > 0 && <div className="mt-5"><div className="mb-3 flex items-baseline justify-between gap-3 px-1"><h3 className="text-lg font-semibold">{admin ? "Get running" : "Your quick tour"}</h3><span className="font-mono text-xs text-amber-300">{admin ? "about 20 min" : employee ? "about 5 min" : "about 3 min"}</span></div><ol className="space-y-2">{currentSteps.map((step, index) => <ChecklistStep key={step.key} step={step} index={index + 1} done={isDone(step.key)} auto={step.auto} locked={Boolean(automatic[step.key])} open={openStep === step.key} isNext={nextStep?.key === step.key} onExpand={() => setOpenStep(openStep === step.key ? "" : step.key)} onToggle={checked => void toggleStep(step, checked)} />)}</ol></div>}
           {admin && <details className="mt-4 rounded-lg border border-slate-700 bg-slate-950/25"><summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-200">Level up <span className="ml-2 text-xs font-normal text-slate-400">whenever you’re ready</span></summary><ol className="space-y-2 border-t border-slate-700 p-3">{ADMIN_EXTRA.map((step, index) => <ChecklistStep key={step.key} step={step} index={index + 7} done={isDone(step.key)} auto={step.auto} locked={Boolean(automatic[step.key])} open={openStep === step.key} isNext={nextStep?.key === step.key} onExpand={() => setOpenStep(openStep === step.key ? "" : step.key)} onToggle={checked => void toggleStep(step, checked, true)} />)}</ol></details>}
           {admin && <div className="mt-5 rounded-lg border border-amber-300/20 bg-amber-300/5 p-4"><p className="text-sm font-bold text-amber-100">What’s required to get started?</p><p className="mt-1 text-sm leading-6 text-slate-300">Create a Project Type, add at least one Resource, create a Project, then add Tasks to its Project Plan. Invite your team and add an Event when they’re ready.</p></div>}

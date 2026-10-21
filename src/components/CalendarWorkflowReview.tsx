@@ -31,7 +31,7 @@ const PROJECT_CALENDAR_GUIDE = [
 ];
 const RESOURCE_CALENDAR_GUIDE = [
   "Timeline shows each resource as a row, with their tasks across the dates. Calendar shows the same work on a regular month grid, with each item starting with the resource's name.",
-  "Resources are grouped by type: Employee, Equipment, Subcontractor, Supplier. Use the checkboxes at the top of the calendar to show or hide a type. Your choice stays when you switch views.",
+  "Resources are grouped by type: Team, Equipment, Subcontractor, Supplier. Use the checkboxes at the top of the calendar to show or hide a type. Your choice stays when you switch views.",
   "Only tasks and events with a resource assigned appear here. To assign one, use the Resources column in the Project Plan.",
   "Hover over any item to see the full task name, project, and dates.",
   "The green badge at the top means no resource is double-booked. If one is scheduled for two things at the same time, you'll be notified.",

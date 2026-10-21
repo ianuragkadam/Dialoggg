@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import db from "@/db";
 import { queueTransactionalEmail } from "@/lib/email-outbox";
 import { sha256 } from "@/lib/security";
+import { primerPlainText } from "@/lib/before-you-start";
 
 const INVITATION_HOURS = 72;
 const RESET_HOURS = 1;
@@ -20,6 +21,7 @@ export function issueInvitation(input: {
   membershipId: number;
   createdByIdentityId: number;
   baseUrl: string;
+  firstOwnerWelcome?: boolean;
 }) {
   const target = db.prepare(`
     SELECT cm.id, cm.company_id, cm.status, i.normalized_email,
@@ -69,10 +71,12 @@ export function issueInvitation(input: {
       expiresAt,
       email: {
         to: target.normalized_email,
-        template: "invitation",
+        template: input.firstOwnerWelcome ? "owner_welcome" : "invitation",
         variables: {
           greeting: `Hello ${target.greeting_first_name},`,
-          message: `You have been invited to join ${target.company_name} in Dialoggg.`,
+          message: input.firstOwnerWelcome
+            ? primerPlainText(new URL("/help#start", input.baseUrl).toString())
+            : `You have been invited to join ${target.company_name} in Dialoggg.`,
           actionUrl: actionUrl(input.baseUrl, "/accept-invitation", token),
           expiresAt,
         },

@@ -90,7 +90,7 @@ try {
         INSERT INTO project (company_id, project_type_id, name, start_date, created_by)
         VALUES (?, ?, 'Miller Residence', '2026-09-01', ?)
       `).run(admin.companyId, admin.defaultProjectTypeId, admin.legacyUserId).lastInsertRowid);
-      const categoryId = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Employee'").get(admin.companyId).id;
+      const categoryId = seed.prepare("SELECT id FROM resource_category WHERE company_id = ? AND name = 'Team'").get(admin.companyId).id;
       const resourceId = Number(seed.prepare(`
         INSERT INTO resource (company_id, category_id, name, normalized_name, status)
         VALUES (?, ?, 'Template Crew', 'template crew', 'active')

@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { roleLabel } from "@/lib/product-language";
 import { authenticatedFetch } from "@/lib/client-fetch";
 import dialogggLogo from "../../dialoggg-lockup-transparent-onDark.png";
+import OwnerSchedulePrompt from "@/components/OwnerSchedulePrompt";
 
 type User = { id: number; email: string; full_name: string | null; user_type: string };
 type AuthContext = {
@@ -181,6 +182,7 @@ export default function AppShell({ user, children, companyName, companyLogoUrl }
 
   return (
     <div className={`min-h-screen flex flex-col ${platformAdmin ? "" : "tenant-theme"} ${planFullscreen ? "gantt-fullscreen-app" : ""}`}>
+      {user.user_type === "owner" && <OwnerSchedulePrompt />}
       {!planFullscreen && <header className="relative z-50 flex-none bg-blue-800 text-white shadow-md">
         <div className="flex items-center justify-between gap-3 px-3 py-2 lg:px-4 lg:py-3">
           <div className="flex min-w-0 items-center gap-3">

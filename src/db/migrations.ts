@@ -2535,7 +2535,59 @@ const migration029: Migration = {
   },
 };
 
-export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023, migration024, migration025, migration026, migration027, migration028, migration029];
+const migration030: Migration = {
+  version: 30,
+  name: "team_resource_and_owner_prompt",
+  signature: "rename Employee resource category to Team and track one-time Owner schedule prompt v1",
+  up(database) {
+    database.exec(`
+      DROP TRIGGER IF EXISTS trg_resource_category_fixed_insert;
+      DROP TRIGGER IF EXISTS trg_resource_category_fixed_update;
+      DROP TRIGGER IF EXISTS trg_resource_category_fixed_delete;
+      DROP TRIGGER IF EXISTS trg_resource_scope_insert;
+      DROP TRIGGER IF EXISTS trg_resource_scope_update;
+      UPDATE resource_category SET name = 'Team' WHERE name = 'Employee';
+      UPDATE template_task SET resource_category_name = 'Team' WHERE resource_category_name = 'Employee';
+      CREATE TABLE owner_schedule_prompt (
+        membership_id INTEGER PRIMARY KEY REFERENCES company_membership(id) ON DELETE CASCADE,
+        answered_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        answer TEXT NOT NULL CHECK(answer IN ('yes','not_now','existing'))
+      );
+      INSERT INTO owner_schedule_prompt (membership_id, answer)
+        SELECT id, 'existing' FROM company_membership WHERE role = 'owner' AND status = 'active';
+      CREATE TRIGGER trg_resource_category_fixed_insert BEFORE INSERT ON resource_category
+      WHEN NEW.name NOT IN ('Team','Subcontractor','Supplier','Equipment','Other')
+      BEGIN SELECT RAISE(ABORT, 'RESOURCE_CATEGORY_FIXED'); END;
+      CREATE TRIGGER trg_resource_category_fixed_update BEFORE UPDATE OF company_id, name ON resource_category
+      WHEN NEW.company_id <> OLD.company_id OR NEW.name <> OLD.name
+      BEGIN SELECT RAISE(ABORT, 'RESOURCE_CATEGORY_FIXED'); END;
+      CREATE TRIGGER trg_resource_category_fixed_delete BEFORE DELETE ON resource_category
+      BEGIN SELECT RAISE(ABORT, 'RESOURCE_CATEGORY_FIXED'); END;
+      CREATE TRIGGER trg_resource_scope_insert BEFORE INSERT ON resource
+      WHEN NEW.status NOT IN ('active','inactive') OR trim(NEW.name) = ''
+        OR NEW.normalized_name <> lower(trim(NEW.name))
+        OR NOT EXISTS (SELECT 1 FROM resource_category rc WHERE rc.id = NEW.category_id
+          AND rc.company_id = NEW.company_id AND rc.name IN ('Team','Subcontractor','Supplier','Equipment','Other'))
+        OR (NEW.linked_membership_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM company_membership cm WHERE cm.id = NEW.linked_membership_id
+            AND cm.company_id = NEW.company_id AND cm.status IN ('pending','active')))
+      BEGIN SELECT RAISE(ABORT, 'RESOURCE_SCOPE_INVALID'); END;
+      CREATE TRIGGER trg_resource_scope_update BEFORE UPDATE OF company_id, category_id, name, normalized_name, status, linked_membership_id ON resource
+      WHEN NEW.company_id <> OLD.company_id OR NEW.status NOT IN ('active','inactive')
+        OR trim(NEW.name) = '' OR NEW.normalized_name <> lower(trim(NEW.name))
+        OR NOT EXISTS (SELECT 1 FROM resource_category rc WHERE rc.id = NEW.category_id
+          AND rc.company_id = NEW.company_id AND rc.name IN ('Team','Subcontractor','Supplier','Equipment','Other'))
+        OR (NEW.linked_membership_id IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM company_membership cm WHERE cm.id = NEW.linked_membership_id AND cm.company_id = NEW.company_id))
+        OR (NEW.linked_membership_id IS NOT OLD.linked_membership_id AND NEW.linked_membership_id IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM company_membership cm WHERE cm.id = NEW.linked_membership_id
+            AND cm.company_id = NEW.company_id AND cm.status IN ('pending','active')))
+      BEGIN SELECT RAISE(ABORT, 'RESOURCE_SCOPE_INVALID'); END;
+    `);
+  },
+};
+
+export const MIGRATIONS: Migration[] = [migration001, migration002, migration003, migration004, migration005, migration006, migration007, migration008, migration009, migration010, migration011, migration012, migration013, migration014, migration015, migration016, migration017, migration018, migration019, migration020, migration021, migration022, migration023, migration024, migration025, migration026, migration027, migration028, migration029, migration030];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0;
 
 export function migrationChecksum(migration: Migration) {

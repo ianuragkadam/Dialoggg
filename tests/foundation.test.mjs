@@ -239,7 +239,7 @@ test("Resources UI covers fixed Categories, one-to-one links, lifecycle, and con
   const list = await read("src/components/ResourcesPrototype.tsx");
   const create = await read("src/components/ResourceFormPrototype.tsx");
   const detail = await read("src/components/ResourceDetailPrototype.tsx");
-  for (const category of ["Employee", "Subcontractor", "Supplier", "Equipment", "Other"]) assert.match(data, new RegExp(`"${category}"`));
+  for (const category of ["Team", "Subcontractor", "Supplier", "Equipment", "Other"]) assert.match(data, new RegExp(`"${category}"`));
   assert.match(list, /no category builder/);
   assert.match(list, /Deactivate Resource\?/);
   assert.match(create, /Optional User link/);
@@ -282,7 +282,7 @@ test("Project job-site and phone fields remain available but optional in add and
     assert.doesNotMatch(form, new RegExp(`\\["${key}", "Enter the`));
     assert.doesNotMatch(projects, new RegExp(`\\["${key}","`));
   }
-  assert.match(form, /const optional = \["project-address", "project-city", "project-state", "project-zip", "client-phone"\]/);
+  assert.match(form, /const optional = \["project-address", "project-city", "project-state", "project-zip", "client-phone", "client-extension"\]/);
   assert.match(projects, /input\[key\] \?\?= ""/);
   assert.match(form, /mode === "create" \? "POST" : "PUT"/);
 });

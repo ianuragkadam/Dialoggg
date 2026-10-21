@@ -6,7 +6,7 @@ import { validateMutationRequest } from "@/lib/request-security";
 import { requestId } from "@/lib/security";
 
 const COMPANY_STEPS = new Set(["types", "team", "resources", "project", "plan", "calendar", "calendars"]);
-const PERSONAL_STEPS = new Set(["logo", "template", "client", "phone", "microsoft"]);
+const PERSONAL_STEPS = new Set(["logo", "template", "client", "phone", "microsoft", "owner-resource"]);
 const ROLE_STEPS = new Set(["my-projects", "employee-plan", "employee-calendar", "employee-phone", "client-project", "client-calendar", "client-phone"]);
 const STEPS = new Set([...COMPANY_STEPS, ...PERSONAL_STEPS, ...ROLE_STEPS]);
 
@@ -26,6 +26,7 @@ function automaticSteps(companyId: number, membershipId: number) {
     client: count("SELECT COUNT(*) count FROM company_membership WHERE company_id = ? AND role='external' AND status='active'", companyId),
     phone: false,
     microsoft: count("SELECT COUNT(*) count FROM microsoft_connection WHERE company_id = ? AND state='healthy'", companyId),
+    "owner-resource": count("SELECT COUNT(*) count FROM resource WHERE company_id = ? AND linked_membership_id = ? AND status = 'active'", companyId, membershipId),
   };
   // Calendar review and phone subscription remain manual confirmations.
   void membershipId;
@@ -44,7 +45,10 @@ export async function GET(request: NextRequest) {
   const completions = db.prepare(`SELECT step_key AS stepKey FROM help_checklist_completion
     WHERE company_id = ? AND (membership_id IS NULL OR membership_id = ?)`)
     .all(actor.companyId, actor.membershipId) as Array<{ stepKey: string }>;
-  return apiSuccess({ completions: completions.map(row => row.stepKey), automatic }, traceId);
+  const ownerScheduleAnswer = role === "owner"
+    ? (db.prepare("SELECT answer FROM owner_schedule_prompt WHERE membership_id = ?").get(actor.membershipId) as { answer: string } | undefined)?.answer ?? null
+    : null;
+  return apiSuccess({ completions: completions.map(row => row.stepKey), automatic, ownerScheduleAnswer }, traceId);
 }
 
 export async function POST(request: NextRequest) {
@@ -59,6 +63,7 @@ export async function POST(request: NextRequest) {
   const stepKey = typeof body?.stepKey === "string" ? body.stepKey : "";
   if (!STEPS.has(stepKey) || typeof body?.completed !== "boolean") return apiError(400, "VALIDATION_FAILED", "Choose a valid checklist step.", traceId);
   if ((COMPANY_STEPS.has(stepKey) || PERSONAL_STEPS.has(stepKey)) && !["owner", "admin"].includes(actor.companyRole)) return apiError(403, "ACTION_FORBIDDEN", "This setup step is for Owners and Admins.", traceId);
+  if (stepKey === "owner-resource" && actor.companyRole !== "owner") return apiError(403, "ACTION_FORBIDDEN", "This step is for Owners.", traceId);
   if (ROLE_STEPS.has(stepKey) && ["owner", "admin"].includes(actor.companyRole)) return apiError(403, "ACTION_FORBIDDEN", "Choose the checklist for your current role.", traceId);
   if (stepKey.startsWith("employee-") && actor.companyRole !== "employee") return apiError(403, "ACTION_FORBIDDEN", "This step is for Employees.", traceId);
   if (stepKey.startsWith("client-") && actor.companyRole !== "external") return apiError(403, "ACTION_FORBIDDEN", "This step is for Clients.", traceId);
