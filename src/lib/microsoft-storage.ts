@@ -687,6 +687,21 @@ function isPublicShareUrl(value: unknown) {
 }
 
 async function commonFolderViewLink(driveId: string, itemId: string, accessToken: string) {
+  // Reuse an existing public view link before asking Microsoft to create a
+  // second one. This preserves the link an owner has already tested and sent
+  // to their project users, and prevents an account's default-link behavior
+  // from replacing it with an internal navigation URL.
+  const existingPermissions = await graphRequest(
+    `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/permissions`,
+    accessToken,
+  );
+  const existingAnonymousLink = existingPermissions.value?.find(candidate =>
+    candidate.link?.scope === "anonymous" &&
+    candidate.link.type === "view" &&
+    isPublicShareUrl(candidate.link.webUrl),
+  )?.link?.webUrl;
+  if (existingAnonymousLink) return existingAnonymousLink;
+
   const permission = await graphRequest(
     `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/createLink`,
     accessToken,
@@ -703,12 +718,12 @@ async function commonFolderViewLink(driveId: string, itemId: string, accessToken
     `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/permissions`,
     accessToken,
   );
-  const existingAnonymousLink = permissions.value?.find(candidate =>
+  const createdAnonymousLink = permissions.value?.find(candidate =>
     candidate.link?.scope === "anonymous" &&
     candidate.link.type === "view" &&
     isPublicShareUrl(candidate.link.webUrl),
   )?.link?.webUrl;
-  if (existingAnonymousLink) return existingAnonymousLink;
+  if (createdAnonymousLink) return createdAnonymousLink;
 
   throw new MicrosoftStorageError("MICROSOFT_COMMON_LINK_NOT_ANONYMOUS", "permission", 403);
 }
