@@ -672,6 +672,20 @@ function mappingFor(projectId: number, kind: "common" | "private", connectionId:
 // delegated Files.ReadWrite consent already required for folder management.
 // Private folders never use this path; Microsoft identity remains their access
 // boundary.
+function isPublicShareUrl(value: unknown) {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    // `webUrl` on a drive item is an internal /my?id=... navigation URL. It
+    // may be returned beside an anonymous permission, but it is not usable by
+    // someone without a Microsoft session. Public Microsoft sharing URLs use
+    // the /:f:/ (folder), /:u:/ (file), or short 1drv.ms formats instead.
+    return url.hostname.endsWith("1drv.ms") || /^\/:([fud]):\//i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 async function commonFolderViewLink(driveId: string, itemId: string, accessToken: string) {
   const permission = await graphRequest(
     `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/createLink`,
@@ -683,7 +697,7 @@ async function commonFolderViewLink(driveId: string, itemId: string, accessToken
   // URL, because it prompts them to sign in. Prefer the anonymous link that
   // was just returned, then look for an existing anonymous view link created
   // for this folder (for example one created by the folder owner in OneDrive).
-  if (permission.link?.scope === "anonymous" && permission.link.webUrl) return permission.link.webUrl;
+  if (permission.link?.scope === "anonymous" && isPublicShareUrl(permission.link.webUrl)) return permission.link.webUrl!;
 
   const permissions = await graphRequest(
     `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/permissions`,
@@ -692,7 +706,7 @@ async function commonFolderViewLink(driveId: string, itemId: string, accessToken
   const existingAnonymousLink = permissions.value?.find(candidate =>
     candidate.link?.scope === "anonymous" &&
     candidate.link.type === "view" &&
-    Boolean(candidate.link.webUrl),
+    isPublicShareUrl(candidate.link.webUrl),
   )?.link?.webUrl;
   if (existingAnonymousLink) return existingAnonymousLink;
 
