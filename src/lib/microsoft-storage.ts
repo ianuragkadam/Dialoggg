@@ -53,7 +53,7 @@ type GraphItem = {
   name?: string;
   displayName?: string;
   webUrl?: string;
-  link?: { webUrl?: string };
+  link?: { webUrl?: string; scope?: string; type?: string };
   driveType?: string;
   folder?: Record<string, unknown>;
   parentReference?: { driveId?: string; path?: string };
@@ -134,7 +134,7 @@ async function graphRequest(path: string, accessToken: string, init: RequestInit
       const itemId = decodeURIComponent(path.match(/\/items\/([^/?]+)\/createLink/)?.[1] || "fake-root");
       return {
         id: `fake-permission-${encodeURIComponent(itemId)}`,
-        link: { webUrl: `https://microsoft.example.test/share/${encodeURIComponent(itemId)}` },
+        link: { webUrl: `https://microsoft.example.test/share/${encodeURIComponent(itemId)}`, scope: "anonymous", type: "view" },
       };
     }
     if (path.includes("/children") && init.method === "POST") {
@@ -678,9 +678,25 @@ async function commonFolderViewLink(driveId: string, itemId: string, accessToken
     accessToken,
     { method: "POST", body: JSON.stringify({ type: "view", scope: "anonymous" }) },
   );
-  const webUrl = permission.link?.webUrl;
-  if (!webUrl) throw new MicrosoftStorageError("MICROSOFT_COMMON_LINK_CREATE_FAILED", "permanent", 502);
-  return webUrl;
+  // Microsoft may return an existing view link instead of the requested
+  // anonymous link. Never redirect a Dialoggg user to that normal OneDrive
+  // URL, because it prompts them to sign in. Prefer the anonymous link that
+  // was just returned, then look for an existing anonymous view link created
+  // for this folder (for example one created by the folder owner in OneDrive).
+  if (permission.link?.scope === "anonymous" && permission.link.webUrl) return permission.link.webUrl;
+
+  const permissions = await graphRequest(
+    `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/permissions`,
+    accessToken,
+  );
+  const existingAnonymousLink = permissions.value?.find(candidate =>
+    candidate.link?.scope === "anonymous" &&
+    candidate.link.type === "view" &&
+    Boolean(candidate.link.webUrl),
+  )?.link?.webUrl;
+  if (existingAnonymousLink) return existingAnonymousLink;
+
+  throw new MicrosoftStorageError("MICROSOFT_COMMON_LINK_NOT_ANONYMOUS", "permission", 403);
 }
 
 export async function openProjectFolder(actor: Actor, projectId: number, kind: "common" | "private") {
