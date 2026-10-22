@@ -54,7 +54,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     if (action === "choices") return apiSuccess({ choices: await listProjectFolderChoices(actor, target) }, id);
     if (action === "configure") {
-      if (!kind || body.confirmed !== true || !['create', 'link'].includes(String(body.method))) return apiError(400, "FOLDER_CONFIRMATION_REQUIRED", "Choose a Common or Private folder method and confirm Microsoft permissions remain unchanged.", id);
+      if (!kind || body.confirmed !== true || !['create', 'link'].includes(String(body.method))) return apiError(400, "FOLDER_CONFIRMATION_REQUIRED", "Choose a Common or Private folder method and confirm the folder setup.", id);
       const result = await configureProjectFolder(actor, target, { kind, method: body.method as "create" | "link", choice: typeof body.choice === "string" ? body.choice : undefined });
       recordAudit({ requestId: id, actorIdentityId: actor.identityId, actorMembershipId: actor.membershipId, companyId: actor.companyId, projectId: target, action: "microsoft_folder.configure", targetType: "project_folder_mapping", targetId: kind, result: "success", metadata: { kind, method: String(body.method) } });
       return apiSuccess(result, id);

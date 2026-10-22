@@ -1449,7 +1449,7 @@ try {
   await check("eligible folder opens refresh renamed display metadata while cross-tenant access stays hidden", async () => {
     const opened = await adminA.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "open", kind: "common" } });
     assert.equal(opened.status, 200, JSON.stringify(opened.data));
-    assert.match(opened.data.data.webUrl, /^https:\/\/microsoft\.example\.test\//);
+    assert.match(opened.data.data.webUrl, /^https:\/\/microsoft\.example\.test\/share\//);
     const otherTenantRead = await adminB.request(`/api/projects/${projectAId}/folders`);
     assert.equal(otherTenantRead.status, 404);
     const otherTenantWrite = await adminB.request(`/api/projects/${projectAId}/folders`, { method: "POST", body: { action: "configure", kind: "common", method: "create", confirmed: true } });

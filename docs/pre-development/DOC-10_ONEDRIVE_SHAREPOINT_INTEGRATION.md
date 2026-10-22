@@ -11,7 +11,7 @@
 - Owner/Admin connects company storage and chooses one company root.
 - Each Project has one Common and one Private folder mapping.
 - Owner/Admin can create folders or link existing folders.
-- Dialoggg controls link visibility only; Microsoft controls actual file permissions.
+- Dialoggg controls which users can request a folder URL. Microsoft controls Private-folder access. For Common, Dialoggg creates a view-only anonymous OneDrive link when an eligible user opens it.
 - Common is visible to Owner/Admin, assigned Employees, and assigned External/Clients.
 - Private is visible only to Owner/Admin.
 - Dialoggg never automatically renames, moves, or deletes Microsoft folders because of Project lifecycle changes.
@@ -20,7 +20,7 @@
 
 Microsoft Graph represents folders as `driveItem` resources and creates a folder below a stable drive/item parent with `POST /drives/{drive-id}/items/{parent-item-id}/children`. Name conflicts have explicit behavior. See [Create folder](https://learn.microsoft.com/en-us/graph/api/driveitem-post-children?view=graph-rest-1.0) and [driveItem](https://learn.microsoft.com/en-us/graph/api/resources/driveitem?view=graph-rest-1.0).
 
-The integration should request least privilege. Microsoft documents delegated `Files.ReadWrite` as least privilege for some drive-item permission operations, with broader scopes depending on the selected site/library and operation. The spike must validate the actual root-selection and folder workflows before scopes are fixed. Dialoggg will not create sharing permissions in v1. See [driveItem permission API](https://learn.microsoft.com/en-us/graph/api/driveitem-post-permissions?view=graph-rest-1.0).
+The integration requests least privilege. Microsoft documents delegated `Files.ReadWrite` as the least-privileged delegated permission for `driveItem/createLink`; Dialoggg uses it to create a read-only anonymous link only for Common folders. Private folders never receive an anonymous link. Tenants must explicitly allow Anyone links. See [createLink](https://learn.microsoft.com/en-us/graph/api/driveitem-createlink?view=graph-rest-1.0).
 
 ## Proposed connection model
 
@@ -55,12 +55,12 @@ Start the proof of concept with delegated `Files.ReadWrite` for OneDrive for Bus
 
 - Validate selected item is a folder within the connected drive/library and permitted root policy.
 - Require exact Common/Private review.
-- Do not alter Microsoft permissions.
+- Linking a Private folder does not alter Microsoft permissions. Linking a Common folder does not alter named-user access, but its first eligible open creates a view-only anonymous link.
 - A Private mapping must never be serialized to Employee or External/Client clients.
 
 ## Runtime/open behavior
 
-The server authorizes link eligibility, resolves current mapping health, and returns a short-lived/open-safe redirect or approved `webUrl` only to eligible roles. Microsoft then performs its own authentication and permission decision in a new browser tab. Permission denied is not treated as a Dialoggg authorization grant failure.
+The server authorizes folder eligibility and resolves current mapping health. For Common it returns a view-only anonymous OneDrive link to an eligible user; that link permits viewing/downloading without Microsoft sign-in and can be forwarded, so Common must not contain confidential files. For Private it returns the normal Microsoft URL, and Microsoft performs its own identity and permission decision in a new tab.
 
 ## Recovery states
 

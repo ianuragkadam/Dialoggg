@@ -230,8 +230,8 @@ try {
     const popupPromise = page.waitForEvent("popup");
     await page.getByRole("region", { name: "Common folder" }).getByRole("button", { name: /Open folder/ }).click();
     const popup = await popupPromise;
-    await popup.waitForURL(/^https:\/\/microsoft\.example\.test\//);
-    assert.match(popup.url(), /^https:\/\/microsoft\.example\.test\//);
+    await popup.waitForURL(/^https:\/\/microsoft\.example\.test\/share\//);
+    assert.match(popup.url(), /^https:\/\/microsoft\.example\.test\/share\//);
     await popup.close();
   });
 

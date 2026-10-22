@@ -53,6 +53,7 @@ type GraphItem = {
   name?: string;
   displayName?: string;
   webUrl?: string;
+  link?: { webUrl?: string };
   driveType?: string;
   folder?: Record<string, unknown>;
   parentReference?: { driveId?: string; path?: string };
@@ -129,6 +130,13 @@ async function graphRequest(path: string, accessToken: string, init: RequestInit
       return { id: path.includes("/sites/") ? "fake-sharepoint-drive" : "fake-drive", name: path.includes("/sites/") ? "Projects" : "OneDrive", driveType: "business" };
     }
     if (path.startsWith("/sites/")) return { id: "fake-site", name: "Operations" };
+    if (path.endsWith("/createLink") && init.method === "POST") {
+      const itemId = decodeURIComponent(path.match(/\/items\/([^/?]+)\/createLink/)?.[1] || "fake-root");
+      return {
+        id: `fake-permission-${encodeURIComponent(itemId)}`,
+        link: { webUrl: `https://microsoft.example.test/share/${encodeURIComponent(itemId)}` },
+      };
+    }
     if (path.includes("/children") && init.method === "POST") {
       const body = typeof init.body === "string" ? JSON.parse(init.body) as { name?: string } : {};
       const name = String(body.name || "Dialoggg folder");
@@ -658,6 +666,23 @@ function mappingFor(projectId: number, kind: "common" | "private", connectionId:
     .get(projectId, kind, connectionId) as { id: number; drive_id_ciphertext: string; item_id_ciphertext: string; token_key_version: number } | undefined;
 }
 
+// Common folders are intentionally opened through a read-only anonymous link so
+// assigned Dialoggg users can view/download files without a Microsoft account.
+// The link is created by the connected company owner using the least-privilege
+// delegated Files.ReadWrite consent already required for folder management.
+// Private folders never use this path; Microsoft identity remains their access
+// boundary.
+async function commonFolderViewLink(driveId: string, itemId: string, accessToken: string) {
+  const permission = await graphRequest(
+    `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/createLink`,
+    accessToken,
+    { method: "POST", body: JSON.stringify({ type: "view", scope: "anonymous" }) },
+  );
+  const webUrl = permission.link?.webUrl;
+  if (!webUrl) throw new MicrosoftStorageError("MICROSOFT_COMMON_LINK_CREATE_FAILED", "permanent", 502);
+  return webUrl;
+}
+
 export async function openProjectFolder(actor: Actor, projectId: number, kind: "common" | "private") {
   const project = projectFor(actor, projectId);
   if (!project) throw new MicrosoftStorageError("PROJECT_NOT_FOUND", "permanent", 404);
@@ -680,8 +705,11 @@ export async function openProjectFolder(actor: Actor, projectId: number, kind: "
       last_verified_at = CURRENT_TIMESTAMP, last_error_code = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(
       item.name || "Microsoft folder", seal(item.webUrl, folderContext(mapping.id, mapping.token_key_version, "url")), mapping.id,
     );
+    const webUrl = kind === "common"
+      ? await commonFolderViewLink(driveId, itemId, accessToken)
+      : item.webUrl;
     db.prepare("UPDATE microsoft_connection SET state = 'healthy', last_success_at = CURRENT_TIMESTAMP, last_attempt_at = CURRENT_TIMESTAMP, last_error_code = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(connection.id);
-    return { webUrl: item.webUrl, displayName: item.name || "Microsoft folder" };
+    return { webUrl, displayName: item.name || "Microsoft folder" };
   } catch (error) {
     const domain = mapProviderError(error);
     const state = domain.kind === "missing" ? "missing" : domain.kind === "permission" ? "permission_denied" : domain.kind === "authorization" ? "connection_required" : "error";
