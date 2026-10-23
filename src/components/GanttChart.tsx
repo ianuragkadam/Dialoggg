@@ -443,9 +443,14 @@ export default function GanttChart({ projectId, projectName, projectStartDate, u
       gantt.config.bar_height = viewSettingsRef.current.compact ? 18 : 24;
       gantt.config.autosize = false;
       gantt.config.fit_tasks = false;
-      gantt.config.auto_scheduling = true;
-      gantt.config.auto_scheduling_strict = true;
-      gantt.config.auto_scheduling_initial = true;
+      // The API owns dependency scheduling. Letting DHTMLX schedule in the
+      // browser as well changes a bar's release position before it is saved,
+      // then the API calculates it a second time. Keeping this off means a
+      // direct drag saves exactly where the user releases the bar; the API
+      // still recalculates dependent tasks after the saved change.
+      gantt.config.auto_scheduling = false;
+      gantt.config.auto_scheduling_strict = false;
+      gantt.config.auto_scheduling_initial = false;
       gantt.config.details_on_create = false;   // we open our own popup
       gantt.config.readonly = !canEdit || stalePlanRef.current; // stale tabs stay read-only until refreshed
       gantt.config.order_branch = canEdit;       // allow Owner/Admin to reorder sibling rows by dragging
@@ -737,6 +742,17 @@ export default function GanttChart({ projectId, projectName, projectStartDate, u
         if (syncingRef.current) return;
         if (!canEdit || stalePlanRef.current) { await reload(); return; }
         const fresh = gantt.getTask(id);
+        // Reloading data after a save must not jump the person editing the
+        // plan to a different month. Restore the exact viewport they used
+        // when releasing the task bar.
+        const scrollState = gantt.getScrollState?.();
+        const visibleStartDate = scrollState && gantt.dateFromPos?.(scrollState.x);
+        if (visibleStartDate instanceof Date && !Number.isNaN(visibleStartDate.getTime())) {
+          pendingViewportRestoreRef.current = {
+            date: visibleStartDate,
+            y: Number(scrollState?.y) || 0,
+          };
+        }
         const resize = dragModeRef.current === String(gantt.config.drag_mode.resize);
         const progressDrag = dragModeRef.current === String(gantt.config.drag_mode.progress);
         dragModeRef.current = null;
