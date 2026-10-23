@@ -728,6 +728,32 @@ async function commonFolderViewLink(driveId: string, itemId: string, accessToken
   throw new MicrosoftStorageError("MICROSOFT_COMMON_LINK_NOT_ANONYMOUS", "permission", 403);
 }
 
+// Graph can return the legacy Documents/Forms/All.aspx page for a business
+// OneDrive folder. That page intermittently renders "Unknown render failure"
+// even for the connected owner. The current OneDrive folder route uses the
+// same Microsoft-provided folder id but opens reliably after Microsoft has
+// checked the user's existing sign-in and folder permissions. This is only a
+// navigation normalisation; unlike Common, it never creates or changes a
+// sharing link.
+function privateFolderUrl(webUrl: string) {
+  try {
+    const url = new URL(webUrl);
+    const folderPath = url.searchParams.get("id");
+    const isLegacyOneDriveFolderPage = url.pathname.startsWith("/personal/") &&
+      /\/Documents\/Forms\/All(?:Items)?\.aspx$/i.test(url.pathname);
+    if (!folderPath || !isLegacyOneDriveFolderPage) return webUrl;
+
+    const documentLibrary = "/Documents/";
+    const libraryIndex = folderPath.indexOf(documentLibrary);
+    if (libraryIndex <= 0) return webUrl;
+
+    const personalSitePath = folderPath.slice(0, libraryIndex);
+    return `${url.origin}${personalSitePath}/_layouts/15/onedrive.aspx?id=${encodeURIComponent(folderPath)}&ga=1`;
+  } catch {
+    return webUrl;
+  }
+}
+
 export async function openProjectFolder(actor: Actor, projectId: number, kind: "common" | "private") {
   const project = projectFor(actor, projectId);
   if (!project) throw new MicrosoftStorageError("PROJECT_NOT_FOUND", "permanent", 404);
@@ -752,7 +778,7 @@ export async function openProjectFolder(actor: Actor, projectId: number, kind: "
     );
     const webUrl = kind === "common"
       ? await commonFolderViewLink(driveId, itemId, accessToken)
-      : item.webUrl;
+      : privateFolderUrl(item.webUrl);
     db.prepare("UPDATE microsoft_connection SET state = 'healthy', last_success_at = CURRENT_TIMESTAMP, last_attempt_at = CURRENT_TIMESTAMP, last_error_code = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(connection.id);
     return { webUrl, displayName: item.name || "Microsoft folder" };
   } catch (error) {
