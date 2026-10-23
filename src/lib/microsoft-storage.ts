@@ -666,12 +666,11 @@ function mappingFor(projectId: number, kind: "common" | "private", connectionId:
     .get(projectId, kind, connectionId) as { id: number; drive_id_ciphertext: string; item_id_ciphertext: string; token_key_version: number } | undefined;
 }
 
-// Common folders are intentionally opened through a read-only anonymous link so
-// assigned Dialoggg users can view/download files without a Microsoft account.
-// The link is created by the connected company owner using the least-privilege
-// delegated Files.ReadWrite consent already required for folder management.
-// Private folders never use this path; Microsoft identity remains their access
-// boundary.
+// Both folder types use a read-only anonymous link so their eligible Dialoggg
+// users can view/download files without a Microsoft account. Dialoggg remains
+// the UI access boundary: Common is visible to assigned project users, while
+// Private is only visible to Owners and Admins. An anonymous Microsoft link
+// can be forwarded, so it must be treated as confidential.
 function isPublicShareUrl(value: unknown) {
   if (typeof value !== "string") return false;
   try {
@@ -686,7 +685,7 @@ function isPublicShareUrl(value: unknown) {
   }
 }
 
-async function commonFolderViewLink(driveId: string, itemId: string, accessToken: string) {
+async function anonymousFolderViewLink(driveId: string, itemId: string, accessToken: string) {
   // Reuse an existing public view link before asking Microsoft to create a
   // second one. This preserves the link an owner has already tested and sent
   // to their project users, and prevents an account's default-link behavior
@@ -725,33 +724,7 @@ async function commonFolderViewLink(driveId: string, itemId: string, accessToken
   )?.link?.webUrl;
   if (createdAnonymousLink) return createdAnonymousLink;
 
-  throw new MicrosoftStorageError("MICROSOFT_COMMON_LINK_NOT_ANONYMOUS", "permission", 403);
-}
-
-// Graph can return the legacy Documents/Forms/All.aspx page for a business
-// OneDrive folder. That page intermittently renders "Unknown render failure"
-// even for the connected owner. The current OneDrive folder route uses the
-// same Microsoft-provided folder id but opens reliably after Microsoft has
-// checked the user's existing sign-in and folder permissions. This is only a
-// navigation normalisation; unlike Common, it never creates or changes a
-// sharing link.
-function privateFolderUrl(webUrl: string) {
-  try {
-    const url = new URL(webUrl);
-    const folderPath = url.searchParams.get("id");
-    const isLegacyOneDriveFolderPage = url.pathname.startsWith("/personal/") &&
-      /\/Documents\/Forms\/All(?:Items)?\.aspx$/i.test(url.pathname);
-    if (!folderPath || !isLegacyOneDriveFolderPage) return webUrl;
-
-    const documentLibrary = "/Documents/";
-    const libraryIndex = folderPath.indexOf(documentLibrary);
-    if (libraryIndex <= 0) return webUrl;
-
-    const personalSitePath = folderPath.slice(0, libraryIndex);
-    return `${url.origin}${personalSitePath}/_layouts/15/onedrive.aspx?id=${encodeURIComponent(folderPath)}&ga=1`;
-  } catch {
-    return webUrl;
-  }
+  throw new MicrosoftStorageError("MICROSOFT_FOLDER_LINK_NOT_ANONYMOUS", "permission", 403);
 }
 
 export async function openProjectFolder(actor: Actor, projectId: number, kind: "common" | "private") {
@@ -776,9 +749,7 @@ export async function openProjectFolder(actor: Actor, projectId: number, kind: "
       last_verified_at = CURRENT_TIMESTAMP, last_error_code = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(
       item.name || "Microsoft folder", seal(item.webUrl, folderContext(mapping.id, mapping.token_key_version, "url")), mapping.id,
     );
-    const webUrl = kind === "common"
-      ? await commonFolderViewLink(driveId, itemId, accessToken)
-      : privateFolderUrl(item.webUrl);
+    const webUrl = await anonymousFolderViewLink(driveId, itemId, accessToken);
     db.prepare("UPDATE microsoft_connection SET state = 'healthy', last_success_at = CURRENT_TIMESTAMP, last_attempt_at = CURRENT_TIMESTAMP, last_error_code = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(connection.id);
     return { webUrl, displayName: item.name || "Microsoft folder" };
   } catch (error) {

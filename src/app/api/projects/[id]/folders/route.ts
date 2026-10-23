@@ -19,7 +19,7 @@ function projectId(value: string) {
 
 function message(error: MicrosoftStorageError) {
   if (error.code === "PROJECT_NOT_FOUND") return "Project not found.";
-  if (error.code === "MICROSOFT_COMMON_LINK_NOT_ANONYMOUS") return "Microsoft did not provide an Anyone sharing link for this Common folder. In OneDrive, create an Anyone + Can view link for the folder, then try again.";
+  if (error.code === "MICROSOFT_FOLDER_LINK_NOT_ANONYMOUS") return "Microsoft did not provide an Anyone sharing link for this folder. In OneDrive, create an Anyone + Can view link for the folder, then try again.";
   if (error.kind === "authorization") return "Reconnect the company Microsoft Storage connection to continue.";
   if (error.kind === "permission") return "Microsoft denied access to this folder. Ask a Microsoft 365 administrator to restore permission.";
   if (error.kind === "missing") return "The saved Microsoft folder is missing or moved. An Owner or Admin can relink it.";
